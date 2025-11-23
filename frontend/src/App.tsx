@@ -36,8 +36,8 @@ function App() {
                 <Route path="profile" element={<ProfilePage />} />
               </Route>
 
-              {/* Admin Routes - панель тренера /admin */}
-              <Route path="/admin" element={<Layout />}>
+              {/* Trainer Panel Routes - панель тренера /panel */}
+              <Route path="/panel" element={<Layout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="applications" element={<ApplicationsPage />} />
                 <Route path="clients" element={<ClientsPage />} />

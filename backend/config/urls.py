@@ -13,6 +13,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 from apps.common.views import health_check, readiness_check, liveness_check
+from apps.telegram import views as telegram_views
 import base64
 import os
 
@@ -65,10 +66,11 @@ def basic_auth_required(view_func):
 
 urlpatterns = [
     # Admin
-    path("admin/", admin.site.urls),
+    path("dj-admin/", admin.site.urls),
 
     # Health checks (for monitoring and Kubernetes probes)
     path("health/", health_check, name="health"),
+    path("api/v1/health/", health_check, name="health-v1"),
     path("ready/", readiness_check, name="readiness"),
     path("live/", liveness_check, name="liveness"),
 
@@ -81,6 +83,10 @@ urlpatterns = [
     
     # Trainer panel auth endpoint
     path("api/v1/trainer-panel/", include("apps.telegram.trainer_urls")),
+
+    # Trainer panel WebApp auth (Telegram-only)
+    path("api/v1/trainer-panel/auth/", telegram_views.trainer_panel_auth, name="trainer-panel-auth"),
+    path("api/trainer-panel/auth/", telegram_views.trainer_panel_auth),  # legacy alias
 
     # API Schema and Documentation (protected with Basic Auth)
     path("api/schema/", basic_auth_required(SpectacularAPIView.as_view()), name="schema"),

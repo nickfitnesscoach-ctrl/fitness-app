@@ -206,15 +206,15 @@ def get_open_webapp_keyboard() -> InlineKeyboardMarkup:
 
 def get_admin_start_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура для АДМИНА - открывает /admin (панель тренера).
+    Клавиатура для АДМИНА - открывает /panel (панель тренера).
     """
     from aiogram.types import WebAppInfo
 
     builder = InlineKeyboardBuilder()
 
     if settings.WEB_APP_URL:
-        # Админ идёт на /admin - панель тренера
-        admin_url = f"{settings.WEB_APP_URL}/admin"
+        # Админ идёт на /panel - панель тренера
+        admin_url = f"{settings.WEB_APP_URL}/panel"
         builder.row(
             InlineKeyboardButton(
                 text="📱 Открыть панель тренера",

@@ -525,9 +525,14 @@ YOOKASSA_SECRET_KEY = os.environ.get("YOOKASSA_SECRET_KEY", "")
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
+# Дополнительный админ из окружения (совместимость с ботом)
+BOT_ADMIN_ID = os.environ.get("BOT_ADMIN_ID")
+
 # Telegram admin IDs (comma-separated in env)
 _telegram_admins_str = os.environ.get("TELEGRAM_ADMINS", "")
 TELEGRAM_ADMINS = set(int(x.strip()) for x in _telegram_admins_str.split(",") if x.strip().isdigit())
+if BOT_ADMIN_ID and BOT_ADMIN_ID.isdigit():
+    TELEGRAM_ADMINS.add(int(BOT_ADMIN_ID))
 
 
 # ============================================================

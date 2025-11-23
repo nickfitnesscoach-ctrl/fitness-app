@@ -283,7 +283,7 @@ const ClientsPage = () => {
     return (
         <div className="space-y-6 pb-20">
             <div className="flex items-center justify-between">
-                <button onClick={() => navigate('/admin')} className="p-2 -ml-2 text-gray-600">
+                <button onClick={() => navigate('/panel')} className="p-2 -ml-2 text-gray-600">
                     <ArrowLeft size={24} />
                 </button>
                 <h1 className="text-xl font-bold">Мои клиенты</h1>
@@ -291,7 +291,7 @@ const ClientsPage = () => {
             </div>
 
             <button
-                onClick={() => navigate('/admin/invite-client')}
+                onClick={() => navigate('/panel/invite-client')}
                 className="w-full bg-blue-500 text-white py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 shadow-lg active:scale-98 transition-transform"
             >
                 <UserPlus size={22} />
