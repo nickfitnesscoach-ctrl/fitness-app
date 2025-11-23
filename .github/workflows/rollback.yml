@@ -1,0 +1,102 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to rollback (backend, bot, frontend, or all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - backend
+          - bot
+          - frontend
+      commit_hash:
+        description: 'Commit hash to rollback to (leave empty for previous commit)'
+        required: false
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate inputs
+        run: |
+          echo "Service: ${{ inputs.service }}"
+          echo "Commit: ${{ inputs.commit_hash || 'HEAD~1' }}"
+
+      - name: Rollback on VPS
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd /opt/foodmind
+
+            echo "🔄 Starting rollback process..."
+
+            # Determine target commit
+            if [ -n "${{ inputs.commit_hash }}" ]; then
+              TARGET_COMMIT="${{ inputs.commit_hash }}"
+            else
+              TARGET_COMMIT="HEAD~1"
+            fi
+
+            # Store current commit for emergency restore
+            CURRENT_COMMIT=$(git rev-parse HEAD)
+            echo "Current commit: $CURRENT_COMMIT" > /tmp/rollback_backup.txt
+
+            # Fetch and checkout target commit
+            echo "📥 Fetching latest changes..."
+            git fetch origin main
+
+            echo "⏪ Rolling back to: $TARGET_COMMIT"
+            git checkout $TARGET_COMMIT
+
+            # Determine which services to restart
+            SERVICE="${{ inputs.service }}"
+
+            if [ "$SERVICE" = "all" ]; then
+              echo "🔄 Rebuilding and restarting all services..."
+              docker compose up -d --build
+            else
+              echo "🔄 Rebuilding and restarting $SERVICE service..."
+              docker compose up -d --build $SERVICE
+            fi
+
+            # Wait for services to be healthy
+            echo "⏳ Waiting for services to be healthy..."
+            sleep 10
+
+            # Check health
+            if docker ps | grep -q "$SERVICE"; then
+              echo "✅ Rollback completed successfully!"
+              echo "Previous commit: $CURRENT_COMMIT"
+              echo "Current commit: $(git rev-parse HEAD)"
+            else
+              echo "❌ Rollback failed - service not running!"
+              echo "Emergency restore: git checkout $CURRENT_COMMIT"
+              exit 1
+            fi
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script: |
+            cd /opt/foodmind
+            echo "📊 Service status:"
+            docker ps | grep -E "(backend|bot|frontend)" || echo "⚠️ Some services not running"
+
+            echo ""
+            echo "📝 Current commit:"
+            git log -1 --oneline

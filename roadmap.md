@@ -769,23 +769,40 @@ Note: backend/entrypoint.sh был создан в рамках задачи D2 
 
 ---
 
-### D10 | P3 | Добавить rollback механизм
+### D10 | P3 | ✅ DONE | Добавить rollback механизм
 
 **Проблема:** При падении deploy нет способа откатиться.
 
 **Файлы:**
-- `.github/workflows/*.yml`
+- `.github/workflows/rollback.yml` (NEW)
+- `.github/workflows/backend.yml` (MODIFIED)
+
+**Действия:**
+- ✅ Создан workflow для manual rollback через workflow_dispatch
+- ✅ Поддержка выбора service (backend, bot, frontend, all)
+- ✅ Rollback на конкретный commit или HEAD~1
+- ✅ Сохранение текущего commit для emergency restore
+- ✅ Добавлен health check после deploy в backend.yml
+- ✅ Auto-rollback при ошибке health check
 
 **Сложность:** Высокая
 
 ---
 
-### D11 | P3 | Добавить secrets валидацию
+### D11 | P3 | ✅ DONE | Добавить secrets валидацию
 
 **Проблема:** Secrets используются без проверки наличия.
 
 **Файлы:**
-- `.github/workflows/*.yml`
+- `.github/workflows/backend.yml` (MODIFIED)
+- `.github/workflows/bot.yml` (MODIFIED)
+- `.github/workflows/frontend.yml` (MODIFIED)
+
+**Действия:**
+- ✅ Добавлена проверка VPS_HOST, VPS_USERNAME, VPS_SSH_KEY
+- ✅ Fail early при отсутствии required secrets
+- ✅ Понятное сообщение об ошибке с инструкциями
+- ✅ Применено ко всем deploy workflows
 
 **Сложность:** Низкая
 

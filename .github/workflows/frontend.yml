@@ -46,6 +46,31 @@ jobs:
       - name: Build project
         run: npm run build
 
+      - name: Validate required secrets
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          MISSING_SECRETS=""
+
+          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VPS_HOST"
+          fi
+
+          if [ -z "${{ secrets.VPS_USERNAME }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VPS_USERNAME"
+          fi
+
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VPS_SSH_KEY"
+          fi
+
+          if [ -n "$MISSING_SECRETS" ]; then
+            echo "❌ Missing required secrets:$MISSING_SECRETS"
+            echo "Please configure these secrets in repository settings"
+            exit 1
+          fi
+
+          echo "✅ All required secrets are configured"
+
       - name: Deploy to VPS
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: appleboy/ssh-action@v1.0.0

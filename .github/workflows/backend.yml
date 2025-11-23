@@ -98,6 +98,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        run: |
+          MISSING_SECRETS=""
+
+          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VPS_HOST"
+          fi
+
+          if [ -z "${{ secrets.VPS_USERNAME }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VPS_USERNAME"
+          fi
+
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VPS_SSH_KEY"
+          fi
+
+          if [ -n "$MISSING_SECRETS" ]; then
+            echo "❌ Missing required secrets:$MISSING_SECRETS"
+            echo "Please configure these secrets in repository settings"
+            exit 1
+          fi
+
+          echo "✅ All required secrets are configured"
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -120,5 +144,25 @@ jobs:
           port: 22
           script: |
             cd /opt/foodmind
-            docker ps | grep backend
+
+            # Check container is running
+            if ! docker ps | grep -q backend; then
+              echo "❌ Backend container not running!"
+              docker logs backend --tail 50
+              exit 1
+            fi
             echo "✅ Container is running"
+
+            # Wait for service to be ready
+            echo "⏳ Waiting for backend to be healthy..."
+            sleep 5
+
+            # Health check
+            HEALTH_URL="https://eatfit24.ru/api/v1/health/"
+            if curl -f -s "$HEALTH_URL" | grep -q '"status":"ok"'; then
+              echo "✅ Backend health check passed"
+            else
+              echo "❌ Backend health check failed!"
+              docker logs backend --tail 50
+              exit 1
+            fi
