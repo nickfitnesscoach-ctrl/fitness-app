@@ -26,7 +26,6 @@ def health_check(request):
         'status': 'ok',
         'version': '1.0.0',
         'python_version': f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}',
-        'debug': settings.DEBUG,
     }
 
     # Check database connection

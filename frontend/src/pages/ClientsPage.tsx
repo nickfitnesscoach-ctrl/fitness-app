@@ -3,6 +3,7 @@ import { Search, UserPlus, Eye, MessageCircle, ArrowLeft, User, CheckCircle2, Al
 import { useClients } from '../contexts/ClientsContext';
 import { Application } from '../services/mockData';
 import { useNavigate } from 'react-router-dom';
+import { Avatar } from '../components/Avatar';
 
 const ACTIVITY_DESCRIPTIONS: Record<string, { title: string; description: string; icon: string }> = {
     'Минимальная': {
@@ -120,12 +121,12 @@ const ClientsPage = () => {
                 </div>
 
                 <div className="bg-blue-500 text-white p-6 rounded-2xl shadow-lg flex items-center gap-4">
-                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl font-bold">
-                        {selectedClient.photo_url ? (
-                            <img src={selectedClient.photo_url} alt={selectedClient.first_name} className="w-full h-full rounded-full object-cover" />
-                        ) : (
-                            <User size={32} />
-                        )}
+                    <div className="w-16 h-16 bg-white/20 rounded-full overflow-hidden">
+                        <Avatar
+                            src={selectedClient.photo_url}
+                            alt={selectedClient.first_name}
+                            className="w-full h-full rounded-full object-cover"
+                        />
                     </div>
                     <div>
                         <h2 className="text-2xl font-bold">{selectedClient.first_name}</h2>

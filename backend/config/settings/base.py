@@ -406,12 +406,18 @@ def validate_cors_origins(origins, debug_mode=DEBUG):
             logger.error(f"Invalid CORS origin format '{origin}': {e}")
             continue
 
-    # TEMPORARILY DISABLED: Allow empty CORS for API-only usage (Telegram bot)
-    # if not validated_origins and not debug_mode:
-    #     raise ImproperlyConfigured(
-    #         "No valid CORS_ALLOWED_ORIGINS configured for production. "
-    #         "Set CORS_ALLOWED_ORIGINS environment variable with HTTPS URLs."
-    #     )
+    # Validate CORS configuration in production
+    if not validated_origins:
+        if debug_mode:
+            logger.warning(
+                "No CORS_ALLOWED_ORIGINS configured. This is OK for development, "
+                "but you must set it in production if using a web frontend."
+            )
+        else:
+            logger.warning(
+                "No CORS_ALLOWED_ORIGINS configured in production. "
+                "If you're using a web frontend, set CORS_ALLOWED_ORIGINS environment variable."
+            )
 
     return validated_origins
 
@@ -518,7 +524,10 @@ YOOKASSA_SECRET_KEY = os.environ.get("YOOKASSA_SECRET_KEY", "")
 # ============================================================
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_ADMINS = {310151740}
+
+# Telegram admin IDs (comma-separated in env)
+_telegram_admins_str = os.environ.get("TELEGRAM_ADMINS", "")
+TELEGRAM_ADMINS = set(int(x.strip()) for x in _telegram_admins_str.split(",") if x.strip().isdigit())
 
 
 # ============================================================

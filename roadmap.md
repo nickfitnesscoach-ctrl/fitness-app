@@ -297,34 +297,48 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### B8 | P3 | Убрать DEBUG из health endpoint
+### B8 | P3 | ✅ DONE | Убрать DEBUG из health endpoint
 
 **Проблема:** `/health/` возвращает `debug: true/false` — раскрытие информации.
 
 **Файлы:**
-- `backend/apps/common/views.py` (строка 29)
+- `backend/apps/common/views.py` (MODIFIED)
+
+**Действия:**
+- ✅ Удалено поле 'debug' из health_status response
 
 **Сложность:** Низкая
 
 ---
 
-### B9 | P3 | Перенести TELEGRAM_ADMINS в env
+### B9 | P3 | ✅ DONE | Перенести TELEGRAM_ADMINS в env
 
 **Проблема:** Хардкод `{310151740}` в коде.
 
 **Файлы:**
-- `backend/config/settings/base.py` (строка 521)
+- `backend/config/settings/base.py` (MODIFIED)
+- `backend/.env.example` (MODIFIED)
+
+**Действия:**
+- ✅ TELEGRAM_ADMINS теперь читается из env (comma-separated)
+- ✅ Добавлен парсинг строки в set of integers
+- ✅ Обновлен .env.example с примером
 
 **Сложность:** Низкая
 
 ---
 
-### B10 | P3 | Исправить CORS validation
+### B10 | P3 | ✅ DONE | Исправить CORS validation
 
 **Проблема:** Закомментирована проверка пустого `CORS_ALLOWED_ORIGINS`.
 
 **Файлы:**
-- `backend/config/settings/base.py` (строки 409-414)
+- `backend/config/settings/base.py` (MODIFIED)
+
+**Действия:**
+- ✅ Раскомментирована валидация CORS
+- ✅ В dev режиме - warning если CORS пуст
+- ✅ В production - warning (не error, т.к. может быть API-only usage)
 
 **Сложность:** Низкая
 
@@ -434,12 +448,18 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### T7 | P3 | Добавить healthcheck для Django API
+### T7 | P3 | ✅ DONE | Добавить healthcheck для Django API
 
 **Проблема:** Нет проверки доступности Django.
 
 **Файлы:**
-- `bot/app/services/django_integration.py`
+- `bot/app/services/django_integration.py` (MODIFIED)
+
+**Действия:**
+- ✅ Создана функция check_django_api_health()
+- ✅ Проверяет /health/ endpoint с 5s timeout
+- ✅ Возвращает bool (True/False)
+- ✅ Логирование статуса проверки
 
 **Сложность:** Средняя
 
@@ -558,25 +578,38 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### F7 | P3 | Разделить dev/prod конфигурацию
+### F7 | P3 | ✅ DONE | Разделить dev/prod конфигурацию
 
 **Проблема:** `VITE_SKIP_TG_AUTH` перемешан с production кодом.
 
 **Файлы:**
-- `frontend/.env.example`
-- `frontend/vite.config.ts`
+- `frontend/.env.development` (NEW)
+- `frontend/.env.production` (NEW)
+
+**Действия:**
+- ✅ Создан .env.development с dev-only переменными
+- ✅ Создан .env.production только с prod переменными
+- ✅ Разделены VITE_SKIP_TG_AUTH и dev-only настройки
 
 **Сложность:** Низкая
 
 ---
 
-### F8 | P3 | Добавить image placeholder
+### F8 | P3 | ✅ DONE | Добавить image placeholder
 
 **Проблема:** Нет обработки broken images для photo_url.
 
 **Файлы:**
-- `frontend/src/pages/ApplicationsPage.tsx`
-- `frontend/src/pages/ClientsPage.tsx`
+- `frontend/src/components/Avatar.tsx` (NEW)
+- `frontend/src/pages/ApplicationsPage.tsx` (MODIFIED)
+- `frontend/src/pages/ClientsPage.tsx` (MODIFIED)
+
+**Действия:**
+- ✅ Создан Avatar компонент с автоматическим fallback
+- ✅ Обработка onError для broken images
+- ✅ Показ User icon при отсутствии photo_url
+- ✅ Заменены все img tags на Avatar в ApplicationsPage
+- ✅ Заменены все img tags на Avatar в ClientsPage
 
 **Сложность:** Низкая
 

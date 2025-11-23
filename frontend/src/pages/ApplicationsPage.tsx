@@ -4,6 +4,7 @@ import { Application } from '../services/mockData';
 import { useClients } from '../contexts/ClientsContext';
 import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
+import { Avatar } from '../components/Avatar';
 
 const ACTIVITY_DESCRIPTIONS: Record<string, { title: string; description: string; icon: string }> = {
     'Минимальная': {
@@ -263,12 +264,12 @@ const ApplicationsPage: React.FC = () => {
 
                 {/* Profile Card */}
                 <div className="bg-blue-500 text-white p-6 rounded-2xl shadow-lg flex items-center gap-4">
-                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl font-bold">
-                        {selectedApp.photo_url ? (
-                            <img src={selectedApp.photo_url} alt={selectedApp.first_name} className="w-full h-full rounded-full object-cover" />
-                        ) : (
-                            <User size={32} />
-                        )}
+                    <div className="w-16 h-16 bg-white/20 rounded-full overflow-hidden">
+                        <Avatar
+                            src={selectedApp.photo_url}
+                            alt={selectedApp.first_name}
+                            className="w-full h-full rounded-full object-cover"
+                        />
                     </div>
                     <div>
                         <h2 className="text-2xl font-bold">{selectedApp.first_name}</h2>
@@ -568,12 +569,12 @@ const ApplicationsPage: React.FC = () => {
                             className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100"
                         >
                             <div className="flex items-start gap-3 mb-3">
-                                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-gray-400">
-                                    {app.photo_url ? (
-                                        <img src={app.photo_url} alt={app.first_name} className="w-full h-full rounded-full object-cover" />
-                                    ) : (
-                                        <User size={24} />
-                                    )}
+                                <div className="w-12 h-12 bg-gray-100 rounded-full overflow-hidden">
+                                    <Avatar
+                                        src={app.photo_url}
+                                        alt={app.first_name}
+                                        className="w-full h-full rounded-full object-cover"
+                                    />
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-center justify-between">

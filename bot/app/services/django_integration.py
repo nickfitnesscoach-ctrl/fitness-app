@@ -241,3 +241,42 @@ async def send_test_results_to_django(
             exc_info=True
         )
         return None
+
+
+async def check_django_api_health() -> bool:
+    """
+    Проверяет доступность Django API через health endpoint.
+
+    Returns:
+        True если API доступен, False если недоступен
+
+    Note:
+        Используется для проверки при старте бота или периодических healthchecks
+    """
+    django_api_url = getattr(settings, 'DJANGO_API_URL', None)
+
+    if not django_api_url:
+        logger.debug("DJANGO_API_URL not configured, skipping health check")
+        return False
+
+    health_url = f"{django_api_url}/health/"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(health_url, timeout=5.0)
+
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ Django API health check OK: {data.get('status', 'ok')}")
+                return True
+            else:
+                logger.warning(f"⚠️ Django API health check failed: HTTP {response.status_code}")
+                return False
+
+    except httpx.TimeoutException:
+        logger.warning("⚠️ Django API health check timeout")
+        return False
+
+    except Exception as e:
+        logger.error(f"❌ Django API health check error: {e}")
+        return False
