@@ -2,6 +2,7 @@
 Конфигурация бота - загрузка настроек из .env файла.
 """
 
+import logging
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,7 +20,8 @@ class Settings(BaseSettings):
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str
-    BOT_ADMIN_ID: int
+    BOT_ADMIN_ID: Optional[int] = None
+    ADMIN_IDS: Optional[str] = None
 
     # Database
     DB_HOST: str = "localhost"
@@ -79,6 +81,7 @@ class Settings(BaseSettings):
 
     # Telegram Mini App
     WEB_APP_URL: Optional[str] = None  # URL для Telegram Mini App (e.g., "https://your-domain.com" or ngrok URL)
+    TRAINER_PANEL_BASE_URL: Optional[str] = None  # Базовый URL панели тренера (например, https://my-domain.com)
 
     # Environment
     ENVIRONMENT: str = "development"
@@ -100,6 +103,33 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Проверяет, запущен ли бот в production окружении."""
         return self.ENVIRONMENT.lower() == "production"
+
+    @property
+    def admin_ids(self) -> list[int]:
+        """Возвращает список ID админов из окружения (ADMIN_IDS или BOT_ADMIN_ID)."""
+        ids: list[int] = []
+
+        if self.ADMIN_IDS:
+            for raw_id in self.ADMIN_IDS.split(','):
+                raw_id = raw_id.strip()
+                if not raw_id:
+                    continue
+                try:
+                    ids.append(int(raw_id))
+                except ValueError:
+                    logging.getLogger(__name__).warning(
+                        "[CONFIG] ADMIN_IDS содержит некорректное значение: %s", raw_id
+                    )
+
+        if self.BOT_ADMIN_ID:
+            ids.append(int(self.BOT_ADMIN_ID))
+
+        if not ids:
+            logging.getLogger(__name__).warning(
+                "[CONFIG] ADMIN_IDS и BOT_ADMIN_ID не заданы — режим администратора недоступен"
+            )
+
+        return list(dict.fromkeys(ids))
 
 
 # Глобальный экземпляр настроек
