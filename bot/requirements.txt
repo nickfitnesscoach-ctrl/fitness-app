@@ -1,0 +1,85 @@
+# =============================================================================
+# CORE DEPENDENCIES
+# =============================================================================
+
+# Telegram Bot Framework
+aiogram==3.14.0
+aiofiles==23.2.1
+
+# HTTP Client for AI API
+httpx==0.27.2
+
+# Retry logic with exponential backoff
+tenacity==9.0.0
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+
+# SQLAlchemy ORM with async support
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.29.0
+
+# Database migrations
+alembic==1.13.3
+
+# =============================================================================
+# REDIS (FSM Storage & Caching)
+# =============================================================================
+
+redis==5.2.0
+aioredis==2.0.1
+
+# =============================================================================
+# CONFIGURATION & VALIDATION
+# =============================================================================
+
+# Settings management with .env support
+pydantic>=2.4.1,<2.10
+pydantic-settings==2.6.1
+
+# Environment variables
+python-dotenv==1.0.1
+
+# =============================================================================
+# TIMEZONE & DATE/TIME
+# =============================================================================
+
+pytz==2024.2
+python-dateutil==2.9.0
+
+# =============================================================================
+# UTILITIES
+# =============================================================================
+
+# Logging
+loguru==0.7.3
+
+# Image processing (for generating placeholder images)
+Pillow==11.0.0
+
+# JSON handling
+orjson==3.10.12
+
+# =============================================================================
+# DEVELOPMENT DEPENDENCIES (optional, uncomment if needed)
+# =============================================================================
+
+# Code formatting
+# black==24.10.0
+# isort==5.13.2
+
+# Linting
+# flake8==7.1.1
+# ruff==0.8.2
+
+# Type checking
+# mypy==1.13.0
+
+# Testing
+# pytest==8.3.4
+# pytest-asyncio==0.24.0
+# pytest-cov==6.0.0
+
+# Pre-commit hooks
+# pre-commit==4.0.1
