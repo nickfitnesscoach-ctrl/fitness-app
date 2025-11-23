@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { ClipboardList, Users, LayoutDashboard } from 'lucide-react';
-import { initTelegramWebApp, isTelegramWebAppAvailable } from '../lib/telegram';
-import { api } from '../services/api';
 
 const Layout = () => {
-    const isTelegramContext = useMemo(() => isTelegramWebAppAvailable(), []);
+    const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean | null>(null);
     const [authState, setAuthState] = useState<{
-        loading: boolean;
-        error: string | null;
-        userId: number | null;
+        status: 'loading' | 'authorized' | 'forbidden' | 'error';
+        message?: string | null;
+        userId?: number | null;
     }>({
-        loading: true,
-        error: null,
+        status: 'loading',
+        message: null,
         userId: null,
     });
 
@@ -20,31 +18,61 @@ const Layout = () => {
         let isMounted = true;
 
         const authorize = async () => {
-            // Быстро отсекаем прямые заходы
-            if (!isTelegramWebAppAvailable()) {
-                if (isMounted) {
-                    setAuthState({ loading: false, error: 'Нет доступа', userId: null });
-                }
+            const tg = (window as any).Telegram?.WebApp;
+            const hasWebApp = Boolean(tg);
+            if (isMounted) {
+                setIsTelegramWebApp(hasWebApp);
+            }
+
+            if (!hasWebApp) {
                 return;
             }
 
-            const tgData = await initTelegramWebApp();
-            if (!tgData) {
+            tg.ready();
+            const initData = tg?.initData || '';
+            console.log('TG WebApp:', !!tg, 'initData length:', initData?.length);
+
+            if (!initData) {
                 if (isMounted) {
-                    setAuthState({ loading: false, error: 'Нет доступа', userId: null });
+                    setAuthState({ status: 'error', message: 'Не удалось получить данные Telegram', userId: null });
                 }
                 return;
             }
 
             try {
-                const response = await api.trainerPanelAuth(tgData.initData);
+                const response = await fetch('/api/v1/trainer-panel/auth/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ init_data: initData }),
+                });
+
+                if (response.status === 200) {
+                    const data = await response.json();
+                    if (isMounted) {
+                        setAuthState({ status: 'authorized', message: null, userId: data.user_id });
+                    }
+                    return;
+                }
+
+                if (response.status === 401 || response.status === 403) {
+                    if (isMounted) {
+                        setAuthState({ status: 'forbidden', message: 'У вас нет прав доступа', userId: null });
+                    }
+                    return;
+                }
+
+                const errorData = await response.json().catch(() => ({}));
                 if (isMounted) {
-                    setAuthState({ loading: false, error: null, userId: response.user_id });
+                    setAuthState({
+                        status: 'error',
+                        message: (errorData as { detail?: string }).detail || 'Ошибка авторизации',
+                        userId: null,
+                    });
                 }
             } catch (error) {
                 console.error('[TrainerPanel] Auth failed', error);
                 if (isMounted) {
-                    setAuthState({ loading: false, error: 'Нет доступа', userId: null });
+                    setAuthState({ status: 'error', message: 'Ошибка авторизации', userId: null });
                 }
             }
         };
@@ -56,17 +84,7 @@ const Layout = () => {
         };
     }, []);
 
-    if (!isTelegramContext) {
-        return (
-            <div className="no-access">
-                <h1>Нет доступа</h1>
-                <p>Панель тренера доступна только из Telegram-бота.</p>
-                <p>Откройте бота и нажмите «📱 Открыть панель тренера».</p>
-            </div>
-        );
-    }
-
-    if (authState.loading) {
+    if (isTelegramWebApp === null) {
         return (
             <div className="no-access">
                 <h1>Загрузка...</h1>
@@ -75,12 +93,39 @@ const Layout = () => {
         );
     }
 
-    if (authState.error) {
+    if (isTelegramWebApp === false) {
         return (
             <div className="no-access">
                 <h1>Нет доступа</h1>
                 <p>Панель тренера доступна только из Telegram-бота.</p>
                 <p>Откройте бота и нажмите «📱 Открыть панель тренера».</p>
+            </div>
+        );
+    }
+
+    if (authState.status === 'loading') {
+        return (
+            <div className="no-access">
+                <h1>Загрузка...</h1>
+                <p>Проверяем доступ через Telegram.</p>
+            </div>
+        );
+    }
+
+    if (authState.status === 'forbidden') {
+        return (
+            <div className="no-access">
+                <h1>Нет прав доступа</h1>
+                <p>У вас нет прав доступа к панели тренера.</p>
+            </div>
+        );
+    }
+
+    if (authState.status === 'error') {
+        return (
+            <div className="no-access">
+                <h1>Нет доступа</h1>
+                <p>{authState.message || 'Произошла ошибка при авторизации.'}</p>
             </div>
         );
     }
