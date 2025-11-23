@@ -68,7 +68,13 @@ class Settings(BaseSettings):
     PROJECT_URL: str = "https://github.com/your-username/ai-lead-magnet-bot"  # URL проекта для OpenRouter
 
     # Django API Integration
-    DJANGO_API_URL: Optional[str] = None  # URL Django API (e.g., "http://localhost:8000/api/v1" or ngrok URL)
+    DJANGO_API_URL: Optional[str] = None  # URL Django API (например, "http://backend:8000/api/v1" в Docker или "https://eatfit24.ru/api/v1" снаружи)
+
+    # Django API Retry Configuration
+    DJANGO_RETRY_ATTEMPTS: int = 3  # Количество попыток при ошибке
+    DJANGO_RETRY_MIN_WAIT: int = 1  # Минимальная задержка между попытками (сек)
+    DJANGO_RETRY_MAX_WAIT: int = 8  # Максимальная задержка между попытками (сек)
+    DJANGO_RETRY_MULTIPLIER: int = 2  # Множитель для exponential backoff
 
     # Telegram Mini App
     WEB_APP_URL: Optional[str] = None  # URL для Telegram Mini App (e.g., "https://your-domain.com" or ngrok URL)

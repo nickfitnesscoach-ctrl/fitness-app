@@ -2,13 +2,75 @@
 Интеграция с Django API для отправки результатов AI теста.
 """
 
+import logging
 import httpx
 import re
 from typing import Optional, Dict, Any
-from datetime import datetime
+
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    retry_if_exception,
+    before_sleep_log,
+    RetryError
+)
 
 from app.config import settings
 from app.utils.logger import logger
+
+
+def _is_retryable_http_error(exception: Exception) -> bool:
+    """
+    Определяет, стоит ли делать retry для данного исключения.
+    """
+    if not isinstance(exception, httpx.HTTPStatusError):
+        return False
+
+    retryable_codes = {
+        429,  # Too Many Requests
+        502,  # Bad Gateway
+        503,  # Service Unavailable
+        504,  # Gateway Timeout
+    }
+    return exception.response.status_code in retryable_codes
+
+
+@retry(
+    stop=stop_after_attempt(settings.DJANGO_RETRY_ATTEMPTS),
+    wait=wait_exponential(
+        multiplier=settings.DJANGO_RETRY_MULTIPLIER,
+        min=settings.DJANGO_RETRY_MIN_WAIT,
+        max=settings.DJANGO_RETRY_MAX_WAIT
+    ),
+    retry=retry_if_exception_type(httpx.HTTPStatusError) & retry_if_exception(_is_retryable_http_error),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True
+)
+async def _make_django_request(url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    HTTP POST запрос к Django API с автоматическим retry.
+
+    Args:
+        url: URL для POST запроса
+        payload: JSON данные
+
+    Returns:
+        JSON ответ от API
+
+    Raises:
+        httpx.HTTPStatusError: При HTTP ошибках (после всех retry попыток)
+        httpx.TimeoutException: При таймауте запроса
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            url,
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 def parse_range_value(value) -> Optional[float]:
@@ -120,32 +182,42 @@ async def send_test_results_to_django(
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                json=payload,
-                timeout=10.0
-            )
-            response.raise_for_status()
+        result = await _make_django_request(url, payload)
+        logger.info(
+            f"✅ Test results saved to Django: "
+            f"telegram_id={telegram_id}, user_id={result.get('user_id')}"
+        )
+        return result
 
-            result = response.json()
-            logger.info(
-                f"✅ Test results saved to Django: "
-                f"telegram_id={telegram_id}, user_id={result.get('user_id')}"
+    except RetryError as e:
+        original_exception = e.last_attempt.exception()
+        if isinstance(original_exception, httpx.HTTPStatusError):
+            logger.error(
+                f"❌ Django API HTTP error {original_exception.response.status_code} "
+                f"(after {settings.DJANGO_RETRY_ATTEMPTS} retries): "
+                f"{original_exception.response.text} for telegram_id={telegram_id}"
             )
-            return result
+        else:
+            logger.error(
+                f"❌ Django API failed after {settings.DJANGO_RETRY_ATTEMPTS} retries "
+                f"for telegram_id={telegram_id}: {original_exception}"
+            )
+        return None
 
     except httpx.HTTPStatusError as e:
+        # Не-retryable HTTP ошибки (4xx кроме 429)
         logger.error(
-            f"❌ Django API returned error {e.response.status_code}: "
+            f"❌ Django API error {e.response.status_code} (non-retryable): "
             f"{e.response.text} for telegram_id={telegram_id}"
         )
         return None
+
     except httpx.TimeoutException:
         logger.error(
             f"❌ Django API timeout for telegram_id={telegram_id}"
         )
         return None
+
     except Exception as e:
         logger.error(
             f"❌ Unexpected error sending to Django for telegram_id={telegram_id}: {e}",

@@ -30,7 +30,7 @@ urlpatterns = [
     path('meals/<int:meal_id>/items/<int:pk>/', views.FoodItemDetailView.as_view(), name='food-item-detail'),
 
     # Daily goals (internal endpoints, documented in REST docs Section 4)
-    path('nutrition/goals/', views.DailyGoalView.as_view(), name='daily-goal'),
-    path('nutrition/goals/calculate/', views.CalculateGoalsView.as_view(), name='calculate-goals'),
-    path('nutrition/goals/set-auto/', views.SetAutoGoalView.as_view(), name='set-auto-goal'),
+    path('goals/', views.DailyGoalView.as_view(), name='daily-goal'),
+    path('goals/calculate/', views.CalculateGoalsView.as_view(), name='calculate-goals'),
+    path('goals/set-auto/', views.SetAutoGoalView.as_view(), name='set-auto-goal'),
 ]

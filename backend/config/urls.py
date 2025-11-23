@@ -14,13 +14,15 @@ from drf_spectacular.views import (
 )
 from apps.common.views import health_check, readiness_check, liveness_check
 import base64
+import os
 
 
 def basic_auth_required(view_func):
     """
     Decorator for basic HTTP authentication.
-    Login: admin
-    Password: 2865
+    Credentials are read from environment variables:
+    - SWAGGER_AUTH_USERNAME (default: admin)
+    - SWAGGER_AUTH_PASSWORD (required in production)
     """
     def check_basic_auth(request):
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
@@ -31,8 +33,18 @@ def basic_auth_required(view_func):
                 credentials = base64.b64decode(auth_header[6:]).decode('utf-8')
                 username, password = credentials.split(':', 1)
 
-                # Check credentials
-                if username == 'admin' and password == '2865':
+                # Check credentials from environment
+                expected_username = os.environ.get('SWAGGER_AUTH_USERNAME', 'admin')
+                expected_password = os.environ.get('SWAGGER_AUTH_PASSWORD')
+
+                if not expected_password:
+                    # In development without password set, allow access
+                    if settings.DEBUG:
+                        return True
+                    # In production, deny access if password not configured
+                    return False
+
+                if username == expected_username and password == expected_password:
                     return True
             except Exception:
                 pass

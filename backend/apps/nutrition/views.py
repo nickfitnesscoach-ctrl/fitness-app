@@ -4,6 +4,8 @@ Views for nutrition app - meals, food items, daily goals.
 REST API documentation compliant implementation.
 """
 
+import logging
+
 from datetime import date, datetime
 from rest_framework import generics, status, views
 from rest_framework.permissions import IsAuthenticated
@@ -22,6 +24,8 @@ from .serializers import (
     DailyStatsSerializer,
     CalculateGoalsSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema(tags=['Meals'])
@@ -353,13 +357,22 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
         }
     )
     def put(self, request, *args, **kwargs):
+        logger.debug("DailyGoalView.put called by user=%s, data=%s", request.user, request.data)
         obj = self.get_object()
         if obj is None:
             # Create new goal if none exists
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            try:
+                serializer.save()
+                logger.info("Created new DailyGoal for user=%s", request.user)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except Exception as exc:
+                logger.exception("Failed to create DailyGoal for user=%s: %s", request.user, exc)
+                return Response(
+                    {"error": "Не удалось создать дневную цель", "detail": str(exc)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
         return super().put(request, *args, **kwargs)
 
     @extend_schema(
@@ -372,13 +385,22 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
         }
     )
     def patch(self, request, *args, **kwargs):
+        logger.debug("DailyGoalView.patch called by user=%s, data=%s", request.user, request.data)
         obj = self.get_object()
         if obj is None:
             # Create new goal if none exists
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            try:
+                serializer.save()
+                logger.info("Created new DailyGoal for user=%s", request.user)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except Exception as exc:
+                logger.exception("Failed to create DailyGoal for user=%s: %s", request.user, exc)
+                return Response(
+                    {"error": "Не удалось создать дневную цель", "detail": str(exc)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
         return super().patch(request, *args, **kwargs)
 
 

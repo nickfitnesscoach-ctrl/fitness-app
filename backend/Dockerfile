@@ -29,11 +29,11 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p logs staticfiles media
 
-# Collect static files (will be overridden by volume in production)
-RUN python manage.py collectstatic --noinput --settings=config.settings.production || true
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
 
 # Expose port
 EXPOSE 8000
 
-# Run gunicorn
-CMD ["gunicorn", "--config", "gunicorn_config.py", "config.wsgi:application"]
+# Use entrypoint script (handles migrations, collectstatic, then starts gunicorn)
+ENTRYPOINT ["./entrypoint.sh"]

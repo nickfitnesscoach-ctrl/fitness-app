@@ -22,5 +22,9 @@ COPY . .
 # Создаём директорию для логов
 RUN mkdir -p logs
 
-# Запускаем бота (с автоматическим применением миграций)
-CMD ["sh", "-c", "alembic upgrade head && python main.py"]
+# Копируем и делаем исполняемым entrypoint скрипт
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Используем ENTRYPOINT для запуска
+ENTRYPOINT ["/entrypoint.sh"]

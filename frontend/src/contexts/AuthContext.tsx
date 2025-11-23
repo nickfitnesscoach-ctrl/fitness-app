@@ -1,6 +1,22 @@
+/**
+ * AuthContext для FoodMind WebApp
+ *
+ * Использует Telegram WebApp для аутентификации.
+ * JWT токены НЕ используются - все запросы идут через Header auth.
+ */
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { getTelegramInitData } from '../lib/telegram';
+import {
+    initTelegramWebApp,
+    getTelegramAuthData,
+    isTelegramInitialized,
+    type TelegramUserInfo,
+} from '../lib/telegram';
+
+// ============================================================
+// Types
+// ============================================================
 
 interface User {
     id: number;
@@ -9,58 +25,76 @@ interface User {
     first_name: string;
     last_name?: string;
     completed_ai_test: boolean;
-    is_client?: boolean; // Флаг из бэкенда
-    role?: 'trainer' | 'client'; // Вычисляемое поле
+    is_client?: boolean;
+    role?: 'trainer' | 'client';
 }
 
 interface AuthContextType {
     user: User | null;
+    telegramUser: TelegramUserInfo | null;
     loading: boolean;
     error: string | null;
+    isInitialized: boolean;
     authenticate: () => Promise<void>;
     logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ============================================================
+// Provider
+// ============================================================
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
+    const [telegramUser, setTelegramUser] = useState<TelegramUserInfo | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isInitialized, setIsInitialized] = useState(false);
 
+    /**
+     * Инициализация и аутентификация
+     */
     const authenticate = async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Получаем initData из Telegram WebApp через централизованный модуль
-            const initData = getTelegramInitData(true); // true = разрешить dev mode
+            // Шаг 1: Инициализация Telegram WebApp
+            console.log('[Auth] Initializing Telegram WebApp...');
+            const authData = await initTelegramWebApp();
 
-            if (!initData) {
-                console.warn('Telegram WebApp not initialized or running outside Telegram');
+            if (!authData) {
+                console.warn('[Auth] Telegram WebApp not available');
+                setError('Telegram WebApp не инициализирован. Откройте приложение через Telegram.');
                 setLoading(false);
                 return;
             }
 
-            const response = await api.authenticate(initData);
-            console.log('Auth response:', response);
-            (window as any).lastAuthResponse = response;
+            setTelegramUser(authData.user);
+            setIsInitialized(true);
+            console.log('[Auth] Telegram initialized:', authData.user.id);
 
-            // Set access token for future requests
-            if (response.access) {
-                api.setAccessToken(response.access);
-            } else {
-                console.error('No access token in response!', response);
+            // Шаг 2: Аутентификация на backend (для получения user info)
+            // NOTE: JWT токены из response игнорируются, используем Header auth
+            try {
+                const response = await api.authenticate(authData.initData);
+                console.log('[Auth] Backend auth response:', response);
+
+                if (response.user) {
+                    const userData = response.user;
+                    const role = userData.is_client ? 'client' : 'trainer';
+                    setUser({ ...userData, role });
+                }
+            } catch (authError) {
+                // Backend auth failed, но Telegram init успешен
+                // Можно продолжить работу с ограниченной функциональностью
+                console.error('[Auth] Backend auth failed:', authError);
+                // Не устанавливаем error - пользователь может работать
             }
-
-            // Определяем роль
-            const userData = response.user;
-            const role = userData.is_client ? 'client' : 'trainer';
-
-            setUser({ ...userData, role });
         } catch (err) {
-            console.error('Authentication error:', err);
-            setError(err instanceof Error ? err.message : 'Authentication failed');
+            console.error('[Auth] Initialization error:', err);
+            setError(err instanceof Error ? err.message : 'Ошибка инициализации');
         } finally {
             setLoading(false);
         }
@@ -68,19 +102,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const logout = () => {
         setUser(null);
-        // Можно добавить вызов API для логаута если нужно
+        // Telegram user остаётся - это данные из WebApp
     };
 
+    // Автоматическая инициализация при монтировании
     useEffect(() => {
         authenticate();
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, loading, error, authenticate, logout }}>
+        <AuthContext.Provider
+            value={{
+                user,
+                telegramUser,
+                loading,
+                error,
+                isInitialized,
+                authenticate,
+                logout,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );
 };
+
+// ============================================================
+// Hook
+// ============================================================
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
@@ -89,4 +138,3 @@ export const useAuth = () => {
     }
     return context;
 };
-

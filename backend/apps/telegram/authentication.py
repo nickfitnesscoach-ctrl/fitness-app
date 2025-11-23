@@ -6,6 +6,7 @@ Telegram WebApp authentication backend.
 
 import hmac
 import hashlib
+import logging
 import json
 from urllib.parse import parse_qsl
 from datetime import datetime
@@ -15,8 +16,11 @@ from django.contrib.auth import get_user_model
 from rest_framework import authentication, exceptions
 
 from .models import TelegramUser
+from apps.users.models import Profile
 
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramWebAppAuthentication(authentication.BaseAuthentication):
@@ -311,5 +315,13 @@ class TelegramHeaderAuthentication(authentication.BaseAuthentication):
             language_code=telegram_user_data.get('language_code', 'ru'),
             is_premium=telegram_user_data.get('is_premium', False)
         )
+
+        # Гарантируем, что у каждого Telegram-пользователя есть профиль
+        try:
+            Profile.objects.get_or_create(user=user)
+        except Exception as exc:
+            logger.exception(
+                "Failed to ensure Profile for telegram user %s: %s", user.pk, exc
+            )
 
         return user

@@ -59,14 +59,12 @@ jobs:
       - name: Lint with Ruff
         run: |
           pip install ruff
-          ruff check app/ --exit-zero
-        continue-on-error: true
+          ruff check app/
 
       - name: Check code formatting
         run: |
           pip install black
-          black --check app/ --line-length 120 || true
-        continue-on-error: true
+          black --check app/ --line-length 120
 
       - name: Run tests
         env:
@@ -80,7 +78,7 @@ jobs:
           DB_PASSWORD: test_password
           ENVIRONMENT: test
         run: |
-          pytest tests/ -v --tb=short || echo "⚠️ Some tests failed"
+          pytest tests/ -v --tb=short
 
       - name: Run Alembic migrations check
         env:

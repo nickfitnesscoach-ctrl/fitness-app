@@ -5,6 +5,7 @@ version: "3.9"
 
 services:
   # PostgreSQL Database (shared by backend and bot)
+  # IMPORTANT: Set POSTGRES_PASSWORD in .env file (no default for security)
   db:
     image: postgres:15
     container_name: fm-db
@@ -12,7 +13,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-foodmind}
       POSTGRES_USER: ${POSTGRES_USER:-foodmind}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supersecret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - db-data:/var/lib/postgresql/data
     networks:
@@ -29,12 +30,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fm-backend
-    command: >
-      sh -c "
-        python manage.py migrate --settings=config.settings.production &&
-        python manage.py collectstatic --noinput --settings=config.settings.production &&
-        gunicorn --config gunicorn_config.py config.wsgi:application
-      "
+    # entrypoint.sh handles: DB wait, migrations, collectstatic, gunicorn start
     volumes:
       - ./backend/staticfiles:/app/staticfiles
       - ./backend/media:/app/media
@@ -67,9 +63,14 @@ services:
       - ./bot/.env
     environment:
       - ENVIRONMENT=production
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-foodmind}
     depends_on:
-      - backend
-      - db
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     networks:
       - backend-net
     restart: unless-stopped
@@ -92,7 +93,13 @@ services:
     environment:
       - NODE_ENV=production
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     labels:
       - "com.foodmind.service=frontend"
 

@@ -9,7 +9,12 @@ import os
 DEBUG = False
 
 # Hosts - load from environment
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",") if os.environ.get("ALLOWED_HOSTS") else ["*"]
+# SECURITY: Empty ALLOWED_HOSTS will cause Django to reject all requests
+# This is intentional - production MUST have explicit allowed hosts
+_allowed_hosts_env = os.environ.get("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(",") if h.strip()]
+if not ALLOWED_HOSTS:
+    raise ValueError("ALLOWED_HOSTS environment variable must be set in production")
 
 # PostgreSQL Database Configuration
 DATABASES = {
