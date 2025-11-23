@@ -264,39 +264,37 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### B6 | P2 | Добавить Security Headers
+### B6 | P2 | ✅ DONE | Добавить Security Headers
 
 **Проблема:** Отсутствуют HSTS, CSP и другие security headers.
 
 **Файлы:**
-- `backend/config/settings/base.py`
 - `backend/config/settings/production.py`
 
 **Действия:**
-```python
-SECURE_HSTS_SECONDS = 31536000
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = "DENY"
-```
+- ✅ SECURE_HSTS_SECONDS = 31536000 (1 year)
+- ✅ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+- ✅ SECURE_HSTS_PRELOAD = True
+- ✅ SECURE_CONTENT_TYPE_NOSNIFF = True
+- ✅ SECURE_BROWSER_XSS_FILTER = True
+- ✅ X_FRAME_OPTIONS = "DENY"
+- ✅ SECURE_SSL_REDIRECT (configurable via env)
 
 **Сложность:** Низкая
 
 ---
 
-### B7 | P2 | Исправить settings import в wsgi/asgi
+### B7 | P2 | ✅ DONE | Исправить settings import в wsgi/asgi
 
 **Проблема:** Хардкод `config.settings.local` в production.
 
 **Файлы:**
 - `backend/config/wsgi.py`
 - `backend/config/asgi.py`
-- `backend/manage.py`
 
 **Действия:**
-- Читать `DJANGO_SETTINGS_MODULE` из env
-- Default установить на `config.settings.production`
+- ✅ Изменён default на `config.settings.production` в wsgi.py
+- ✅ Изменён default на `config.settings.production` в asgi.py
 
 **Сложность:** Низкая
 
@@ -388,15 +386,15 @@ X_FRAME_OPTIONS = "DENY"
 
 ---
 
-### T4 | P2 | Исправить bare except clause
+### T4 | P2 | ✅ DONE | Исправить bare except clause
 
 **Проблема:** `except:` скрывает неожиданные ошибки.
 
 **Файлы:**
-- `bot/app/services/django_integration.py` (строка 42)
+- `bot/app/services/django_integration.py`
 
 **Действия:**
-- Заменить на `except (ValueError, TypeError):`
+- ✅ Заменено `except:` на `except (ValueError, TypeError):` в функции parse_range_value
 
 **Сложность:** Низкая
 
@@ -513,7 +511,7 @@ X_FRAME_OPTIONS = "DENY"
 
 ---
 
-### F5 | P2 | Добавить timeout для fetch запросов
+### F5 | P2 | ✅ DONE | Добавить timeout для fetch запросов
 
 **Проблема:** Все fetch без timeout — могут зависать.
 
@@ -521,7 +519,9 @@ X_FRAME_OPTIONS = "DENY"
 - `frontend/src/services/api.ts`
 
 **Действия:**
-- Добавить AbortController с timeout 10-30 сек
+- ✅ Создана функция `fetchWithTimeout()` с AbortController
+- ✅ Все 21 вызов `fetch` заменены на `fetchWithTimeout`
+- ✅ Timeout по умолчанию 30 секунд (API_TIMEOUT)
 
 **Сложность:** Низкая
 

@@ -101,7 +101,7 @@ def parse_range_value(value) -> Optional[float]:
     # Попытка преобразовать в число
     try:
         return float(value_str)
-    except:
+    except (ValueError, TypeError):
         return None
 
 

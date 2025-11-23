@@ -3,7 +3,8 @@
     "allow": [
       "Bash(find:*)",
       "Bash(cat:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nComplete P1 tasks: Infrastructure, Security, and CI/CD improvements\n\nThis commit completes all P1 priority tasks from the roadmap:\n\n**Backend Security (B1-B3):**\n- Remove hardcoded secrets from .env.example and urls.py\n- Replace hardcoded Basic Auth for Swagger with env variables\n- Fix ALLOWED_HOSTS vulnerability in production.py\n\n**Bot Improvements (T1-T3):**\n- Add retry logic for Django API calls with tenacity\n- Create entrypoint.sh for proper migration handling\n- Delete duplicate personal_plan.py handler (990 lines)\n\n**Frontend Auth Refactoring (F1-F3):**\n- Centralize Telegram WebApp auth through buildTelegramHeaders()\n- Use VITE_API_URL for all API endpoints\n- Guarantee async Telegram init before API requests\n- Update .env.example with proper configuration\n\n**Infrastructure (D1-D6):**\n- Add healthchecks for frontend and bot services\n- Create backend/entrypoint.sh with DB wait, migrations, collectstatic\n- Remove hardcoded passwords from docker-compose.yml defaults\n- Make tests mandatory in CI/CD (remove continue-on-error)\n- Add service_healthy conditions for proper startup order\n- Fix hardcoded IP in nginx.conf (use Docker service names)\n\n**Documentation:**\n- Add comprehensive roadmap.md with P0-P3 task breakdown\n\nAll P1 tasks are now complete and ready for production deployment.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

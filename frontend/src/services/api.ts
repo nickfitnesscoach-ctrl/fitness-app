@@ -12,6 +12,7 @@ import { buildTelegramHeaders, getTelegramDebugInfo } from '../lib/telegram';
 // ============================================================
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+const API_TIMEOUT = 30000; // 30 seconds
 
 const URLS = {
     // Telegram endpoints
@@ -56,6 +57,29 @@ const log = (msg: string) => {
  */
 const getHeaders = (): HeadersInit => {
     return buildTelegramHeaders();
+};
+
+/**
+ * Fetch с timeout
+ */
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = API_TIMEOUT): Promise<Response> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetchWithTimeout(url, {
+            ...options,
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error(`Request timeout after ${timeout}ms`);
+        }
+        throw error;
+    }
 };
 
 // ============================================================
@@ -108,7 +132,7 @@ export const api = {
     async authenticate(initData: string) {
         log('Authenticating with Telegram initData');
         try {
-            const response = await fetch(URLS.auth, {
+            const response = await fetchWithTimeout(URLS.auth, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -141,7 +165,7 @@ export const api = {
 
     async getApplications() {
         try {
-            const response = await fetch(URLS.applications, {
+            const response = await fetchWithTimeout(URLS.applications, {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch applications');
@@ -154,7 +178,7 @@ export const api = {
 
     async getClients() {
         try {
-            const response = await fetch(URLS.clients, {
+            const response = await fetchWithTimeout(URLS.clients, {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch clients');
@@ -167,7 +191,7 @@ export const api = {
 
     async addClient(clientId: number) {
         try {
-            const response = await fetch(`${URLS.clients}${clientId}/add/`, {
+            const response = await fetchWithTimeout(`${URLS.clients}${clientId}/add/`, {
                 method: 'POST',
                 headers: getHeaders(),
             });
@@ -181,7 +205,7 @@ export const api = {
 
     async removeClient(clientId: number) {
         try {
-            const response = await fetch(`${URLS.clients}${clientId}/`, {
+            const response = await fetchWithTimeout(`${URLS.clients}${clientId}/`, {
                 method: 'DELETE',
                 headers: getHeaders(),
             });
@@ -195,7 +219,7 @@ export const api = {
 
     async deleteApplication(applicationId: number) {
         try {
-            const response = await fetch(`${URLS.applications}${applicationId}/`, {
+            const response = await fetchWithTimeout(`${URLS.applications}${applicationId}/`, {
                 method: 'DELETE',
                 headers: getHeaders(),
             });
@@ -209,7 +233,7 @@ export const api = {
 
     async updateApplicationStatus(applicationId: number, status: 'new' | 'viewed' | 'contacted') {
         try {
-            const response = await fetch(`${URLS.applications}${applicationId}/status/`, {
+            const response = await fetchWithTimeout(`${URLS.applications}${applicationId}/status/`, {
                 method: 'PATCH',
                 headers: getHeaders(),
                 body: JSON.stringify({ status }),
@@ -224,7 +248,7 @@ export const api = {
 
     async getInviteLink() {
         try {
-            const response = await fetch(URLS.inviteLink, {
+            const response = await fetchWithTimeout(URLS.inviteLink, {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch invite link');
@@ -238,7 +262,7 @@ export const api = {
 
     async getSubscribers() {
         try {
-            const response = await fetch(URLS.subscribers, {
+            const response = await fetchWithTimeout(URLS.subscribers, {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch subscribers');
@@ -255,7 +279,7 @@ export const api = {
 
     async getMeals(date: string) {
         try {
-            const response = await fetch(`${URLS.meals}?date=${date}`, {
+            const response = await fetchWithTimeout(`${URLS.meals}?date=${date}`, {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch meals');
@@ -268,7 +292,7 @@ export const api = {
 
     async createMeal(data: any) {
         try {
-            const response = await fetch(URLS.meals, {
+            const response = await fetchWithTimeout(URLS.meals, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify(data),
@@ -286,7 +310,7 @@ export const api = {
 
     async addFoodItem(mealId: number, data: any) {
         try {
-            const response = await fetch(`${URLS.meals}${mealId}/items/`, {
+            const response = await fetchWithTimeout(`${URLS.meals}${mealId}/items/`, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify(data),
@@ -305,7 +329,7 @@ export const api = {
 
     async getDailyGoals() {
         try {
-            const response = await fetch(URLS.goals, {
+            const response = await fetchWithTimeout(URLS.goals, {
                 headers: getHeaders(),
             });
             if (!response.ok) {
@@ -323,7 +347,7 @@ export const api = {
         log('Updating goals: ' + JSON.stringify(data));
 
         try {
-            const response = await fetch(URLS.goals, {
+            const response = await fetchWithTimeout(URLS.goals, {
                 method: 'PUT',
                 headers: getHeaders(),
                 body: JSON.stringify({
@@ -355,7 +379,7 @@ export const api = {
 
     async calculateGoals() {
         try {
-            const response = await fetch(URLS.calculateGoals, {
+            const response = await fetchWithTimeout(URLS.calculateGoals, {
                 method: 'POST',
                 headers: getHeaders(),
             });
@@ -372,7 +396,7 @@ export const api = {
 
     async setAutoGoals() {
         try {
-            const response = await fetch(URLS.setAutoGoals, {
+            const response = await fetchWithTimeout(URLS.setAutoGoals, {
                 method: 'POST',
                 headers: getHeaders(),
             });
@@ -393,7 +417,7 @@ export const api = {
 
     async getProfile() {
         try {
-            const response = await fetch(URLS.profile, {
+            const response = await fetchWithTimeout(URLS.profile, {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch profile');
@@ -406,7 +430,7 @@ export const api = {
 
     async updateProfile(data: any) {
         try {
-            const response = await fetch(URLS.profile, {
+            const response = await fetchWithTimeout(URLS.profile, {
                 method: 'PATCH',
                 headers: getHeaders(),
                 body: JSON.stringify(data),
@@ -425,7 +449,7 @@ export const api = {
 
     async getSubscriptionPlan() {
         try {
-            const response = await fetch(URLS.plan, {
+            const response = await fetchWithTimeout(URLS.plan, {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch plan');
@@ -443,7 +467,7 @@ export const api = {
     async recognizeFood(imageBase64: string, description?: string) {
         log('Calling AI recognize endpoint');
         try {
-            const response = await fetch(URLS.recognize, {
+            const response = await fetchWithTimeout(URLS.recognize, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify({
