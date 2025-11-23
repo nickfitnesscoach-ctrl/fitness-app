@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 from functools import wraps
 from typing import Dict, Optional
 from urllib.parse import parse_qsl
@@ -27,7 +28,12 @@ def _forbidden_response():
     return HttpResponseForbidden("Нет доступа")
 
 
-def validate_init_data(raw_init_data: str, bot_token: str) -> Optional[Dict[str, str]]:
+def validate_init_data(
+    raw_init_data: str,
+    bot_token: str,
+    *,
+    max_age_seconds: int = 86400,
+) -> Optional[Dict[str, str]]:
     """
     Validate Telegram WebApp initData signature according to official docs.
 
@@ -47,6 +53,14 @@ def validate_init_data(raw_init_data: str, bot_token: str) -> Optional[Dict[str,
     received_hash = parsed_data.pop("hash", None)
     if not received_hash:
         return None
+
+    if max_age_seconds:
+        try:
+            auth_date = int(parsed_data.get("auth_date", "0"))
+            if auth_date and time.time() - auth_date > max_age_seconds:
+                return None
+        except (TypeError, ValueError):
+            return None
 
     data_check_string = "\n".join(
         f"{key}={value}" for key, value in sorted(parsed_data.items(), key=lambda item: item[0])

@@ -1,12 +1,81 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { ClipboardList, Users, LayoutDashboard } from 'lucide-react';
-import { isTelegramWebAppAvailable } from '../lib/telegram';
+import { initTelegramWebApp, isTelegramWebAppAvailable } from '../lib/telegram';
+import { api, type TrainerPanelAuthResponse } from '../services/api';
 
 const Layout = () => {
     const isTelegramContext = useMemo(() => isTelegramWebAppAvailable(), []);
+    const [authState, setAuthState] = useState<{
+        loading: boolean;
+        error: string | null;
+        user: TrainerPanelAuthResponse['user'] | null;
+    }>({
+        loading: true,
+        error: null,
+        user: null,
+    });
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const authorize = async () => {
+            // Быстро отсекаем прямые заходы
+            if (!isTelegramWebAppAvailable()) {
+                if (isMounted) {
+                    setAuthState({ loading: false, error: 'Нет доступа', user: null });
+                }
+                return;
+            }
+
+            const tgData = await initTelegramWebApp();
+            if (!tgData) {
+                if (isMounted) {
+                    setAuthState({ loading: false, error: 'Нет доступа', user: null });
+                }
+                return;
+            }
+
+            try {
+                const response = await api.trainerPanelAuth(tgData.initData);
+                if (isMounted) {
+                    setAuthState({ loading: false, error: null, user: response.user });
+                }
+            } catch (error) {
+                console.error('[TrainerPanel] Auth failed', error);
+                if (isMounted) {
+                    setAuthState({ loading: false, error: 'Нет доступа', user: null });
+                }
+            }
+        };
+
+        authorize();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     if (!isTelegramContext) {
+        return (
+            <div className="no-access">
+                <h1>Нет доступа</h1>
+                <p>Панель тренера доступна только из Telegram-бота.</p>
+                <p>Откройте бота и нажмите «📱 Открыть панель тренера».</p>
+            </div>
+        );
+    }
+
+    if (authState.loading) {
+        return (
+            <div className="no-access">
+                <h1>Загрузка...</h1>
+                <p>Проверяем доступ через Telegram.</p>
+            </div>
+        );
+    }
+
+    if (authState.error) {
         return (
             <div className="no-access">
                 <h1>Нет доступа</h1>

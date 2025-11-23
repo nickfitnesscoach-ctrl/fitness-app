@@ -2,17 +2,25 @@
 Views for Telegram integration.
 """
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
+import json
+
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.http import JsonResponse
 from drf_spectacular.utils import extend_schema, OpenApiResponse
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .authentication import TelegramWebAppAuthentication
-from .telegram_auth import TelegramAdminPermission, telegram_admin_required
+from .telegram_auth import (
+    TelegramAdminPermission,
+    get_user_id_from_init_data,
+    telegram_admin_required,
+    validate_init_data,
+)
 from .models import TelegramUser
 from .serializers import (
     TelegramAuthSerializer,
@@ -28,6 +36,51 @@ def trainer_admin_panel(request):
     """Simple admin panel endpoint protected by Telegram WebApp validation."""
 
     return JsonResponse({"ok": True, "section": "trainer_panel", "user_id": request.telegram_user_id})
+
+
+@extend_schema(tags=["TrainerPanel"])
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def trainer_panel_auth(request):
+    """Validate Telegram WebApp initData and ensure the user is an admin."""
+
+    raw_init_data = (
+        request.data.get("initData")
+        or request.headers.get("X-Telegram-Init-Data")
+        or request.headers.get("X_TG_INIT_DATA")
+    )
+
+    if not raw_init_data:
+        return Response({"detail": "initData is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    parsed_data = validate_init_data(raw_init_data, settings.TELEGRAM_BOT_TOKEN)
+    if not parsed_data:
+        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
+
+    user_id = get_user_id_from_init_data(parsed_data)
+    if user_id is None or user_id not in settings.TELEGRAM_ADMINS:
+        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        user_payload = json.loads(parsed_data.get("user", "{}"))
+    except json.JSONDecodeError:
+        user_payload = {}
+
+    auth_date = parsed_data.get("auth_date")
+    auth_timestamp = int(auth_date) if auth_date and str(auth_date).isdigit() else None
+
+    return Response(
+        {
+            "user": {
+                "id": user_payload.get("id"),
+                "username": user_payload.get("username"),
+                "first_name": user_payload.get("first_name"),
+                "last_name": user_payload.get("last_name"),
+            },
+            "auth_date": auth_timestamp,
+            "telegram_user_id": user_id,
+        }
+    )
 
 
 @extend_schema(tags=['Telegram'])
