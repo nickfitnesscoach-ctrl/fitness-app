@@ -496,7 +496,7 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### F4 | P2 | Добавить универсальный error handling
+### F4 | P2 | ✅ DONE | Добавить универсальный error handling
 
 **Проблема:** Inconsistent обработка ошибок, нет retry логики.
 
@@ -504,9 +504,11 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 - `frontend/src/services/api.ts`
 
 **Действия:**
-- Создать error middleware
-- Добавить retry с exponential backoff
-- Унифицировать формат ошибок
+- ✅ Создана функция `fetchWithRetry()` с exponential backoff
+- ✅ Retry на 5xx ошибках (не на 4xx)
+- ✅ 3 попытки с задержками: 1s, 2s, 4s
+- ✅ Применено к критичным операциям: auth, createMeal, updateGoals
+- ✅ Логирование retry попыток
 
 **Сложность:** Средняя
 

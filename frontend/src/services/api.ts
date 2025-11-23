@@ -13,6 +13,8 @@ import { buildTelegramHeaders, getTelegramDebugInfo } from '../lib/telegram';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 const API_TIMEOUT = 30000; // 30 seconds
+const API_RETRY_ATTEMPTS = 3; // Number of retry attempts
+const API_RETRY_DELAY = 1000; // Initial delay between retries (ms)
 
 const URLS = {
     // Telegram endpoints
@@ -67,7 +69,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-        const response = await fetchWithTimeout(url, {
+        const response = await fetch(url, {
             ...options,
             signal: controller.signal,
         });
@@ -80,6 +82,53 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
         }
         throw error;
     }
+};
+
+/**
+ * Fetch с retry и exponential backoff
+ * Автоматически повторяет запрос при ошибках сети и 5xx
+ */
+const fetchWithRetry = async (
+    url: string,
+    options: RequestInit = {},
+    retries = API_RETRY_ATTEMPTS
+): Promise<Response> => {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const response = await fetchWithTimeout(url, options);
+
+            // Успешный ответ или клиентская ошибка (4xx) - не retry
+            if (response.ok || (response.status >= 400 && response.status < 500)) {
+                return response;
+            }
+
+            // 5xx ошибка - retry
+            if (attempt < retries) {
+                const delay = API_RETRY_DELAY * Math.pow(2, attempt); // Exponential backoff
+                log(`Retry ${attempt + 1}/${retries} after ${delay}ms for ${url} (status: ${response.status})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+            }
+
+            return response; // Last attempt, return error response
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+
+            // Последняя попытка - бросаем ошибку
+            if (attempt >= retries) {
+                throw lastError;
+            }
+
+            // Retry после задержки
+            const delay = API_RETRY_DELAY * Math.pow(2, attempt);
+            log(`Network error, retry ${attempt + 1}/${retries} after ${delay}ms: ${lastError.message}`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+
+    throw lastError || new Error('Unknown error');
 };
 
 // ============================================================
@@ -132,7 +181,7 @@ export const api = {
     async authenticate(initData: string) {
         log('Authenticating with Telegram initData');
         try {
-            const response = await fetchWithTimeout(URLS.auth, {
+            const response = await fetchWithRetry(URLS.auth, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -292,7 +341,7 @@ export const api = {
 
     async createMeal(data: any) {
         try {
-            const response = await fetchWithTimeout(URLS.meals, {
+            const response = await fetchWithRetry(URLS.meals, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify(data),
@@ -347,7 +396,7 @@ export const api = {
         log('Updating goals: ' + JSON.stringify(data));
 
         try {
-            const response = await fetchWithTimeout(URLS.goals, {
+            const response = await fetchWithRetry(URLS.goals, {
                 method: 'PUT',
                 headers: getHeaders(),
                 body: JSON.stringify({
