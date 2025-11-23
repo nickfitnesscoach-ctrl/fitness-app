@@ -19,7 +19,7 @@ const InviteClientPage = () => {
         <div className="space-y-6 pb-20">
             {/* Header */}
             <div className="flex items-center justify-between">
-                <button onClick={() => navigate('/admin/clients')} className="p-2 -ml-2 text-gray-600">
+                <button onClick={() => navigate('/panel/clients')} className="p-2 -ml-2 text-gray-600">
                     <ArrowLeft size={24} />
                 </button>
                 <h1 className="text-xl font-bold">Пригласить клиента</h1>

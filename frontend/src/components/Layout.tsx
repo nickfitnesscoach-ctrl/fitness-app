@@ -93,7 +93,7 @@ const Layout = () => {
 
             <nav className="bg-white border-t border-gray-200 px-6 py-3 flex justify-around items-center shadow-lg z-10">
                 <NavLink
-                    to="/"
+                    to="/panel"
                     className={({ isActive }) =>
                         `flex flex-col items-center gap-1 text-xs font-medium transition-colors ${isActive ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
                         }`
@@ -104,7 +104,7 @@ const Layout = () => {
                 </NavLink>
 
                 <NavLink
-                    to="/applications"
+                    to="/panel/applications"
                     className={({ isActive }) =>
                         `flex flex-col items-center gap-1 text-xs font-medium transition-colors ${isActive ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
                         }`
@@ -115,7 +115,7 @@ const Layout = () => {
                 </NavLink>
 
                 <NavLink
-                    to="/clients"
+                    to="/panel/clients"
                     className={({ isActive }) =>
                         `flex flex-col items-center gap-1 text-xs font-medium transition-colors ${isActive ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
                         }`

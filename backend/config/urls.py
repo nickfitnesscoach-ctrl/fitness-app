@@ -66,7 +66,7 @@ def basic_auth_required(view_func):
 
 urlpatterns = [
     # Admin
-    path("admin/", admin.site.urls),
+    path("dj-admin/", admin.site.urls),
 
     # Health checks (for monitoring and Kubernetes probes)
     path("health/", health_check, name="health"),

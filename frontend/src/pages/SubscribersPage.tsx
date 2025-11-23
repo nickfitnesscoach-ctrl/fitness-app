@@ -71,7 +71,7 @@ const SubscribersPage: React.FC = () => {
             {/* Header */}
             <div className="bg-white border-b sticky top-0 z-10">
                 <div className="flex items-center gap-3 p-4">
-                    <button onClick={() => navigate('/admin')} className="p-2 hover:bg-gray-100 rounded-full">
+                    <button onClick={() => navigate('/panel')} className="p-2 hover:bg-gray-100 rounded-full">
                         <ArrowLeft size={20} />
                     </button>
                     <h1 className="text-xl font-bold">Подписчики</h1>

@@ -129,7 +129,7 @@ def telegram_admin_required(view_func):
 class TelegramAdminOnlyMiddleware(MiddlewareMixin):
     """Middleware to restrict Django admin endpoints to Telegram WebApp admins only."""
 
-    protected_prefixes = ("/admin/", "/admin")
+    protected_prefixes = ("/dj-admin/", "/dj-admin")
 
     def process_request(self, request):  # noqa: D401 - middleware hook
         path = request.path.rstrip("/") or "/"

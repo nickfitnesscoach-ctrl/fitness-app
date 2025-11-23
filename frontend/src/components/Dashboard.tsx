@@ -14,7 +14,7 @@ export const Dashboard: React.FC = () => {
             <div className="panel-grid flex flex-wrap justify-center items-center gap-6">
                 <button
                     className="panel-card flex flex-col items-center justify-center p-5 bg-white border border-gray-200 rounded-2xl shadow-sm hover:scale-105 transition-transform w-52 h-52"
-                    onClick={() => navigate('/admin/clients')}
+                    onClick={() => navigate('/panel/clients')}
                 >
                     <div className="icon-wrapper blue w-16 h-16 rounded-full flex items-center justify-center text-white bg-blue-600 mb-4">
                         <Users size={32} />
@@ -24,7 +24,7 @@ export const Dashboard: React.FC = () => {
 
                 <button
                     className="panel-card flex flex-col items-center justify-center p-5 bg-white border border-gray-200 rounded-2xl shadow-sm hover:scale-105 transition-transform w-52 h-52"
-                    onClick={() => navigate('/admin/applications')}
+                    onClick={() => navigate('/panel/applications')}
                 >
                     <div className="icon-wrapper blue w-16 h-16 rounded-full flex items-center justify-center text-white bg-blue-600 mb-4">
                         <ClipboardList size={32} />
@@ -34,7 +34,7 @@ export const Dashboard: React.FC = () => {
 
                 <button
                     className="panel-card flex flex-col items-center justify-center p-5 bg-white border border-gray-200 rounded-2xl shadow-sm hover:scale-105 transition-transform w-52 h-52"
-                    onClick={() => navigate('/admin/subscribers')}
+                    onClick={() => navigate('/panel/subscribers')}
                 >
                     <div className="icon-wrapper w-16 h-16 rounded-full flex items-center justify-center text-white bg-gradient-to-br from-yellow-500 to-orange-500 mb-4">
                         <Crown size={32} />

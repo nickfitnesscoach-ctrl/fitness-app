@@ -64,7 +64,7 @@ def build_start_keyboard(*, is_admin: bool, panel_url: str | None) -> InlineKeyb
 
     if is_admin:
         if panel_url:
-            web_app_url = f"{panel_url.rstrip('/')}/admin/"
+            web_app_url = f"{panel_url.rstrip('/')}/panel/"
             panel_button = InlineKeyboardButton(
                 text="📟 Открыть панель тренера",
                 web_app=WebAppInfo(url=web_app_url),
