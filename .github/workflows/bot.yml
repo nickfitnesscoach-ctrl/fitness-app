@@ -152,8 +152,8 @@ jobs:
           port: 22
           script: |
             cd /opt/foodmind
-            docker ps | grep bot
-            docker logs --tail 50 $(docker ps -qf "name=bot")
+            docker ps | grep fm-bot
+            docker logs --tail 50 fm-bot
             echo "✅ Bot container is running"
 
       - name: Send notification

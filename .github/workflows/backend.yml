@@ -146,9 +146,9 @@ jobs:
             cd /opt/foodmind
 
             # Check container is running
-            if ! docker ps | grep -q backend; then
+            if ! docker ps | grep -q fm-backend; then
               echo "❌ Backend container not running!"
-              docker logs backend --tail 50
+              docker logs fm-backend --tail 50
               exit 1
             fi
             echo "✅ Container is running"
@@ -163,6 +163,6 @@ jobs:
               echo "✅ Backend health check passed"
             else
               echo "❌ Backend health check failed!"
-              docker logs backend --tail 50
+              docker logs fm-backend --tail 50
               exit 1
             fi

@@ -97,5 +97,5 @@ jobs:
           port: 22
           script: |
             cd /opt/foodmind
-            docker ps | grep frontend
+            docker ps | grep fm-frontend
             echo "✅ Frontend container is running"
