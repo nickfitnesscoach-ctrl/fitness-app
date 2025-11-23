@@ -2,8 +2,6 @@
 Views for Telegram integration.
 """
 
-import json
-
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.http import JsonResponse
@@ -45,40 +43,34 @@ def trainer_panel_auth(request):
     """Validate Telegram WebApp initData and ensure the user is an admin."""
 
     raw_init_data = (
-        request.data.get("initData")
+        request.data.get("init_data")
+        or request.data.get("initData")
         or request.headers.get("X-Telegram-Init-Data")
         or request.headers.get("X_TG_INIT_DATA")
     )
 
     if not raw_init_data:
-        return Response({"detail": "initData is required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
 
     parsed_data = validate_init_data(raw_init_data, settings.TELEGRAM_BOT_TOKEN)
     if not parsed_data:
         return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
 
     user_id = get_user_id_from_init_data(parsed_data)
-    if user_id is None or user_id not in settings.TELEGRAM_ADMINS:
+    admins = getattr(settings, "TELEGRAM_ADMINS", set()) or set()
+    if isinstance(admins, set):
+        admin_ids = admins
+    else:
+        admin_ids = {int(admin) for admin in admins}
+
+    if user_id is None or user_id not in admin_ids:
         return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
-
-    try:
-        user_payload = json.loads(parsed_data.get("user", "{}"))
-    except json.JSONDecodeError:
-        user_payload = {}
-
-    auth_date = parsed_data.get("auth_date")
-    auth_timestamp = int(auth_date) if auth_date and str(auth_date).isdigit() else None
 
     return Response(
         {
-            "user": {
-                "id": user_payload.get("id"),
-                "username": user_payload.get("username"),
-                "first_name": user_payload.get("first_name"),
-                "last_name": user_payload.get("last_name"),
-            },
-            "auth_date": auth_timestamp,
-            "telegram_user_id": user_id,
+            "ok": True,
+            "user_id": user_id,
+            "role": "admin",
         }
     )
 

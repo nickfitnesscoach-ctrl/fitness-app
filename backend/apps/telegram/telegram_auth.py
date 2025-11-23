@@ -134,6 +134,8 @@ class TelegramAdminOnlyMiddleware(MiddlewareMixin):
     def process_request(self, request):  # noqa: D401 - middleware hook
         path = request.path.rstrip("/") or "/"
         if any(path == prefix.rstrip("/") or path.startswith(prefix) for prefix in self.protected_prefixes):
+            if request.method in {"GET", "HEAD"}:
+                return None
             if not _is_telegram_admin(request):
                 return _forbidden_response()
         return None

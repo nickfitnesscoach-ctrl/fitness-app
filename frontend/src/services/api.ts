@@ -8,14 +8,9 @@
 import { buildTelegramHeaders, getTelegramDebugInfo } from '../lib/telegram';
 
 export interface TrainerPanelAuthResponse {
-    user: {
-        id?: number;
-        username?: string;
-        first_name?: string;
-        last_name?: string;
-    } | null;
-    telegram_user_id: number;
-    auth_date?: number | null;
+    ok: boolean;
+    user_id: number;
+    role: 'admin';
 }
 
 // ============================================================
@@ -23,7 +18,7 @@ export interface TrainerPanelAuthResponse {
 // ============================================================
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
-const TRAINER_PANEL_AUTH_URL = import.meta.env.VITE_TRAINER_PANEL_AUTH_URL || '/api/trainer-panel/auth/';
+const TRAINER_PANEL_AUTH_URL = import.meta.env.VITE_TRAINER_PANEL_AUTH_URL || '/api/v1/trainer-panel/auth/';
 const API_TIMEOUT = 30000; // 30 seconds
 const API_RETRY_ATTEMPTS = 3; // Number of retry attempts
 const API_RETRY_DELAY = 1000; // Initial delay between retries (ms)
@@ -228,9 +223,8 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Telegram-Init-Data': initData,
             },
-            body: JSON.stringify({ initData }),
+            body: JSON.stringify({ init_data: initData }),
         });
 
         if (!response.ok) {

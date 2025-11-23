@@ -3,7 +3,13 @@
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    WebAppInfo,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.config import settings
@@ -24,6 +30,11 @@ from app.utils.logger import logger
 router = Router(name="survey_commands")
 
 
+def is_admin(user_id: int) -> bool:
+    """Проверяет, является ли пользователь администратором."""
+    return user_id in settings.admin_ids
+
+
 def build_start_message(*, is_admin: bool, panel_url: str | None) -> str:
     """Формирует текст стартового сообщения."""
     if not is_admin:
@@ -42,31 +53,37 @@ def build_start_message(*, is_admin: bool, panel_url: str | None) -> str:
     return "\n\n".join(parts)
 
 
-def build_start_keyboard(*, is_admin: bool, panel_url: str | None):
+def build_start_keyboard(*, is_admin: bool, panel_url: str | None) -> InlineKeyboardMarkup:
     """Формирует клавиатуру стартового сообщения."""
     builder = InlineKeyboardBuilder()
 
     start_button_text = START_SURVEY_BUTTON_ADMIN if is_admin else START_SURVEY_BUTTON_USER
-    builder.row(InlineKeyboardButton(text=start_button_text, callback_data="survey:start"))
-
-    if is_admin and panel_url:
-        from aiogram.types import WebAppInfo
-
-        panel_button = InlineKeyboardButton(
-            text="📟 Открыть панель тренера",
-            web_app=WebAppInfo(url=panel_url),
-        )
-        builder.row(panel_button)
-        logger.info("[START] Добавлена WebApp кнопка панели тренера: %s", panel_url)
-
     builder.row(
-        InlineKeyboardButton(
-            text="✉️ Написать тренеру",
-            url=f"https://t.me/{settings.TRAINER_USERNAME}",
-        )
+        InlineKeyboardButton(text=start_button_text, callback_data="survey:start")
     )
 
-    logger.info("[START] Сформирована клавиатура: is_admin=%s, panel_button=%s", is_admin, bool(panel_url and is_admin))
+    if is_admin:
+        if panel_url:
+            web_app_url = f"{panel_url.rstrip('/')}/admin/"
+            panel_button = InlineKeyboardButton(
+                text="📟 Открыть панель тренера",
+                web_app=WebAppInfo(url=web_app_url),
+            )
+            builder.row(panel_button)
+            logger.info("[START] Добавлена WebApp кнопка панели тренера: %s", web_app_url)
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="✉️ Написать тренеру",
+                url=f"https://t.me/{settings.TRAINER_USERNAME}",
+            )
+        )
+
+    logger.info(
+        "[START] Сформирована клавиатура: is_admin=%s, panel_button=%s",
+        is_admin,
+        bool(panel_url and is_admin),
+    )
     return builder.as_markup()
 
 
@@ -76,11 +93,8 @@ async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     logger.info("[START] Пользователь %s вызвал /start", user_id)
 
-    is_admin = user_id in settings.admin_ids
-    panel_url = None
-    if settings.TRAINER_PANEL_BASE_URL:
-        base_url = settings.TRAINER_PANEL_BASE_URL.rstrip("/")
-        panel_url = f"{base_url}/admin/"
+    admin_user = is_admin(user_id)
+    panel_url = settings.TRAINER_PANEL_BASE_URL.rstrip("/") if settings.TRAINER_PANEL_BASE_URL else None
     logger.info(
         "[START] Данные окружения: TRAINER_PANEL_BASE_URL=%s, WEB_APP_URL=%s, admin_ids=%s",
         settings.TRAINER_PANEL_BASE_URL,
@@ -88,8 +102,8 @@ async def cmd_start(message: Message, state: FSMContext):
         settings.admin_ids,
     )
 
-    text = build_start_message(is_admin=is_admin, panel_url=panel_url)
-    keyboard = build_start_keyboard(is_admin=is_admin, panel_url=panel_url)
+    text = build_start_message(is_admin=admin_user, panel_url=panel_url)
+    keyboard = build_start_keyboard(is_admin=admin_user, panel_url=panel_url)
 
     await message.answer(
         text,

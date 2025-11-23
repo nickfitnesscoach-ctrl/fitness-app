@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str
     BOT_ADMIN_ID: Optional[int] = None
     ADMIN_IDS: Optional[str] = None
+    TELEGRAM_ADMINS: Optional[str] = None
 
     # Database
     DB_HOST: str = "localhost"
@@ -106,11 +107,15 @@ class Settings(BaseSettings):
 
     @property
     def admin_ids(self) -> list[int]:
-        """Возвращает список ID админов из окружения (ADMIN_IDS или BOT_ADMIN_ID)."""
+        """Возвращает список ID админов из окружения (TELEGRAM_ADMINS/ADMIN_IDS/BOT_ADMIN_ID)."""
         ids: list[int] = []
 
-        if self.ADMIN_IDS:
-            for raw_id in self.ADMIN_IDS.split(','):
+        admin_sources = [self.TELEGRAM_ADMINS, self.ADMIN_IDS]
+        for admin_list in admin_sources:
+            if not admin_list:
+                continue
+
+            for raw_id in admin_list.split(','):
                 raw_id = raw_id.strip()
                 if not raw_id:
                     continue

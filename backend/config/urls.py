@@ -70,6 +70,7 @@ urlpatterns = [
 
     # Health checks (for monitoring and Kubernetes probes)
     path("health/", health_check, name="health"),
+    path("api/v1/health/", health_check, name="health-v1"),
     path("ready/", readiness_check, name="readiness"),
     path("live/", liveness_check, name="liveness"),
 
@@ -81,7 +82,8 @@ urlpatterns = [
     path("api/v1/telegram/", include("apps.telegram.urls")),
 
     # Trainer panel WebApp auth (Telegram-only)
-    path("api/trainer-panel/auth/", telegram_views.trainer_panel_auth, name="trainer-panel-auth"),
+    path("api/v1/trainer-panel/auth/", telegram_views.trainer_panel_auth, name="trainer-panel-auth"),
+    path("api/trainer-panel/auth/", telegram_views.trainer_panel_auth),  # legacy alias
 
     # API Schema and Documentation (protected with Basic Auth)
     path("api/schema/", basic_auth_required(SpectacularAPIView.as_view()), name="schema"),

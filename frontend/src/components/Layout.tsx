@@ -2,18 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { ClipboardList, Users, LayoutDashboard } from 'lucide-react';
 import { initTelegramWebApp, isTelegramWebAppAvailable } from '../lib/telegram';
-import { api, type TrainerPanelAuthResponse } from '../services/api';
+import { api } from '../services/api';
 
 const Layout = () => {
     const isTelegramContext = useMemo(() => isTelegramWebAppAvailable(), []);
     const [authState, setAuthState] = useState<{
         loading: boolean;
         error: string | null;
-        user: TrainerPanelAuthResponse['user'] | null;
+        userId: number | null;
     }>({
         loading: true,
         error: null,
-        user: null,
+        userId: null,
     });
 
     useEffect(() => {
@@ -23,7 +23,7 @@ const Layout = () => {
             // Быстро отсекаем прямые заходы
             if (!isTelegramWebAppAvailable()) {
                 if (isMounted) {
-                    setAuthState({ loading: false, error: 'Нет доступа', user: null });
+                    setAuthState({ loading: false, error: 'Нет доступа', userId: null });
                 }
                 return;
             }
@@ -31,7 +31,7 @@ const Layout = () => {
             const tgData = await initTelegramWebApp();
             if (!tgData) {
                 if (isMounted) {
-                    setAuthState({ loading: false, error: 'Нет доступа', user: null });
+                    setAuthState({ loading: false, error: 'Нет доступа', userId: null });
                 }
                 return;
             }
@@ -39,12 +39,12 @@ const Layout = () => {
             try {
                 const response = await api.trainerPanelAuth(tgData.initData);
                 if (isMounted) {
-                    setAuthState({ loading: false, error: null, user: response.user });
+                    setAuthState({ loading: false, error: null, userId: response.user_id });
                 }
             } catch (error) {
                 console.error('[TrainerPanel] Auth failed', error);
                 if (isMounted) {
-                    setAuthState({ loading: false, error: 'Нет доступа', user: null });
+                    setAuthState({ loading: false, error: 'Нет доступа', userId: null });
                 }
             }
         };
