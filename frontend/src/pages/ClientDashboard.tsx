@@ -41,18 +41,35 @@ const ClientDashboard: React.FC = () => {
     const [meals, setMeals] = useState<Meal[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [telegramWarning, setTelegramWarning] = useState<string | null>(null);
+    const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean | null>(null);
 
     const today = new Date().toISOString().split('T')[0];
 
     // Check Telegram WebApp availability
     useEffect(() => {
-        const debugInfo = api.getDebugInfo();
-        if (!debugInfo.webAppExists) {
+        const tg = (window as any).Telegram?.WebApp;
+
+        if (tg) {
+            try {
+                tg.ready?.();
+            } catch (error) {
+                console.warn('Telegram WebApp ready error', error);
+            }
+            setIsTelegramWebApp(true);
+            setTelegramWarning(null);
+        } else {
+            setIsTelegramWebApp(false);
             setTelegramWarning('Приложение открыто вне Telegram. Для полной функциональности откройте через бота.');
-        } else if (!debugInfo.telegramId || debugInfo.telegramId === '123456789') {
-            setTelegramWarning(`Учетные данные не были предоставлены. Telegram ID: ${debugInfo.telegramId || 'null'}`);
         }
     }, []);
+
+    useEffect(() => {
+        console.log('KBJU WebApp env:', {
+            hasTelegram: !!(window as any).Telegram,
+            hasWebApp: !!(window as any).Telegram?.WebApp,
+            isTelegramWebApp,
+        });
+    }, [isTelegramWebApp]);
 
     useEffect(() => {
         loadDashboardData();
