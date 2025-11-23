@@ -7,11 +7,23 @@
 
 import { buildTelegramHeaders, getTelegramDebugInfo } from '../lib/telegram';
 
+export interface TrainerPanelAuthResponse {
+    user: {
+        id?: number;
+        username?: string;
+        first_name?: string;
+        last_name?: string;
+    } | null;
+    telegram_user_id: number;
+    auth_date?: number | null;
+}
+
 // ============================================================
 // API URL Configuration
 // ============================================================
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+const TRAINER_PANEL_AUTH_URL = import.meta.env.VITE_TRAINER_PANEL_AUTH_URL || '/api/trainer-panel/auth/';
 const API_TIMEOUT = 30000; // 30 seconds
 const API_RETRY_ATTEMPTS = 3; // Number of retry attempts
 const API_RETRY_DELAY = 1000; // Initial delay between retries (ms)
@@ -19,6 +31,7 @@ const API_RETRY_DELAY = 1000; // Initial delay between retries (ms)
 const URLS = {
     // Telegram endpoints
     auth: `${API_BASE}/telegram/auth/`,
+    trainerPanelAuth: TRAINER_PANEL_AUTH_URL,
     applications: `${API_BASE}/telegram/applications/`,
     clients: `${API_BASE}/telegram/clients/`,
     inviteLink: `${API_BASE}/telegram/invite-link/`,
@@ -206,6 +219,27 @@ export const api = {
             console.error('Authentication error:', error);
             throw error;
         }
+    },
+
+    async trainerPanelAuth(initData: string): Promise<TrainerPanelAuthResponse> {
+        log('Authorizing trainer panel via Telegram WebApp');
+
+        const response = await fetchWithRetry(URLS.trainerPanelAuth, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': initData,
+            },
+            body: JSON.stringify({ initData }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const detail = (errorData as { detail?: string }).detail;
+            throw new Error(detail || `Trainer panel auth failed (${response.status})`);
+        }
+
+        return response.json() as Promise<TrainerPanelAuthResponse>;
     },
 
     // ========================================================

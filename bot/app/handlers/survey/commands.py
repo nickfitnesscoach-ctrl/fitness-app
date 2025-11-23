@@ -52,18 +52,12 @@ def build_start_keyboard(*, is_admin: bool, panel_url: str | None):
     if is_admin and panel_url:
         from aiogram.types import WebAppInfo
 
-        use_web_app = bool(settings.WEB_APP_URL)
         panel_button = InlineKeyboardButton(
             text="📟 Открыть панель тренера",
-            web_app=WebAppInfo(url=panel_url) if use_web_app else None,
-            url=None if use_web_app else panel_url,
+            web_app=WebAppInfo(url=panel_url),
         )
         builder.row(panel_button)
-        logger.info(
-            "[START] Добавлена кнопка панели тренера (web_app=%s, url=%s)",
-            use_web_app,
-            panel_url,
-        )
+        logger.info("[START] Добавлена WebApp кнопка панели тренера: %s", panel_url)
 
     builder.row(
         InlineKeyboardButton(
@@ -83,11 +77,10 @@ async def cmd_start(message: Message, state: FSMContext):
     logger.info("[START] Пользователь %s вызвал /start", user_id)
 
     is_admin = user_id in settings.admin_ids
-    panel_url = (
-        f"{settings.TRAINER_PANEL_BASE_URL.rstrip('/')}/admin"
-        if settings.TRAINER_PANEL_BASE_URL
-        else None
-    )
+    panel_url = None
+    if settings.TRAINER_PANEL_BASE_URL:
+        base_url = settings.TRAINER_PANEL_BASE_URL.rstrip("/")
+        panel_url = f"{base_url}/admin/"
     logger.info(
         "[START] Данные окружения: TRAINER_PANEL_BASE_URL=%s, WEB_APP_URL=%s, admin_ids=%s",
         settings.TRAINER_PANEL_BASE_URL,

@@ -13,6 +13,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 from apps.common.views import health_check, readiness_check, liveness_check
+from apps.telegram import views as telegram_views
 import base64
 import os
 
@@ -78,6 +79,9 @@ urlpatterns = [
     path("api/v1/billing/", include("apps.billing.urls")),
     path("api/v1/ai/", include("apps.ai.urls")),
     path("api/v1/telegram/", include("apps.telegram.urls")),
+
+    # Trainer panel WebApp auth (Telegram-only)
+    path("api/trainer-panel/auth/", telegram_views.trainer_panel_auth, name="trainer-panel-auth"),
 
     # API Schema and Documentation (protected with Basic Auth)
     path("api/schema/", basic_auth_required(SpectacularAPIView.as_view()), name="schema"),
