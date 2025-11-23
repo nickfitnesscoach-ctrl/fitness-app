@@ -1,5 +1,8 @@
 # FoodMind - Unified Docker Compose for all services
 # Production-ready configuration for Backend, Bot, and Frontend
+#
+# IMPORTANT: Create a .env file in the project root with all required variables
+# All services read environment variables from the root .env file (no separate env files needed)
 
 version: "3.9"
 
@@ -35,11 +38,23 @@ services:
       - ./backend/staticfiles:/app/staticfiles
       - ./backend/media:/app/media
       - ./backend/logs:/app/logs
-
-    env_file:
-      - ./backend/.env
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.production
+      - POSTGRES_DB=${POSTGRES_DB:-foodmind}
+      - POSTGRES_USER=${POSTGRES_USER:-foodmind}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - BOT_ADMIN_ID=${BOT_ADMIN_ID}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - TELEGRAM_ADMINS=${TELEGRAM_ADMINS}
+      - SWAGGER_AUTH_USERNAME=${SWAGGER_AUTH_USERNAME:-admin}
+      - SWAGGER_AUTH_PASSWORD=${SWAGGER_AUTH_PASSWORD}
     depends_on:
       db:
         condition: service_healthy
@@ -59,13 +74,16 @@ services:
       context: ./bot
       dockerfile: Dockerfile
     container_name: fm-bot
-    env_file:
-      - ./bot/.env
     environment:
       - ENVIRONMENT=production
       - DB_HOST=db
       - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB:-foodmind}
       - DB_USER=${POSTGRES_USER:-foodmind}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - BOT_ADMIN_ID=${BOT_ADMIN_ID}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -85,8 +103,6 @@ services:
     container_name: fm-frontend
     ports:
       - "80:80"
-    env_file:
-      - ./frontend/.env
     networks:
       - backend-net
     restart: unless-stopped
