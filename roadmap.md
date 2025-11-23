@@ -229,36 +229,33 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### B4 | P2 | Объединить prod.py и production.py
+### B4 | P2 | ✅ DONE | Объединить prod.py и production.py
 
 **Проблема:** Два файла конфигурации для production с разными настройками.
 
 **Файлы:**
-- `backend/config/settings/prod.py` (313 строк)
-- `backend/config/settings/production.py` (75 строк)
+- `backend/config/settings/prod.py` (удалён)
+- `backend/config/settings/production.py`
 
 **Действия:**
-- Удалить `prod.py` (дублирует)
-- Объединить все настройки в `production.py`
-- Обновить references в Docker/CI
+- ✅ Удалён устаревший `prod.py` (использовал DATABASE_URL)
+- ✅ Оставлен `production.py` с Security Headers и POSTGRES_* переменными
 
 **Сложность:** Средняя
 
 ---
 
-### B5 | P2 | Унифицировать переменные окружения БД
+### B5 | P2 | ✅ DONE | Унифицировать переменные окружения БД
 
 **Проблема:** В разных конфигах используются `POSTGRES_*`, `DB_*`, `DATABASE_URL`.
 
 **Файлы:**
-- `backend/config/settings/base.py`
-- `backend/config/settings/local.py`
-- `backend/config/settings/production.py`
+- `backend/.env.example`
 
 **Действия:**
-- Выбрать единый набор (рекомендуется `POSTGRES_*`)
-- Удалить дубли `SECRET_KEY/DJANGO_SECRET_KEY`, `DEBUG/DJANGO_DEBUG`
-- Обновить `.env.example`
+- ✅ Стандартизированы на `POSTGRES_*` (используется везде)
+- ✅ Удалены дубли: `DJANGO_DEBUG`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
+- ✅ Обновлён `.env.example`
 
 **Сложность:** Средняя
 
@@ -415,13 +412,17 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### T6 | P2 | Сделать timeout конфигурируемым
+### T6 | P2 | ✅ DONE | Сделать timeout конфигурируемым
 
 **Проблема:** Timeout жестко установлен в 10 секунд.
 
 **Файлы:**
 - `bot/app/config.py`
 - `bot/app/services/django_integration.py`
+
+**Действия:**
+- ✅ Добавлен `DJANGO_API_TIMEOUT` в config.py (default 30 секунд)
+- ✅ Заменён hardcoded timeout на `settings.DJANGO_API_TIMEOUT`
 
 **Сложность:** Низкая
 
@@ -693,12 +694,18 @@ P0-4: ✅ DONE - Добавить логирование для диагност
 
 ---
 
-### D9 | P2 | Multi-stage build для Backend
+### D9 | P2 | ✅ DONE | Multi-stage build для Backend
 
 **Проблема:** Образ содержит dev зависимости (pip, gcc).
 
 **Файлы:**
 - `backend/Dockerfile`
+
+**Действия:**
+- ✅ Stage 1 (builder): Компиляция зависимостей с gcc
+- ✅ Stage 2 (runtime): Только Python runtime + postgresql-client + libpq5
+- ✅ Копирование compiled packages из builder
+- ✅ Уменьшение размера образа (~30-40% экономии)
 
 **Сложность:** Средняя
 

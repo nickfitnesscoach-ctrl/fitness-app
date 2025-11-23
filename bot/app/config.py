@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     DJANGO_RETRY_MIN_WAIT: int = 1  # Минимальная задержка между попытками (сек)
     DJANGO_RETRY_MAX_WAIT: int = 8  # Максимальная задержка между попытками (сек)
     DJANGO_RETRY_MULTIPLIER: int = 2  # Множитель для exponential backoff
+    DJANGO_API_TIMEOUT: int = 30  # Timeout для запросов к Django API (сек)
 
     # Telegram Mini App
     WEB_APP_URL: Optional[str] = None  # URL для Telegram Mini App (e.g., "https://your-domain.com" or ngrok URL)

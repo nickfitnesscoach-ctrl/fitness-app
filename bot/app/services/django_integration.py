@@ -67,7 +67,7 @@ async def _make_django_request(url: str, payload: Dict[str, Any]) -> Dict[str, A
         response = await client.post(
             url,
             json=payload,
-            timeout=10.0
+            timeout=settings.DJANGO_API_TIMEOUT
         )
         response.raise_for_status()
         return response.json()
