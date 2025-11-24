@@ -528,7 +528,10 @@ export const api = {
                 headers: getHeaders(),
             });
             if (!response.ok) throw new Error('Failed to fetch profile');
-            return await response.json();
+            const userData = await response.json();
+            // Backend returns UserSerializer {id, username, email, profile: {...}}
+            // Extract profile field
+            return userData.profile || userData;
         } catch (error) {
             console.error('Error fetching profile:', error);
             throw error;
@@ -546,7 +549,10 @@ export const api = {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.detail || errorData.error || 'Failed to update profile');
             }
-            return await response.json();
+            const userData = await response.json();
+            // Backend returns UserSerializer {id, username, email, profile: {...}}
+            // Extract profile field
+            return userData.profile || userData;
         } catch (error) {
             console.error('Error updating profile:', error);
             throw error;
