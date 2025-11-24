@@ -3,6 +3,7 @@ import { Flame, Drumstick, Droplets, Wheat, Plus, ChevronRight } from 'lucide-re
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 interface DailyGoal {
     calories: number;
@@ -35,28 +36,22 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
 const ClientDashboard: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { isReady, isTelegramWebApp } = useTelegramWebApp();
+
     const [loading, setLoading] = useState(true);
     const [goals, setGoals] = useState<DailyGoal | null>(null);
     const [consumed, setConsumed] = useState<TotalConsumed>({ calories: 0, protein: 0, fat: 0, carbohydrates: 0 });
     const [meals, setMeals] = useState<Meal[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const [telegramWarning, setTelegramWarning] = useState<string | null>(null);
 
     const today = new Date().toISOString().split('T')[0];
 
-    // Check Telegram WebApp availability
     useEffect(() => {
-        const debugInfo = api.getDebugInfo();
-        if (!debugInfo.webAppExists) {
-            setTelegramWarning('Приложение открыто вне Telegram. Для полной функциональности откройте через бота.');
-        } else if (!debugInfo.telegramId || debugInfo.telegramId === '123456789') {
-            setTelegramWarning(`Учетные данные не были предоставлены. Telegram ID: ${debugInfo.telegramId || 'null'}`);
+        // Wait for WebApp to be ready before loading data
+        if (isReady && isTelegramWebApp) {
+            loadDashboardData();
         }
-    }, []);
-
-    useEffect(() => {
-        loadDashboardData();
-    }, []);
+    }, [isReady, isTelegramWebApp]);
 
     const loadDashboardData = async () => {
         setLoading(true);
@@ -123,6 +118,33 @@ const ClientDashboard: React.FC = () => {
         return Math.max(goals.calories - consumed.calories, 0);
     };
 
+    // While WebApp is initializing
+    if (!isReady) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="animate-spin w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+            </div>
+        );
+    }
+
+    // WebApp is ready but we're not in Telegram
+    if (!isTelegramWebApp) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center max-w-md">
+                    <h2 className="text-xl font-bold text-orange-900 mb-2">
+                        Откройте через Telegram
+                    </h2>
+                    <p className="text-orange-700">
+                        Это приложение работает только внутри Telegram.
+                        Пожалуйста, откройте бота и нажмите кнопку "Открыть приложение".
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // Loading dashboard data
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -142,12 +164,6 @@ const ClientDashboard: React.FC = () => {
                         {new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
                     </p>
                 </div>
-
-                {telegramWarning && (
-                    <div className="bg-orange-50 border border-orange-200 text-orange-700 p-4 rounded-xl text-center text-sm">
-                        {telegramWarning}
-                    </div>
-                )}
 
                 {error && (
                     <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl text-center">

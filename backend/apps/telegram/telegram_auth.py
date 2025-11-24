@@ -86,7 +86,8 @@ def validate_init_data(
     )
     logger.debug("[validate_init_data] data_check_string length: %d", len(data_check_string))
 
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    # Generate secret_key using HMAC (correct formula per Telegram docs)
+    secret_key = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
     calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     
     logger.debug("[validate_init_data] Calculated hash: %s...", calculated_hash[:10])

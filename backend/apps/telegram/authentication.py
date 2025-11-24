@@ -4,18 +4,13 @@ Telegram WebApp authentication backend.
 Проверяет подпись initData из Telegram Mini App для безопасной аутентификации.
 """
 
-import hmac
-import hashlib
 import logging
-import json
-from urllib.parse import parse_qsl
-from datetime import datetime
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import authentication, exceptions
 
 from .models import TelegramUser
+from .services.webapp_auth import get_webapp_auth_service
 from apps.users.models import Profile
 
 User = get_user_model()
@@ -41,98 +36,26 @@ class TelegramWebAppAuthentication(authentication.BaseAuthentication):
         init_data = request.META.get('HTTP_X_TELEGRAM_INIT_DATA')
 
         if not init_data and request.method in ['POST', 'PUT', 'PATCH']:
-            init_data = request.data.get('initData')
+            init_data = request.data.get('initData') or request.data.get('init_data')
 
         if not init_data:
             return None
 
-        # Валидация подписи
-        if not self.validate_init_data(init_data):
+        # Используем ЕДИНЫЙ сервис валидации
+        auth_service = get_webapp_auth_service()
+        parsed_data = auth_service.validate_init_data(init_data)
+
+        if not parsed_data:
             raise exceptions.AuthenticationFailed('Invalid Telegram initData signature')
 
-        # Парсинг данных пользователя
-        user_data = self.parse_init_data(init_data)
-
+        # Получаем user data
+        user_data = auth_service.get_user_data_from_init_data(parsed_data)
         if not user_data:
             raise exceptions.AuthenticationFailed('Invalid Telegram user data')
 
-        # Получение или создание пользователя
+        # Get or create user
         user = self.get_or_create_user(user_data)
-
         return (user, None)
-
-    def validate_init_data(self, init_data: str) -> bool:
-        """
-        Проверяет подпись initData от Telegram.
-
-        Args:
-            init_data: Строка initData из Telegram.WebApp.initData
-
-        Returns:
-            True если подпись валидна, False иначе
-        """
-        try:
-            parsed_data = dict(parse_qsl(init_data))
-
-            # Получаем hash из данных
-            received_hash = parsed_data.pop('hash', None)
-            if not received_hash:
-                return False
-
-            # Проверяем время (данные не старше 24 часов)
-            auth_date = parsed_data.get('auth_date')
-            if auth_date:
-                auth_timestamp = int(auth_date)
-                now_timestamp = int(datetime.now().timestamp())
-
-                # Данные действительны 24 часа
-                if now_timestamp - auth_timestamp > 86400:
-                    return False
-
-            # Формируем data-check-string
-            data_check_arr = [f"{k}={v}" for k, v in sorted(parsed_data.items())]
-            data_check_string = '\n'.join(data_check_arr)
-
-            # Вычисляем secret_key
-            bot_token = settings.TELEGRAM_BOT_TOKEN
-            secret_key = hmac.new(
-                b'WebAppData',
-                bot_token.encode(),
-                hashlib.sha256
-            ).digest()
-
-            # Вычисляем hash
-            calculated_hash = hmac.new(
-                secret_key,
-                data_check_string.encode(),
-                hashlib.sha256
-            ).hexdigest()
-
-            # Сравниваем хеши (constant-time comparison для безопасности)
-            return hmac.compare_digest(calculated_hash, received_hash)
-
-        except Exception as e:
-            print(f"Telegram auth validation error: {e}")
-            return False
-
-    def parse_init_data(self, init_data: str) -> dict:
-        """
-        Парсит initData и извлекает данные пользователя.
-
-        Args:
-            init_data: Строка initData из Telegram
-
-        Returns:
-            Словарь с данными пользователя или None
-        """
-        try:
-            parsed = dict(parse_qsl(init_data))
-            user_json = parsed.get('user', '{}')
-            user_data = json.loads(user_json)
-            return user_data
-        except Exception as e:
-            print(f"Error parsing initData: {e}")
-            return None
 
     def get_or_create_user(self, telegram_user_data: dict):
         """

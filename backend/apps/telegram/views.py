@@ -20,8 +20,8 @@ from .authentication import TelegramWebAppAuthentication
 from .telegram_auth import (
     TelegramAdminPermission,
     telegram_admin_required,
-    validate_init_data,
 )
+from .services.webapp_auth import get_webapp_auth_service
 from .models import TelegramUser
 from .serializers import (
     TelegramAuthSerializer,
@@ -47,89 +47,65 @@ def trainer_admin_panel(request):
 @permission_classes([AllowAny])
 def trainer_panel_auth(request):
     """Validate Telegram WebApp initData and ensure the user is an admin."""
-    
-    logger.info("[TrainerPanel] ===== AUTH REQUEST START =====")
-    logger.info("[TrainerPanel] Request method: %s", request.method)
-    logger.info("[TrainerPanel] Request path: %s", request.path)
-    logger.info("[TrainerPanel] Request data keys: %s", list(request.data.keys()))
 
+    logger.info("[TrainerPanel] Auth request started")
+
+    # 1. Получаем initData
     raw_init_data = (
         request.data.get("init_data")
         or request.data.get("initData")
         or request.headers.get("X-Telegram-Init-Data")
-        or request.headers.get("X_TG_INIT_DATA")
     )
 
     if not raw_init_data:
-        logger.warning("[TrainerPanel] No initData found in request")
+        logger.warning("[TrainerPanel] No initData in request")
         return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
-    
-    logger.info("[TrainerPanel] initData received (length: %d)", len(raw_init_data))
 
-    parsed_data = validate_init_data(raw_init_data, settings.TELEGRAM_BOT_TOKEN)
+    logger.info("[TrainerPanel] initData length: %d", len(raw_init_data))
+
+    # 2. Валидация через ЕДИНЫЙ сервис
+    auth_service = get_webapp_auth_service()
+    parsed_data = auth_service.validate_init_data(raw_init_data)
+
     if not parsed_data:
         logger.warning("[TrainerPanel] initData validation failed")
         return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
-    
+
     logger.info("[TrainerPanel] initData validation successful")
 
-    telegram_user_raw = parsed_data.get("user")
-    user_id = None
-    if telegram_user_raw:
-        try:
-            telegram_user = json.loads(telegram_user_raw)
-            user_id = int(telegram_user["id"])
-            logger.info("[TrainerPanel] Extracted user_id: %s", user_id)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as e:
-            logger.error("[TrainerPanel] Failed to extract user_id: %s", e)
-            user_id = None
-
-    admins_str = os.getenv("TELEGRAM_ADMINS", "")
-    bot_admin_id = os.getenv("BOT_ADMIN_ID")
-    
-    logger.info("[TrainerPanel] TELEGRAM_ADMINS env: %s", admins_str)
-    logger.info("[TrainerPanel] BOT_ADMIN_ID env: %s", bot_admin_id)
-
-    admins = set()
-    if admins_str:
-        for value in admins_str.split(","):
-            if value.strip():
-                try:
-                    admins.add(int(value.strip()))
-                except ValueError as e:
-                    logger.error("[TrainerPanel] Invalid admin ID: %s (%s)", value, e)
-
-    if bot_admin_id:
-        try:
-            admins.add(int(bot_admin_id))
-        except ValueError as e:
-            logger.error("[TrainerPanel] Invalid BOT_ADMIN_ID: %s (%s)", bot_admin_id, e)
-
-    logger.info("[TrainerPanel] Parsed admin IDs: %s", admins)
-
-    if not admins:
-        logger.warning("[TrainerPanel] Admin list is empty; allowing access to everyone temporarily")
-        return Response(
-            {
-                "ok": True,
-                "user_id": user_id,
-                "role": "admin",
-                "warning": "admin_list_empty",
-            }
-        )
-
-    if user_id is None or user_id not in admins:
-        logger.warning("[TrainerPanel] Access denied for user_id=%s (admins: %s)", user_id, admins)
+    # 3. Получаем user_id
+    user_id = auth_service.get_user_id_from_init_data(parsed_data)
+    if not user_id:
+        logger.error("[TrainerPanel] Failed to extract user_id")
         return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
 
-    logger.info("[TrainerPanel] Access granted for user_id=%s", user_id)
-    return Response(
-        {
+    logger.info("[TrainerPanel] Extracted user_id: %s", user_id)
+
+    # 4. Проверка прав админа (ЕДИНЫЙ источник правды!)
+    admins = settings.TELEGRAM_ADMINS  # Set[int] из settings
+
+    if not admins:
+        logger.warning("[TrainerPanel] Admin list empty, allowing access (DEV mode?)")
+        return Response({
             "ok": True,
             "user_id": user_id,
             "role": "admin",
-        }
-    )
+            "warning": "admin_list_empty"
+        })
+
+    if user_id not in admins:
+        logger.warning(
+            "[TrainerPanel] Access denied for user_id=%s (admins: %s)",
+            user_id, admins
+        )
+        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
+
+    logger.info("[TrainerPanel] Access granted for user_id=%s", user_id)
+    return Response({
+        "ok": True,
+        "user_id": user_id,
+        "role": "admin"
+    })
 
 
 @extend_schema(tags=['Telegram'])

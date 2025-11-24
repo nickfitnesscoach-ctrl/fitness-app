@@ -92,41 +92,24 @@ const ProfilePage: React.FC = () => {
 
     const handleSaveGoals = async () => {
         if (!editedGoals) return;
+
         setLoading(true);
         setError(null);
 
-        // Debug: log current state before save
-        const debugInfo = api.getDebugInfo();
-        console.log('=== DEBUG BEFORE SAVE ===');
-        console.log('Telegram ID:', debugInfo.telegramId);
-        console.log('WebApp exists:', debugInfo.webAppExists);
-        console.log('initDataUnsafe:', debugInfo.initDataUnsafe);
-
         try {
-            // Check if Telegram ID is available before making request
-            if (!debugInfo.telegramId) {
-                setError('Ошибка: Telegram ID не найден. Пожалуйста, откройте приложение через Telegram бота.');
-                setLoading(false);
-                return;
-            }
-
+            // Just make the request - backend will handle auth
             await api.updateGoals(editedGoals);
             setGoals(editedGoals);
             setIsEditingGoals(false);
             setEditedGoals(null);
         } catch (err: any) {
-            // Show more detailed error with debug info
-            const logs = api.getLogs();
-            console.log('=== API LOGS ===');
-            logs.forEach(log => console.log(log));
-
+            // Backend will return 401/403 if auth failed
             const errorMsg = err.message || 'Ошибка при сохранении целей';
 
-            // Check if it's an auth error
-            if (errorMsg.includes('Учетные данные') || errorMsg.includes('credentials') || !debugInfo.telegramId) {
-                setError('Ошибка авторизации. Пожалуйста, закройте приложение и откройте его заново через Telegram бота.');
+            if (errorMsg.includes('401') || errorMsg.includes('403')) {
+                setError('Ошибка авторизации. Закройте приложение и откройте заново через бота.');
             } else {
-                setError(`${errorMsg}\n\nTelegram ID: ${debugInfo.telegramId || 'не найден'}`);
+                setError(errorMsg);
             }
         } finally {
             setLoading(false);
