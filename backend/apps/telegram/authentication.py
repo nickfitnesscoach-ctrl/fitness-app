@@ -105,9 +105,10 @@ class TelegramWebAppAuthentication(authentication.BaseAuthentication):
             try:
                 user = User.objects.get(username=username)
             except User.DoesNotExist:
-                # Создаем нового User без email (не нужен для Telegram)
+                # Создаем нового User с уникальным email
                 user = User.objects.create_user(
                     username=username,
+                    email=f"tg{telegram_id}@telegram.user",  # Unique email
                     first_name=first_name,
                     last_name=last_name
                 )
@@ -236,8 +237,10 @@ class TelegramHeaderAuthentication(authentication.BaseAuthentication):
         try:
             user = User.objects.get(username=django_username)
         except User.DoesNotExist:
+            # Create user with unique email to avoid IntegrityError
             user = User.objects.create_user(
                 username=django_username,
+                email=f"tg{telegram_id}@telegram.user",  # Unique email
                 first_name=first_name,
                 last_name=last_name
             )
