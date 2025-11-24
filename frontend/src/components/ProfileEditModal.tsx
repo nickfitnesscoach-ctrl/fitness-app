@@ -44,15 +44,22 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
         setError(null);
 
         try {
-            // Prepare payload with only editable fields
-            const payload: Partial<Profile> = {
-                gender: formData.gender,
-                birth_date: formData.birth_date,
-                activity_level: formData.activity_level,
-                goal_type: formData.goal_type,
-            };
+            // Prepare payload with only non-empty fields
+            const payload: Partial<Profile> = {};
 
-            // Add numeric fields only if they have valid values
+            // Only add fields that have valid values
+            if (formData.gender) {
+                payload.gender = formData.gender;
+            }
+            if (formData.birth_date) {
+                payload.birth_date = formData.birth_date;
+            }
+            if (formData.activity_level) {
+                payload.activity_level = formData.activity_level;
+            }
+            if (formData.goal_type) {
+                payload.goal_type = formData.goal_type;
+            }
             if (formData.height) {
                 payload.height = Number(formData.height);
             }
