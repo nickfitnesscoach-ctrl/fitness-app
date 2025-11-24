@@ -36,7 +36,7 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
 const ClientDashboard: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
-    const { isReady, isTelegramWebApp } = useTelegramWebApp();
+    const { isReady, isTelegramWebApp: webAppDetected } = useTelegramWebApp();
 
     const [loading, setLoading] = useState(true);
     const [goals, setGoals] = useState<DailyGoal | null>(null);
@@ -47,11 +47,10 @@ const ClientDashboard: React.FC = () => {
     const today = new Date().toISOString().split('T')[0];
 
     useEffect(() => {
-        // Wait for WebApp to be ready before loading data
-        if (isReady && isTelegramWebApp) {
+        if (isReady && webAppDetected) {
             loadDashboardData();
         }
-    }, [isReady, isTelegramWebApp]);
+    }, [isReady, webAppDetected]);
 
     const loadDashboardData = async () => {
         setLoading(true);
@@ -128,7 +127,7 @@ const ClientDashboard: React.FC = () => {
     }
 
     // WebApp is ready but we're not in Telegram
-    if (!isTelegramWebApp) {
+    if (!webAppDetected) {
         return (
             <div className="min-h-screen flex items-center justify-center p-4">
                 <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center max-w-md">
