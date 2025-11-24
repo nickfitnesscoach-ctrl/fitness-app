@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import { TelegramProfile } from '../services/mockData';
+import { Profile } from '../types/profile';
 import { useAuth } from '../contexts/AuthContext';
 
 export const useProfile = () => {
     const { user, loading: authLoading } = useAuth();
-    const [profile, setProfile] = useState<TelegramProfile | null>(null);
+    const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 

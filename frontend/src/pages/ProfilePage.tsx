@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { User, Target, TrendingUp, Settings, LogOut, Edit2, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
-import ProfileEditModal, { Profile } from '../components/ProfileEditModal';
+import { Profile } from '../types/profile';
+import ProfileEditModal from '../components/ProfileEditModal';
 
 interface UserGoals {
     calories: number;

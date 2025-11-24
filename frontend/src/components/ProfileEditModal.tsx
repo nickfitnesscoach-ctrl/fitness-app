@@ -1,16 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Activity, Calendar, Ruler, Weight, Target, User } from 'lucide-react';
 import { api } from '../services/api';
+import { Profile } from '../types/profile';
 
-export interface Profile {
-    gender?: 'male' | 'female';
-    birth_date?: string;
-    height?: number;
-    weight?: number;
-    activity_level?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
-    goal?: 'weight_loss' | 'maintenance' | 'muscle_gain';
-    [key: string]: any;
-}
+export type { Profile };
 
 interface ProfileEditModalProps {
     isOpen: boolean;
@@ -20,20 +13,22 @@ interface ProfileEditModalProps {
 }
 
 const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, profile, onProfileUpdated }) => {
-    const [formData, setFormData] = useState<Profile>({});
-    const [loading, setLoading] = useState(false);
+    const [formData, setFormData] = useState<Partial<Profile>>({});
+    const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (profile) {
+        if (isOpen && profile) {
             setFormData({
                 gender: profile.gender || 'male',
                 birth_date: profile.birth_date || '',
-                height: profile.height || 0,
-                weight: profile.weight || 0,
+                height: profile.height || undefined,
+                weight: profile.weight || undefined,
                 activity_level: profile.activity_level || 'sedentary',
                 goal: profile.goal || 'maintenance',
+                timezone: profile.timezone || undefined,
             });
+            setError(null);
         }
     }, [profile, isOpen]);
 
@@ -45,15 +40,28 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
+        setIsSaving(true);
         setError(null);
 
         try {
-            const payload = {
-                ...formData,
-                height: Number(formData.height),
-                weight: Number(formData.weight),
+            // Prepare payload with only editable fields
+            const payload: Partial<Profile> = {
+                gender: formData.gender,
+                birth_date: formData.birth_date,
+                activity_level: formData.activity_level,
+                goal: formData.goal,
             };
+
+            // Add numeric fields only if they have valid values
+            if (formData.height) {
+                payload.height = Number(formData.height);
+            }
+            if (formData.weight) {
+                payload.weight = Number(formData.weight);
+            }
+            if (formData.timezone) {
+                payload.timezone = formData.timezone;
+            }
 
             const updated = await api.updateProfile(payload);
             onProfileUpdated(updated);
@@ -62,7 +70,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
             console.error('Failed to update profile:', err);
             setError(err.message || 'Ошибка при сохранении профиля');
         } finally {
-            setLoading(false);
+            setIsSaving(false);
         }
     };
 
@@ -211,11 +219,14 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
                     <div className="pt-4">
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={isSaving}
                             className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl font-bold text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
-                            {loading ? (
-                                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            {isSaving ? (
+                                <>
+                                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    <span>Сохраняю...</span>
+                                </>
                             ) : (
                                 <>
                                     <Save size={20} />

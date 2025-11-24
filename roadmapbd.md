@@ -450,47 +450,75 @@ curl -X POST https://api.foodmind.ru/api/v1/telegram/webapp/auth/ \
 
 ---
 
-### Этап 3: Реализация endpoint `/api/v1/profile/` (GET/PATCH)
+### Этап 3: Реализация endpoint `/api/v1/profile/` (GET/PATCH) ✅ (DONE)
 
 **Цель**: Позволить WebApp читать и обновлять профиль пользователя.
 
 **Затрагиваемые файлы**:
-- `backend/apps/users/views.py` (обновить `ProfileView`)
-- `backend/apps/users/serializers.py` (обновить `ProfileSerializer`)
-- `frontend/src/services/api.ts` (добавить `updateProfile`)
+- ✅ `backend/apps/users/views.py` (обновить `ProfileView`)
+- ✅ `backend/apps/users/serializers.py` (обновить `ProfileSerializer`)
+- ✅ `frontend/src/services/api.ts` (добавить `updateProfile`)
+- ✅ `frontend/src/types/profile.ts` (создан единый Profile тип)
+- ✅ `frontend/src/components/ProfileEditModal.tsx` (интеграция с API)
+- ✅ `frontend/src/pages/ProfilePage.tsx` (обработчик обновления профиля)
 
 **Задачи**:
-1. Обновить `ProfileSerializer`:
+1. ✅ Обновить `ProfileSerializer`:
    - Включить все поля для онбординга: `gender`, `birth_date`, `height`, `weight`, `goal_type`, `activity_level`, `timezone`
    - Добавить `age` (read-only, computed)
    - Добавить `is_complete` (read-only)
 
-2. Обновить `ProfileView`:
+2. ✅ Обновить `ProfileView`:
    - `GET`: вернуть профиль текущего пользователя
    - `PATCH`: обновить профиль (partial update)
    - Валидация: проверить корректность полей (возраст 14-80, рост 120-250, вес 30-300)
 
-3. Добавить в `frontend/src/services/api.ts`:
+3. ✅ Добавить в `frontend/src/services/api.ts`:
    ```typescript
-   async updateProfile(data: ProfileData) {
-       const response = await fetchWithRetry(`${API_BASE}/profile/`, {
+   async getProfile(): Promise<Profile> {
+       const response = await fetchWithTimeout(URLS.profile, {
+           headers: getHeaders(),
+       });
+       if (!response.ok) throw new Error('Failed to fetch profile');
+       return await response.json();
+   }
+
+   async updateProfile(data: Partial<Profile>): Promise<Profile> {
+       const response = await fetchWithTimeout(URLS.profile, {
            method: 'PATCH',
            headers: getHeaders(),
-           body: JSON.stringify(data)
+           body: JSON.stringify(data),
        });
-       if (!response.ok) throw new Error('Failed to update profile');
-       return response.json();
+       if (!response.ok) {
+           const errorData = await response.json().catch(() => ({}));
+           throw new Error(errorData.detail || errorData.error || 'Failed to update profile');
+       }
+       return await response.json();
    }
    ```
 
+4. ✅ Создан централизованный тип `Profile` в `frontend/src/types/profile.ts`
+
+5. ✅ Подключена модалка `ProfileEditModal` к API:
+   - Корректная валидация и конвертация типов
+   - Флаг загрузки `isSaving` с текстом "Сохраняю..."
+   - Обработка ошибок с показом сообщений
+   - Вызов `onProfileUpdated` после успешного сохранения
+
+6. ✅ Интеграция в `ProfilePage`:
+   - `handleProfileUpdated` обновляет локальный state
+   - Перезагрузка целей при изменении профиля (вес влияет на BMR)
+
 **Риски**:
-- Конфликт с существующим endpoint `/api/v1/users/profile/`
-- Решение: использовать существующий endpoint, но обновить его логику
+- ✅ Конфликт с существующим endpoint `/api/v1/users/profile/` — решено использованием существующего endpoint
 
 **Критерии готовности**:
 - ✅ `GET /api/v1/profile/` возвращает полный профиль
 - ✅ `PATCH /api/v1/profile/` обновляет профиль
 - ✅ Валидация работает корректно
+- ✅ Frontend корректно обрабатывает ответы API
+- ✅ Модалка "Редактировать профиль" сохраняет данные через API
+- ✅ Все изменения отражаются в UI после сохранения
 
 ---
 

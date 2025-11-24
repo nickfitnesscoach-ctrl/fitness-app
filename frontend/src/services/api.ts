@@ -6,6 +6,7 @@
  */
 
 import { buildTelegramHeaders, getTelegramDebugInfo } from '../lib/telegram';
+import { Profile } from '../types/profile';
 
 export interface TrainerPanelAuthResponse {
     ok: boolean;
@@ -521,7 +522,7 @@ export const api = {
     // User Profile
     // ========================================================
 
-    async getProfile() {
+    async getProfile(): Promise<Profile> {
         try {
             const response = await fetchWithTimeout(URLS.profile, {
                 headers: getHeaders(),
@@ -534,14 +535,17 @@ export const api = {
         }
     },
 
-    async updateProfile(data: any) {
+    async updateProfile(data: Partial<Profile>): Promise<Profile> {
         try {
             const response = await fetchWithTimeout(URLS.profile, {
                 method: 'PATCH',
                 headers: getHeaders(),
                 body: JSON.stringify(data),
             });
-            if (!response.ok) throw new Error('Failed to update profile');
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || errorData.error || 'Failed to update profile');
+            }
             return await response.json();
         } catch (error) {
             console.error('Error updating profile:', error);
