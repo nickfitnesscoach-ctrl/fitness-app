@@ -229,8 +229,14 @@ class ProfileView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
     def update(self, request, *args, **kwargs):
+        import logging
+        logger = logging.getLogger(__name__)
+
         partial = kwargs.pop('partial', False)
         user = self.get_object()
+
+        # DEBUG: Log incoming request data
+        logger.info(f"[ProfileView] PATCH /api/v1/users/profile/ - User: {user.id}, Data: {request.data}")
 
         # Update username if provided
         if 'username' in request.data:
@@ -244,8 +250,16 @@ class ProfileView(generics.RetrieveUpdateAPIView):
             data=request.data,
             partial=partial
         )
+
+        # DEBUG: Log validation result
+        if not profile_serializer.is_valid():
+            logger.error(f"[ProfileView] Validation failed: {profile_serializer.errors}")
+
         profile_serializer.is_valid(raise_exception=True)
         profile_serializer.save()
+
+        # DEBUG: Log successful save
+        logger.info(f"[ProfileView] Profile updated successfully for user {user.id}")
 
         # Return updated user with profile
         user_serializer = self.get_serializer(user)
