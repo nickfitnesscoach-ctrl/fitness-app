@@ -144,8 +144,36 @@ class DailyGoalSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create daily goal for current user."""
-        validated_data['user'] = self.context['request'].user
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            raise serializers.ValidationError("User must be authenticated")
+
+        validated_data['user'] = request.user
+
+        # Деактивируем все предыдущие цели при создании новой активной
+        if validated_data.get('is_active', True):
+            DailyGoal.objects.filter(user=request.user, is_active=True).update(is_active=False)
+
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """Update daily goal ensuring user ownership."""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            raise serializers.ValidationError("User must be authenticated")
+
+        # Verify ownership
+        if instance.user != request.user:
+            raise serializers.ValidationError("Cannot update goal of another user")
+
+        # Если устанавливаем is_active=True, деактивируем другие цели
+        if validated_data.get('is_active', False) and not instance.is_active:
+            DailyGoal.objects.filter(
+                user=request.user,
+                is_active=True
+            ).exclude(id=instance.id).update(is_active=False)
+
+        return super().update(instance, validated_data)
 
 
 class DailyStatsSerializer(serializers.Serializer):

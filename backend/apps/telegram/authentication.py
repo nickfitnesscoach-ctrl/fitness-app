@@ -122,6 +122,14 @@ class TelegramWebAppAuthentication(authentication.BaseAuthentication):
                 is_premium=telegram_user_data.get('is_premium', False)
             )
 
+            # Гарантируем, что у каждого Telegram-пользователя есть профиль
+            try:
+                Profile.objects.get_or_create(user=user)
+            except Exception as exc:
+                logger.exception(
+                    "[TelegramWebAppAuth] Failed to ensure Profile for user %s: %s", user.pk, exc
+                )
+
         return user
 
 
@@ -156,17 +164,24 @@ class TelegramHeaderAuthentication(authentication.BaseAuthentication):
             AuthenticationFailed: if telegram_id is invalid
         """
         telegram_id = request.META.get('HTTP_X_TELEGRAM_ID')
+        init_data = request.META.get('HTTP_X_TELEGRAM_INIT_DATA')
 
         if not telegram_id:
+            # No Telegram headers present, allow other auth methods
             return None
+
+        logger.info("[TelegramHeaderAuth] Processing telegram_id=%s, has_initData=%s",
+                   telegram_id, bool(init_data))
 
         # Validate telegram_id is a valid integer
         try:
             telegram_id = int(telegram_id)
         except (ValueError, TypeError):
+            logger.warning("[TelegramHeaderAuth] Invalid telegram_id format: %s", telegram_id)
             raise exceptions.AuthenticationFailed('Invalid Telegram ID format')
 
         if telegram_id <= 0:
+            logger.warning("[TelegramHeaderAuth] Invalid telegram_id value: %s", telegram_id)
             raise exceptions.AuthenticationFailed('Invalid Telegram ID value')
 
         # Build user data from headers
@@ -180,6 +195,7 @@ class TelegramHeaderAuthentication(authentication.BaseAuthentication):
 
         # Get or create user using TelegramUser model
         user = self._get_or_create_user(user_data)
+        logger.info("[TelegramHeaderAuth] Authenticated user_id=%s telegram_id=%s", user.id, telegram_id)
 
         return (user, None)
 

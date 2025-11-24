@@ -354,12 +354,26 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
         responses={
             200: DailyGoalSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
+            401: OpenApiResponse(description="Не авторизован"),
         }
     )
     def put(self, request, *args, **kwargs):
-        logger.info("[DailyGoal] PUT called by user=%s (authenticated=%s)", request.user, request.user.is_authenticated)
-        logger.info("[DailyGoal] Request data=%s", request.data)
-        logger.info("[DailyGoal] Request headers: X-Telegram-Init-Data=%s", request.META.get('HTTP_X_TELEGRAM_INIT_DATA', 'NOT SET'))
+        # Проверяем аутентификацию
+        if not request.user or not request.user.is_authenticated:
+            logger.warning("[DailyGoal] PUT called with unauthenticated user")
+            logger.warning("[DailyGoal] Headers: X-Telegram-ID=%s, X-Telegram-Init-Data=%s",
+                         request.META.get('HTTP_X_TELEGRAM_ID', 'NOT SET'),
+                         'SET' if request.META.get('HTTP_X_TELEGRAM_INIT_DATA') else 'NOT SET')
+            return Response(
+                {"detail": "unauthenticated_webapp_user"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        telegram_id = getattr(request.user, 'telegram_profile', None)
+        logger.info("[DailyGoal] PUT called by user=%s telegram_id=%s data=%s",
+                   request.user.id,
+                   telegram_id.telegram_id if telegram_id else 'N/A',
+                   request.data)
 
         obj = self.get_object()
         if obj is None:
@@ -369,13 +383,13 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
             serializer.is_valid(raise_exception=True)
             try:
                 serializer.save()
-                logger.info("[DailyGoal] Created new DailyGoal for user=%s", request.user)
+                logger.info("[DailyGoal] Created new DailyGoal for user=%s", request.user.id)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             except Exception as exc:
-                logger.exception("[DailyGoal] Failed to create DailyGoal for user=%s: %s", request.user, exc)
+                logger.exception("[DailyGoal] Failed to create DailyGoal for user=%s: %s", request.user.id, exc)
                 return Response(
-                    {"error": "Не удалось создать дневную цель", "detail": str(exc)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {"detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
         logger.info("[DailyGoal] Updating existing goal id=%s", obj.id)
         return super().put(request, *args, **kwargs)
@@ -387,10 +401,19 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
         responses={
             200: DailyGoalSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
+            401: OpenApiResponse(description="Не авторизован"),
         }
     )
     def patch(self, request, *args, **kwargs):
-        logger.debug("DailyGoalView.patch called by user=%s, data=%s", request.user, request.data)
+        # Проверяем аутентификацию
+        if not request.user or not request.user.is_authenticated:
+            logger.warning("[DailyGoal] PATCH called with unauthenticated user")
+            return Response(
+                {"detail": "unauthenticated_webapp_user"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        logger.info("[DailyGoal] PATCH called by user=%s data=%s", request.user.id, request.data)
         obj = self.get_object()
         if obj is None:
             # Create new goal if none exists
@@ -398,13 +421,13 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
             serializer.is_valid(raise_exception=True)
             try:
                 serializer.save()
-                logger.info("Created new DailyGoal for user=%s", request.user)
+                logger.info("[DailyGoal] Created new DailyGoal for user=%s", request.user.id)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             except Exception as exc:
-                logger.exception("Failed to create DailyGoal for user=%s: %s", request.user, exc)
+                logger.exception("[DailyGoal] Failed to create DailyGoal for user=%s: %s", request.user.id, exc)
                 return Response(
-                    {"error": "Не удалось создать дневную цель", "detail": str(exc)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {"detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
         return super().patch(request, *args, **kwargs)
 
