@@ -16,10 +16,12 @@ from .validators import validate_email_domain, validate_email_not_exists
 class ProfileSerializer(serializers.ModelSerializer):
     """
     Serializer for Profile model.
+    Включает все поля для онбординга и is_complete для проверки заполненности.
     """
     age = serializers.ReadOnlyField()
     bmi = serializers.ReadOnlyField()
     email_verified = serializers.ReadOnlyField()
+    is_complete = serializers.ReadOnlyField()
 
     class Meta:
         model = Profile
@@ -31,13 +33,16 @@ class ProfileSerializer(serializers.ModelSerializer):
             'weight',
             'activity_level',
             'goal_type',
+            'target_weight',
+            'timezone',
             'age',
             'bmi',
             'email_verified',
+            'is_complete',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['created_at', 'updated_at', 'email_verified']
+        read_only_fields = ['created_at', 'updated_at', 'email_verified', 'age', 'bmi', 'is_complete']
 
     def validate_height(self, value):
         """Validate height is in realistic range."""

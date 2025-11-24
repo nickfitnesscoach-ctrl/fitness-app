@@ -27,6 +27,7 @@ from .serializers import (
     TelegramAuthSerializer,
     TelegramUserSerializer,
     SaveTestResultsSerializer,
+    WebAppAuthResponseSerializer,
 )
 from apps.nutrition.models import DailyGoal
 from apps.users.models import Profile
@@ -162,6 +163,172 @@ def telegram_auth(request):
         return Response(
             {"error": str(e)},
             status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@extend_schema(tags=['Telegram'])
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def webapp_auth(request):
+    """
+    Единый endpoint для авторизации Telegram WebApp (Этап 2 roadmap).
+
+    POST /api/v1/telegram/webapp/auth/
+
+    Headers:
+        X-Telegram-Init-Data: <initData from Telegram.WebApp.initData>
+
+    Body (альтернативно):
+        {
+            "init_data": "<initData from Telegram.WebApp.initData>"
+        }
+
+    Response:
+        {
+            "user": {
+                "id": 123,
+                "telegram_id": 987654321,
+                "username": "user123",
+                "first_name": "John",
+                "last_name": "Doe"
+            },
+            "profile": {
+                "gender": "M",
+                "birth_date": "1990-01-01",
+                "height": 180,
+                "weight": 80,
+                "goal_type": "weight_loss",
+                "activity_level": "sedentary",
+                "timezone": "Europe/Moscow",
+                "age": 34,
+                "is_complete": true
+            },
+            "goals": {
+                "id": 1,
+                "calories": 2000,
+                "protein": 150,
+                "fat": 55,
+                "carbohydrates": 225,
+                "source": "AUTO",
+                "is_active": true
+            },
+            "is_admin": false
+        }
+    """
+    # Используем существующую аутентификацию через TelegramWebAppAuthentication
+    authenticator = TelegramWebAppAuthentication()
+
+    try:
+        result = authenticator.authenticate(request)
+
+        if not result:
+            logger.warning("[WebAppAuth] Authentication failed: no result from authenticator")
+            return Response(
+                {"error": "Authentication failed"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        user, auth_data = result
+
+        if not user:
+            logger.warning("[WebAppAuth] Authentication failed: no user")
+            return Response(
+                {"error": "Authentication failed"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        logger.info(f"[WebAppAuth] User authenticated: {user.id} (username: {user.username})")
+
+        # Получаем или создаём TelegramUser
+        try:
+            telegram_user = user.telegram_profile
+        except TelegramUser.DoesNotExist:
+            logger.warning(f"[WebAppAuth] User {user.id} without TelegramUser, attempting to create")
+            # Пытаемся извлечь данные из request (если доступны)
+            telegram_id = getattr(request, 'telegram_id', None)
+            if not telegram_id and hasattr(user, 'profile') and user.profile.telegram_id:
+                telegram_id = user.profile.telegram_id
+
+            if telegram_id:
+                telegram_user = TelegramUser.objects.create(
+                    user=user,
+                    telegram_id=telegram_id,
+                    username=user.username.replace('tg_', '') if user.username.startswith('tg_') else '',
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                )
+                logger.info(f"[WebAppAuth] Created TelegramUser {telegram_id} for user {user.id}")
+            else:
+                logger.error(f"[WebAppAuth] Cannot create TelegramUser for user {user.id}: no telegram_id")
+                return Response(
+                    {"error": "Telegram profile creation failed"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        # Получаем или создаём Profile
+        profile, created = Profile.objects.get_or_create(user=user)
+        if created:
+            logger.info(f"[WebAppAuth] Created empty Profile for user {user.id}")
+
+        # Получаем активную цель КБЖУ
+        active_goal = (
+            DailyGoal.objects
+            .filter(user=user, is_active=True)
+            .order_by('-created_at')
+            .first()
+        )
+
+        # Определяем, является ли пользователь администратором
+        admin_ids = set()
+
+        # Читаем список админов из настроек
+        telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', '')
+        if telegram_admins:
+            try:
+                # TELEGRAM_ADMINS может быть строкой "123,456" или set
+                if isinstance(telegram_admins, str):
+                    admin_ids.update(
+                        int(x.strip())
+                        for x in telegram_admins.split(',')
+                        if x.strip().isdigit()
+                    )
+                elif isinstance(telegram_admins, (set, list)):
+                    admin_ids.update(int(x) for x in telegram_admins)
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"[WebAppAuth] Failed to parse TELEGRAM_ADMINS: {e}")
+
+        bot_admin_id = getattr(settings, 'BOT_ADMIN_ID', None)
+        if bot_admin_id:
+            try:
+                admin_ids.add(int(bot_admin_id))
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[WebAppAuth] Failed to parse BOT_ADMIN_ID: {e}")
+
+        is_admin = telegram_user.telegram_id in admin_ids
+        logger.info(f"[WebAppAuth] User {user.id} admin status: {is_admin} (telegram_id: {telegram_user.telegram_id}, admins: {admin_ids})")
+
+        # Формируем ответ
+        response_data = {
+            'user': {
+                'id': user.id,
+                'telegram_id': telegram_user.telegram_id,
+                'username': telegram_user.username or '',
+                'first_name': telegram_user.first_name or '',
+                'last_name': telegram_user.last_name or '',
+            },
+            'profile': profile,
+            'goals': active_goal,
+            'is_admin': is_admin,
+        }
+
+        serializer = WebAppAuthResponseSerializer(response_data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.exception(f"[WebAppAuth] Unexpected error: {e}")
+        return Response(
+            {"error": "Internal server error"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 

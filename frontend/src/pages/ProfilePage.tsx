@@ -96,21 +96,22 @@ const ProfilePage: React.FC = () => {
         setLoading(true);
         setError(null);
 
+        console.log('[ProfilePage] Saving goals:', editedGoals);
+
         try {
             // Just make the request - backend will handle auth
-            await api.updateGoals(editedGoals);
+            const result = await api.updateGoals(editedGoals);
+            console.log('[ProfilePage] Goals saved successfully:', result);
+
             setGoals(editedGoals);
             setIsEditingGoals(false);
             setEditedGoals(null);
         } catch (err: any) {
-            // Backend will return 401/403 if auth failed
-            const errorMsg = err.message || 'Ошибка при сохранении целей';
+            console.error('[ProfilePage] Failed to save goals:', err);
 
-            if (errorMsg.includes('401') || errorMsg.includes('403')) {
-                setError('Ошибка авторизации. Закройте приложение и откройте заново через бота.');
-            } else {
-                setError(errorMsg);
-            }
+            // Display the error message from API (which now has status codes)
+            const errorMsg = err.message || 'Ошибка при сохранении целей';
+            setError(errorMsg);
         } finally {
             setLoading(false);
         }
