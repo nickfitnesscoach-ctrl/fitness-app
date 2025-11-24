@@ -40,13 +40,6 @@ const ProfilePage: React.FC = () => {
 
         fetchData();
     }, []);
-
-    const handleRecalculateByMifflin = async () => {
-        if (!profile) return;
-
-        if (!profile.is_complete) {
-            setIsSurveyOpen(true);
-            return;
         }
 
         try {

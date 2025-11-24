@@ -4,6 +4,8 @@ Serializers for Telegram integration.
 
 from rest_framework import serializers
 from .models import TelegramUser
+from apps.users.serializers import ProfileSerializer
+from apps.nutrition.serializers import DailyGoalSerializer
 
 
 class TelegramUserSerializer(serializers.ModelSerializer):
@@ -64,3 +66,26 @@ class SaveTestResultsSerializer(serializers.Serializer):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Answers должны быть словарем")
         return value
+
+
+class WebAppAuthUserSerializer(serializers.Serializer):
+    """
+    Информация о пользователе для WebApp аутентификации.
+    Возвращает базовые данные пользователя из Telegram.
+    """
+    id = serializers.IntegerField()
+    telegram_id = serializers.IntegerField()
+    username = serializers.CharField(allow_null=True, allow_blank=True)
+    first_name = serializers.CharField(allow_null=True, allow_blank=True)
+    last_name = serializers.CharField(allow_null=True, allow_blank=True)
+
+
+class WebAppAuthResponseSerializer(serializers.Serializer):
+    """
+    Полный ответ endpoint'а /webapp/auth/.
+    Включает информацию о пользователе, профиле, целях и правах администратора.
+    """
+    user = WebAppAuthUserSerializer()
+    profile = ProfileSerializer()
+    goals = DailyGoalSerializer(allow_null=True)
+    is_admin = serializers.BooleanField()

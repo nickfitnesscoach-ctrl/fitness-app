@@ -10,6 +10,9 @@ urlpatterns = [
     # Аутентификация через Telegram Mini App
     path('auth/', views.telegram_auth, name='telegram-auth'),
 
+    # Единый endpoint для WebApp авторизации (Этап 2 roadmap)
+    path('webapp/auth/', views.webapp_auth, name='webapp-auth'),
+
     # Trainer admin panel (Telegram WebApp only)
     path('trainer/admin-panel/', views.trainer_admin_panel, name='trainer-admin-panel'),
 

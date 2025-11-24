@@ -276,6 +276,26 @@ class Profile(models.Model):
         height_m = self.height / 100  # convert cm to meters
         return float(self.weight) / (height_m ** 2)
 
+    @property
+    def is_complete(self) -> bool:
+        """
+        Проверяет, заполнен ли профиль минимально необходимыми данными.
+
+        Минимальные требования для онбординга:
+        - пол (gender)
+        - дата рождения (birth_date)
+        - рост (height)
+        - вес (weight)
+        - тип цели (goal_type)
+        """
+        return all([
+            bool(self.gender),
+            bool(self.birth_date),
+            bool(self.height),
+            bool(self.weight),
+            bool(self.goal_type),
+        ])
+
 
 class EmailVerificationToken(models.Model):
     """
