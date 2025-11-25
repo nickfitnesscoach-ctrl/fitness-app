@@ -499,3 +499,109 @@ class ResendVerificationEmailView(APIView):
                 {"error": "Не удалось отправить письмо. Попробуйте позже."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+@extend_schema(tags=['Profile'])
+@extend_schema_view(
+    post=extend_schema(
+        summary="Загрузить/обновить аватар профиля",
+        description="""
+        Загрузка или обновление аватара текущего пользователя.
+
+        **Ограничения:**
+        - Максимальный размер файла: 5 МБ
+        - Допустимые форматы: JPEG, PNG, WebP
+        - Content-Type: multipart/form-data
+        - Поле файла: avatar
+
+        Возвращает обновлённый профиль пользователя с URL аватара.
+        """,
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'avatar': {
+                        'type': 'string',
+                        'format': 'binary',
+                        'description': 'Файл изображения (JPG, PNG, WebP)'
+                    }
+                }
+            }
+        },
+        responses={
+            200: UserSerializer,
+            400: {"description": "Неверный формат файла или слишком большой размер"},
+            401: {"description": "Не авторизован"}
+        }
+    )
+)
+class UploadAvatarView(APIView):
+    """
+    API endpoint for uploading/updating user avatar.
+    POST /api/v1/users/profile/avatar/
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ProfileUpdateThrottle]
+
+    def post(self, request):
+        import logging
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from .validators import (
+            validate_avatar_file_size,
+            validate_avatar_mime_type,
+            validate_avatar_file_extension,
+        )
+
+        logger = logging.getLogger(__name__)
+
+        # Get uploaded file
+        avatar_file = request.FILES.get('avatar')
+
+        if not avatar_file:
+            return Response(
+                {"error": "Файл аватара не предоставлен. Используйте поле 'avatar' в multipart/form-data."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate using centralized validators
+        try:
+            # Validate MIME type first (from uploaded file)
+            validate_avatar_mime_type(avatar_file)
+
+            # Validate file size
+            validate_avatar_file_size(avatar_file)
+
+            # Validate file extension
+            validate_avatar_file_extension(avatar_file)
+
+        except DjangoValidationError as e:
+            # Return validation error message
+            return Response(
+                {"error": str(e.message) if hasattr(e, 'message') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get user profile
+        user = request.user
+        profile = user.profile
+
+        try:
+            # Use the safe set_avatar method which:
+            # 1. Deletes old avatar safely
+            # 2. Sets new avatar
+            # 3. Increments avatar_version
+            # 4. Saves profile
+            profile.set_avatar(avatar_file)
+
+            logger.info(f"Avatar uploaded successfully for user {user.id}, version {profile.avatar_version}")
+
+        except Exception as e:
+            logger.error(f"Failed to upload avatar for user {user.id}: {str(e)}")
+            return Response(
+                {"error": "Не удалось загрузить аватар. Попробуйте позже."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # Return updated user with profile (including avatar_url with version)
+        user_serializer = UserSerializer(user, context={'request': request})
+        return Response(user_serializer.data, status=status.HTTP_200_OK)

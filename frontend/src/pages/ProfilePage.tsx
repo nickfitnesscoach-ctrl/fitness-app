@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Target, TrendingUp, Settings, LogOut, Edit2, X, Camera } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../services/api';
+import { api, UnauthorizedError, ForbiddenError } from '../services/api';
 import { Profile } from '../types/profile';
 import ProfileEditModal from '../components/ProfileEditModal';
 
@@ -27,6 +27,7 @@ const ProfilePage: React.FC = () => {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
     const [profile, setProfile] = useState<Profile | null>(null);
 
@@ -58,6 +59,10 @@ const ProfilePage: React.FC = () => {
         try {
             const data = await api.getProfile();
             setProfile(data);
+            // Set avatar from server if exists
+            if (data.avatar_url) {
+                setAvatarPreview(data.avatar_url);
+            }
         } catch (error) {
             console.error('Failed to load profile:', error);
         }
@@ -208,24 +213,45 @@ const ProfilePage: React.FC = () => {
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
         // Limit size to 5MB
         if (file.size > 5 * 1024 * 1024) {
-            // You might want to use a toast here, but for now alert or console is fine as per "toast" suggestion
-            // Since we don't have a toast component handy in this file, we'll just ignore or log.
-            // Let's set a temporary error or just return.
-            console.warn('File too large');
-            // Ideally use the existing error state if appropriate, or just alert.
-            // The user request suggested a toast, but I don't see a toast system imported.
-            // I'll stick to just not setting it and maybe logging.
+            setError('Размер файла превышает 5 МБ. Пожалуйста, выберите файл меньшего размера.');
             return;
         }
 
+        // Show local preview immediately
         const objectUrl = URL.createObjectURL(file);
         setAvatarPreview(objectUrl);
+
+        // Upload to backend
+        setUploadingAvatar(true);
+        setError(null);
+
+        try {
+            const updatedProfile = await api.uploadAvatar(file);
+            setProfile(updatedProfile);
+            // Update preview from server URL (with cache busting version parameter)
+            setAvatarPreview(updatedProfile.avatar_url || null);
+            console.log('Avatar uploaded successfully:', updatedProfile.avatar_url);
+        } catch (err: any) {
+            console.error('Failed to upload avatar:', err);
+
+            // Handle authentication errors specifically
+            if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
+                setError('Сессия истекла. Пожалуйста, откройте приложение заново из Telegram.');
+            } else {
+                setError(err.message || 'Не удалось загрузить фото. Попробуй ещё раз.');
+            }
+
+            // Revert to old avatar on any error
+            setAvatarPreview(profile?.avatar_url || null);
+        } finally {
+            setUploadingAvatar(false);
+        }
     };
 
     return (
@@ -256,10 +282,19 @@ const ProfilePage: React.FC = () => {
                                         </div>
                                     )}
 
+                                    {/* Upload Spinner */}
+                                    {uploadingAvatar && (
+                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                            <div className="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full"></div>
+                                        </div>
+                                    )}
+
                                     {/* Hover Overlay */}
-                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <Camera size={32} className="text-white drop-shadow-lg" />
-                                    </div>
+                                    {!uploadingAvatar && (
+                                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <Camera size={32} className="text-white drop-shadow-lg" />
+                                        </div>
+                                    )}
                                 </div>
                                 <input
                                     type="file"
@@ -267,6 +302,7 @@ const ProfilePage: React.FC = () => {
                                     onChange={handleFileChange}
                                     accept="image/*"
                                     className="hidden"
+                                    disabled={uploadingAvatar}
                                 />
                             </div>
                         </div>

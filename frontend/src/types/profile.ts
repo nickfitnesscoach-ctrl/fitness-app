@@ -17,6 +17,7 @@ export interface Profile {
     activity_level?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'extra_active'; // Backend format
     goal_type?: 'weight_loss' | 'maintenance' | 'weight_gain'; // Backend uses goal_type not goal
     timezone?: string; // e.g., "Europe/Moscow"
+    avatar_url?: string | null; // URL to user's avatar image
 
     // Metadata
     created_at?: string;

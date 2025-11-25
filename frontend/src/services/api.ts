@@ -14,6 +14,21 @@ export interface TrainerPanelAuthResponse {
     role: 'admin';
 }
 
+// Custom error classes for better error handling
+export class UnauthorizedError extends Error {
+    constructor(message: string = 'Unauthorized') {
+        super(message);
+        this.name = 'UnauthorizedError';
+    }
+}
+
+export class ForbiddenError extends Error {
+    constructor(message: string = 'Forbidden') {
+        super(message);
+        this.name = 'ForbiddenError';
+    }
+}
+
 // ============================================================
 // API URL Configuration
 // ============================================================
@@ -39,6 +54,7 @@ const URLS = {
     setAutoGoals: `${API_BASE}/goals/set-auto/`,
     // User endpoints
     profile: `${API_BASE}/users/profile/`,
+    uploadAvatar: `${API_BASE}/users/profile/avatar/`,
     // Billing endpoints
     plan: `${API_BASE}/billing/plan`,
     // AI endpoints
@@ -555,6 +571,55 @@ export const api = {
             return userData.profile || userData;
         } catch (error) {
             console.error('Error updating profile:', error);
+            throw error;
+        }
+    },
+
+    async uploadAvatar(file: File): Promise<Profile> {
+        try {
+            // Create FormData for multipart/form-data upload
+            const formData = new FormData();
+            formData.append('avatar', file);
+
+            // Get headers without Content-Type (browser will set it automatically for FormData)
+            const headers = buildTelegramHeaders();
+            // Remove Content-Type to let browser set it with boundary
+            delete (headers as any)['Content-Type'];
+
+            log(`Uploading avatar: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+
+            const response = await fetchWithTimeout(URLS.uploadAvatar, {
+                method: 'POST',
+                headers: headers,
+                body: formData,
+            });
+
+            if (!response.ok) {
+                // Handle authentication errors specifically
+                if (response.status === 401) {
+                    log('Avatar upload failed: Unauthorized (401)');
+                    throw new UnauthorizedError('Сессия истекла. Пожалуйста, откройте приложение заново из Telegram.');
+                }
+
+                if (response.status === 403) {
+                    log('Avatar upload failed: Forbidden (403)');
+                    throw new ForbiddenError('Доступ запрещен. Пожалуйста, откройте приложение заново из Telegram.');
+                }
+
+                // Handle other errors
+                const errorData = await response.json().catch(() => ({}));
+                const errorMessage = errorData.error || errorData.detail || 'Failed to upload avatar';
+                log(`Avatar upload failed: ${errorMessage}`);
+                throw new Error(errorMessage);
+            }
+
+            const userData = await response.json();
+            log('Avatar uploaded successfully');
+            // Backend returns UserSerializer {id, username, email, profile: {...}}
+            // Extract profile field
+            return userData.profile || userData;
+        } catch (error) {
+            console.error('Error uploading avatar:', error);
             throw error;
         }
     },

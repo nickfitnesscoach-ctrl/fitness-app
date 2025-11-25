@@ -22,6 +22,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     bmi = serializers.ReadOnlyField()
     email_verified = serializers.ReadOnlyField()
     is_complete = serializers.ReadOnlyField()
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
@@ -35,6 +36,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             'goal_type',
             'target_weight',
             'timezone',
+            'avatar_url',
             'age',
             'bmi',
             'email_verified',
@@ -42,7 +44,28 @@ class ProfileSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['created_at', 'updated_at', 'email_verified', 'age', 'bmi', 'is_complete']
+        read_only_fields = ['created_at', 'updated_at', 'email_verified', 'age', 'bmi', 'is_complete', 'avatar_url']
+
+    def get_avatar_url(self, obj):
+        """
+        Return full URL for avatar if exists.
+        Includes version parameter for cache busting.
+        """
+        if obj.avatar:
+            request = self.context.get('request')
+            base_url = None
+
+            if request:
+                base_url = request.build_absolute_uri(obj.avatar.url)
+            else:
+                base_url = obj.avatar.url
+
+            # Add version parameter for cache busting
+            if obj.avatar_version > 0:
+                separator = '&' if '?' in base_url else '?'
+                return f"{base_url}{separator}v={obj.avatar_version}"
+            return base_url
+        return None
 
     def validate_height(self, value):
         """Validate height is in realistic range."""

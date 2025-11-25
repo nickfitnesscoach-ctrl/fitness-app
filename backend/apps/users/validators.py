@@ -1,11 +1,14 @@
 """
 Email validation utilities for FoodMind AI.
 Validates email domains and prevents disposable email addresses.
+Also includes avatar file validation.
 """
 
+import os
 import logging
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator
+from django.utils.translation import gettext_lazy as _
 
 logger = logging.getLogger(__name__)
 
@@ -163,3 +166,77 @@ def mark_email_as_verified(user):
     except Exception as e:
         logger.error(f"Failed to mark email as verified for user {user.email}: {str(e)}")
         raise
+
+
+# ============================================================
+# Avatar File Validators
+# ============================================================
+
+# Avatar validation settings
+AVATAR_MAX_SIZE_MB = 5
+AVATAR_MAX_SIZE_BYTES = AVATAR_MAX_SIZE_MB * 1024 * 1024
+AVATAR_ALLOWED_TYPES = ('image/jpeg', 'image/png', 'image/webp')
+AVATAR_ALLOWED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp')
+
+
+def validate_avatar_file_extension(value):
+    """
+    Validate that the uploaded file has an allowed extension.
+
+    Args:
+        value: FieldFile object (e.g., from ImageField)
+
+    Raises:
+        ValidationError: If file extension is not allowed
+    """
+    if not value:
+        return
+
+    ext = os.path.splitext(value.name)[1].lower()
+    if ext not in AVATAR_ALLOWED_EXTENSIONS:
+        raise ValidationError(
+            _(f'Неверный формат файла. Разрешены только: {", ".join(AVATAR_ALLOWED_EXTENSIONS)}'),
+            code='invalid_extension'
+        )
+
+
+def validate_avatar_file_size(value):
+    """
+    Validate that the uploaded file size does not exceed the limit.
+
+    Args:
+        value: FieldFile object (e.g., from ImageField)
+
+    Raises:
+        ValidationError: If file size exceeds maximum allowed size
+    """
+    if not value:
+        return
+
+    if value.size > AVATAR_MAX_SIZE_BYTES:
+        raise ValidationError(
+            _(f'Размер файла превышает {AVATAR_MAX_SIZE_MB} МБ. '
+              f'Текущий размер: {value.size / (1024 * 1024):.1f} МБ'),
+            code='file_too_large'
+        )
+
+
+def validate_avatar_mime_type(file):
+    """
+    Validate that the uploaded file has an allowed MIME type.
+
+    Args:
+        file: InMemoryUploadedFile or TemporaryUploadedFile
+
+    Raises:
+        ValidationError: If MIME type is not allowed
+    """
+    if not file:
+        return
+
+    content_type = getattr(file, 'content_type', None)
+    if content_type and content_type not in AVATAR_ALLOWED_TYPES:
+        raise ValidationError(
+            _(f'Неверный формат файла. Разрешены только: JPEG, PNG, WebP'),
+            code='invalid_mime_type'
+        )

@@ -11,6 +11,8 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
+from .validators import validate_avatar_file_extension, validate_avatar_file_size
+
 
 class Profile(models.Model):
     """
@@ -116,6 +118,25 @@ class Profile(models.Model):
         null=True,
         verbose_name='Часовой пояс',
         help_text='Часовой пояс пользователя (например, Europe/Moscow, Asia/Yekaterinburg)'
+    )
+
+    # Avatar
+    avatar = models.ImageField(
+        upload_to='avatars/',
+        null=True,
+        blank=True,
+        verbose_name='Аватар',
+        help_text='Фото профиля пользователя (макс. 5 МБ, форматы: JPG, PNG, WebP)',
+        validators=[
+            validate_avatar_file_extension,
+            validate_avatar_file_size,
+        ]
+    )
+
+    avatar_version = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Версия аватара',
+        help_text='Версия аватара для cache busting (инкрементируется при каждой загрузке)'
     )
 
     # Данные из Telegram
@@ -295,6 +316,44 @@ class Profile(models.Model):
             bool(self.weight),
             bool(self.goal_type),
         ])
+
+    def set_avatar(self, new_avatar_file):
+        """
+        Safely set a new avatar, deleting the old one.
+
+        Args:
+            new_avatar_file: The new avatar file to set
+
+        This method:
+        1. Safely deletes the old avatar file if it exists
+        2. Sets the new avatar
+        3. Increments the avatar_version for cache busting
+        4. Saves the profile
+        """
+        # Delete old avatar safely
+        if self.avatar:
+            old_avatar_path = self.avatar.name
+            # Security check: ensure file is within MEDIA_ROOT
+            if old_avatar_path and old_avatar_path.startswith('avatars/'):
+                try:
+                    # Use storage.delete to safely remove the file
+                    from django.core.files.storage import default_storage
+                    if default_storage.exists(old_avatar_path):
+                        default_storage.delete(old_avatar_path)
+                except Exception as e:
+                    # Log error but don't fail the operation
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to delete old avatar {old_avatar_path}: {e}")
+
+        # Set new avatar
+        self.avatar = new_avatar_file
+
+        # Increment version for cache busting
+        self.avatar_version += 1
+
+        # Save the profile
+        self.save(update_fields=['avatar', 'avatar_version'])
 
 
 class EmailVerificationToken(models.Model):

@@ -20,6 +20,7 @@ urlpatterns = [
 
     # Profile endpoints
     path('profile/', views.ProfileView.as_view(), name='profile'),
+    path('profile/avatar/', views.UploadAvatarView.as_view(), name='upload-avatar'),
     path('profile/change-password/', views.ChangePasswordView.as_view(), name='change-password'),
     path('profile/delete/', views.DeleteAccountView.as_view(), name='delete-account'),
 ]
