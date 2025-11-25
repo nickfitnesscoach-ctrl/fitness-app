@@ -24,7 +24,7 @@ const ProfilePage: React.FC = () => {
     const [editedGoals, setEditedGoals] = useState<UserGoals | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [selectedDate, setSelectedDate] = useState(new Date());
+
     const [profile, setProfile] = useState<Profile | null>(null);
 
     // Generate week days array
@@ -43,8 +43,7 @@ const ProfilePage: React.FC = () => {
         return days;
     };
 
-    const weekDays = getWeekDays();
-    const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
 
     useEffect(() => {
         loadGoals();
@@ -205,35 +204,7 @@ const ProfilePage: React.FC = () => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pb-24">
             <div className="max-w-2xl mx-auto">
-                {/* Week Calendar */}
-                <div className="bg-white rounded-3xl shadow-lg p-4 mb-6">
-                    <div className="grid grid-cols-7 gap-2">
-                        {weekDays.map((date, index) => {
-                            const isToday = date.toDateString() === new Date().toDateString();
-                            const isSelected = date.toDateString() === selectedDate.toDateString();
 
-                            return (
-                                <button
-                                    key={index}
-                                    onClick={() => setSelectedDate(date)}
-                                    className={`flex flex-col items-center p-3 rounded-2xl transition-all ${isSelected
-                                        ? 'bg-gradient-to-br from-blue-500 to-purple-500 text-white shadow-lg scale-105'
-                                        : isToday
-                                            ? 'bg-blue-50 text-blue-600'
-                                            : 'hover:bg-gray-50 text-gray-600'
-                                        }`}
-                                >
-                                    <span className={`text-xs font-medium mb-1 ${isSelected ? 'text-white' : 'text-gray-500'}`}>
-                                        {dayNames[index]}
-                                    </span>
-                                    <span className={`text-lg font-bold ${isSelected ? 'text-white' : ''}`}>
-                                        {date.getDate()}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
 
                 {/* Profile Card */}
                 <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-6">

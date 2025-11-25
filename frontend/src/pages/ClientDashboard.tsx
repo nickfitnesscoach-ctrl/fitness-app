@@ -5,6 +5,8 @@ import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
+import Calendar from '../components/Calendar';
+
 interface DailyGoal {
     calories: number;
     protein: number;
@@ -43,18 +45,19 @@ const ClientDashboard: React.FC = () => {
     const [consumed, setConsumed] = useState<TotalConsumed>({ calories: 0, protein: 0, fat: 0, carbohydrates: 0 });
     const [meals, setMeals] = useState<Meal[]>([]);
     const [error, setError] = useState<string | null>(null);
-
-    const today = new Date().toISOString().split('T')[0];
+    const [selectedDate, setSelectedDate] = useState(new Date());
 
     useEffect(() => {
         if (isReady && webAppDetected) {
-            loadDashboardData();
+            loadDashboardData(selectedDate);
         }
-    }, [isReady, webAppDetected]);
+    }, [isReady, webAppDetected, selectedDate]);
 
-    const loadDashboardData = async () => {
+    const loadDashboardData = async (date: Date) => {
         setLoading(true);
         setError(null);
+
+        const dateStr = date.toISOString().split('T')[0];
 
         try {
             const goalsData = await api.getDailyGoals();
@@ -67,7 +70,7 @@ const ClientDashboard: React.FC = () => {
                 });
             }
 
-            const mealsData = await api.getMeals(today);
+            const mealsData = await api.getMeals(dateStr);
             if (Array.isArray(mealsData)) {
                 setMeals(mealsData);
 
@@ -155,12 +158,14 @@ const ClientDashboard: React.FC = () => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pb-24">
             <div className="max-w-lg mx-auto space-y-6">
+                <Calendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
+
                 <div className="text-center pt-4">
                     <h1 className="text-2xl font-bold text-gray-900">
                         Привет, {user?.first_name || 'друг'}!
                     </h1>
                     <p className="text-gray-500 mt-1">
-                        {new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        {selectedDate.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
                     </p>
                 </div>
 
