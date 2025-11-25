@@ -2,7 +2,7 @@
 Common views for FoodMind AI.
 """
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.db import connection
@@ -12,6 +12,7 @@ import sys
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([])  # No throttling for health checks
 def health_check(request):
     """
     Health check endpoint for monitoring and load balancers.
@@ -43,6 +44,7 @@ def health_check(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([])  # No throttling for readiness checks
 def readiness_check(request):
     """
     Readiness check endpoint for Kubernetes/Docker.
@@ -71,6 +73,7 @@ def readiness_check(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([])  # No throttling for liveness checks
 def liveness_check(request):
     """
     Liveness check endpoint for Kubernetes/Docker.
