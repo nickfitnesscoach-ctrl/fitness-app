@@ -11,7 +11,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.config import settings
 from app.handlers import register_all_handlers
-from app.services.database import close_db
 from app.utils.logger import logger
 
 
@@ -43,8 +42,8 @@ async def on_startup():
 async def on_shutdown():
     """Действия при остановке бота."""
     logger.info("[STOP] Shutting down bot...")
-    await close_db()
-    logger.info("[OK] Database connection closed")
+    # Database connection is no longer used - bot communicates via Backend API
+    logger.info("[OK] Bot shutdown complete")
 
 
 async def main():
