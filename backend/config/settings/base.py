@@ -475,8 +475,9 @@ OPENROUTER_SITE_URL = os.environ.get("OPENROUTER_SITE_URL", "http://localhost:80
 OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "FoodMind AI")
 # Changed from openai/gpt-5-image-mini due to geographic restrictions (403 error in Russia)
 # Changed from google/gemini-2.0-flash-exp:free due to rate limiting on free tier
-# Claude 3.5 Haiku is fast, cheap ($0.25/1M tokens), and works globally
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
+# Changed from anthropic/claude-3.5-haiku - Bedrock version doesn't support vision
+# Google Gemini 2.5 Flash Image (Nano Banana) - stable, cheap ($0.30/M), good vision
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash-image")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # AI Recognition Settings
