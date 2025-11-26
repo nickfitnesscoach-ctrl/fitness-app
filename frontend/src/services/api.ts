@@ -659,9 +659,13 @@ export const api = {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                const errorMessage = errorData.error || errorData.detail || `AI recognition failed (${response.status})`;
-                log(`AI recognition error: ${errorMessage}`);
-                throw new Error(errorMessage);
+                log(`AI recognition error: ${errorData.error || errorData.detail || response.status}`);
+
+                // Preserve error structure for proper handling in FoodLogPage
+                const error = new Error(errorData.detail || errorData.error || `AI recognition failed (${response.status})`);
+                (error as any).error = errorData.error || 'UNKNOWN_ERROR';
+                (error as any).detail = errorData.detail || error.message;
+                throw error;
             }
 
             const result = await response.json();

@@ -27,7 +27,10 @@ const FoodLogPage: React.FC = () => {
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
     const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
     const [error, setError] = useState<string | null>(null);
+    const [errorCode, setErrorCode] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
+    const MAX_RETRIES = 3;
 
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -69,9 +72,22 @@ const FoodLogPage: React.FC = () => {
         input.click();
     };
 
+    const getErrorMessage = (errorCode: string, defaultMessage: string): string => {
+        const messages: Record<string, string> = {
+            'INVALID_IMAGE': 'Некорректное изображение. Попробуйте другое фото с едой',
+            'MISSING_IMAGE': 'Изображение не выбрано. Попробуйте снова',
+            'AI_SERVICE_ERROR': 'Сервис распознавания временно недоступен',
+            'RATE_LIMIT_EXCEEDED': 'Слишком много запросов. Подождите минуту',
+            'UNAUTHORIZED': 'Сессия истекла. Откройте приложение заново из Telegram',
+            'NO_FOOD_DETECTED': 'Мы не нашли на фото еду. Попробуйте сделать кадр ближе или при лучшем освещении'
+        };
+        return messages[errorCode] || defaultMessage;
+    };
+
     const analyzeImage = async (imageBase64: string) => {
         setAnalyzing(true);
         setError(null);
+        setErrorCode(null);
         setAnalysisResult(null);
 
         try {
@@ -79,14 +95,19 @@ const FoodLogPage: React.FC = () => {
 
             if (result.recognized_items && result.recognized_items.length > 0) {
                 setAnalysisResult(result);
+                setRetryCount(0); // Reset retry count on success
                 // Select all items by default
                 setSelectedItems(new Set(result.recognized_items.map((_: any, i: number) => i)));
             } else {
-                setError('Не удалось распознать еду на фото. Попробуйте другое изображение.');
+                // Empty result - no food detected
+                setErrorCode('NO_FOOD_DETECTED');
+                setError('Мы не нашли на фото еду. Попробуйте сделать кадр ближе или при лучшем освещении');
             }
         } catch (err: any) {
             console.error('Analysis failed:', err);
-            setError(err.message || 'Ошибка при анализе фото');
+            const code = err.error || 'UNKNOWN_ERROR';
+            setErrorCode(code);
+            setError(getErrorMessage(code, err.message || 'Ошибка при анализе фото'));
         } finally {
             setAnalyzing(false);
         }
@@ -192,6 +213,28 @@ const FoodLogPage: React.FC = () => {
         setAnalysisResult(null);
         setSelectedItems(new Set());
         setError(null);
+        setErrorCode(null);
+        setRetryCount(0);
+    };
+
+    const retryAnalysis = () => {
+        if (!selectedImage) return;
+
+        if (retryCount >= MAX_RETRIES) {
+            setError('Превышено количество попыток. Попробуйте загрузить другое фото');
+            setErrorCode('MAX_RETRIES_EXCEEDED');
+            return;
+        }
+
+        setRetryCount(prev => prev + 1);
+        analyzeImage(selectedImage);
+    };
+
+    // Determine if retry button should be shown
+    const canRetry = () => {
+        if (!errorCode) return false;
+        // Allow retry for service errors and empty results, but not for invalid image or auth errors
+        return ['AI_SERVICE_ERROR', 'NO_FOOD_DETECTED', 'RATE_LIMIT_EXCEEDED'].includes(errorCode);
     };
 
     return (
@@ -261,13 +304,34 @@ const FoodLogPage: React.FC = () => {
                         {/* Error message */}
                         {error && (
                             <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-                                <p className="text-red-600 text-center">{error}</p>
-                                <button
-                                    onClick={resetState}
-                                    className="w-full mt-3 bg-red-100 text-red-700 py-2 rounded-xl font-medium"
-                                >
-                                    Попробовать снова
-                                </button>
+                                <p className="text-red-600 text-center font-medium">{error}</p>
+
+                                {retryCount > 0 && retryCount < MAX_RETRIES && (
+                                    <p className="text-red-500 text-sm text-center mt-2">
+                                        Попытка {retryCount} из {MAX_RETRIES}
+                                    </p>
+                                )}
+
+                                <div className="flex gap-2 mt-3">
+                                    {canRetry() && retryCount < MAX_RETRIES && (
+                                        <button
+                                            onClick={retryAnalysis}
+                                            disabled={analyzing}
+                                            className="flex-1 bg-red-500 text-white py-2 rounded-xl font-medium hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            {analyzing ? 'Анализируем...' : 'Попробовать снова'}
+                                        </button>
+                                    )}
+
+                                    {(errorCode === 'NO_FOOD_DETECTED' || errorCode === 'INVALID_IMAGE' || errorCode === 'MISSING_IMAGE' || retryCount >= MAX_RETRIES) && (
+                                        <button
+                                            onClick={resetState}
+                                            className="flex-1 bg-gray-500 text-white py-2 rounded-xl font-medium hover:bg-gray-600 transition-colors"
+                                        >
+                                            Выбрать другое фото
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         )}
 
