@@ -19,9 +19,18 @@ interface PlanCardProps {
     isCurrent: boolean;
     isLoading: boolean;
     onSelect: (planId: PlanId) => void;
+    customButtonText?: string;
+    disabled?: boolean;
 }
 
-const PlanCard: React.FC<PlanCardProps> = ({ plan, isCurrent, isLoading, onSelect }) => {
+const PlanCard: React.FC<PlanCardProps> = ({
+    plan,
+    isCurrent,
+    isLoading,
+    onSelect,
+    customButtonText,
+    disabled
+}) => {
     const isFree = plan.id === 'free';
 
     // Styles based on plan type
@@ -71,17 +80,21 @@ const PlanCard: React.FC<PlanCardProps> = ({ plan, isCurrent, isLoading, onSelec
             {/* Button */}
             <button
                 onClick={() => onSelect(plan.id)}
-                disabled={isCurrent || isLoading}
+                disabled={isCurrent || isLoading || disabled}
                 className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2
-                    ${isCurrent
-                        ? (isFree ? "bg-gray-100 text-gray-400" : "bg-white/20 text-white/50")
-                        : (isFree ? "bg-black text-white hover:bg-gray-800" : "bg-white text-black hover:bg-gray-100")
+                    ${disabled
+                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                        : isCurrent
+                            ? (isFree ? "bg-gray-100 text-gray-400" : "bg-white/20 text-white/50")
+                            : (isFree ? "bg-black text-white hover:bg-gray-800" : "bg-white text-black hover:bg-gray-100")
                     }
                     ${isLoading ? 'opacity-80 cursor-wait' : ''}
                 `}
             >
                 {isLoading ? (
                     <span className="animate-pulse">Загрузка...</span>
+                ) : customButtonText ? (
+                    customButtonText
                 ) : isCurrent ? (
                     "Текущий план"
                 ) : (

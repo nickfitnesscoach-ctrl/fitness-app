@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import PlanCard, { Plan, PlanId } from '../components/PlanCard';
 import { api } from '../services/api';
+import { useBilling } from '../contexts/BillingContext';
 
 const PLANS: Plan[] = [
     {
@@ -41,33 +42,22 @@ const PLANS: Plan[] = [
 ];
 
 const SubscriptionPage: React.FC = () => {
-    const [currentPlan, setCurrentPlan] = useState<{ id: PlanId }>({ id: 'free' });
+    const billing = useBilling();
     const [loadingPlanId, setLoadingPlanId] = useState<PlanId | null>(null);
-
-    // Mock loading current plan from API
-    useEffect(() => {
-        // In a real app, we would fetch the current plan here
-        // const fetchPlan = async () => {
-        //     const plan = await api.getCurrentPlan();
-        //     setCurrentPlan(plan);
-        // };
-        // fetchPlan();
-    }, []);
 
     const showToast = (message: string) => {
         // Placeholder for toast notification
-        alert(message);
+        const tg = window.Telegram?.WebApp;
+        if (tg?.showAlert) {
+            tg.showAlert(message);
+        } else {
+            alert(message);
+        }
     };
 
     const handleSelectPlan = async (planId: PlanId) => {
-        if (planId === currentPlan.id) return;
-
-        if (planId === 'free') {
-            // Logic to switch to free plan
-            setCurrentPlan({ id: 'free' });
-            showToast("Вы используете бесплатный план");
-            return;
-        }
+        // Prevent selection if already loading or if plan is active (though button should be disabled)
+        if (loadingPlanId) return;
 
         // Check if running in Telegram Mini App
         const isTMA = typeof window !== 'undefined' && window.Telegram?.WebApp?.initData;
@@ -98,6 +88,16 @@ const SubscriptionPage: React.FC = () => {
         }
     };
 
+    // Helper to format date
+    const formatDate = (dateString: string | null) => {
+        if (!dateString) return '';
+        return new Date(dateString).toLocaleDateString('ru-RU', {
+            day: 'numeric',
+            month: 'numeric',
+            year: 'numeric'
+        });
+    };
+
     return (
         <div className="p-4 pb-24 space-y-6">
             <div className="text-center space-y-2">
@@ -106,15 +106,69 @@ const SubscriptionPage: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-                {PLANS.map((plan) => (
-                    <PlanCard
-                        key={plan.id}
-                        plan={plan}
-                        isCurrent={plan.id === currentPlan.id}
-                        isLoading={loadingPlanId === plan.id}
-                        onSelect={handleSelectPlan}
-                    />
-                ))}
+                {PLANS.map((plan) => {
+                    // Determine state for this card
+                    let isCurrent = false;
+                    let customButtonText: string | undefined;
+                    let disabled = false;
+
+                    if (billing.data) {
+                        const userPlanCode = billing.data.plan_code;
+                        const isPro = ['MONTHLY', 'YEARLY'].includes(userPlanCode);
+
+                        if (plan.id === 'free') {
+                            if (userPlanCode === 'FREE') {
+                                isCurrent = true;
+                            } else {
+                                // User is PRO, but looking at FREE card
+                                customButtonText = "Базовый бесплатный тариф";
+                                disabled = true;
+                            }
+                        } else {
+                            // PRO plans
+                            // Map plan.id to code for comparison
+                            const planCode = plan.id === 'pro_monthly' ? 'MONTHLY' : 'YEARLY';
+
+                            if (userPlanCode === planCode) {
+                                isCurrent = true;
+                                if (billing.data.expires_at) {
+                                    customButtonText = `Текущий план до ${formatDate(billing.data.expires_at)}`;
+                                }
+                                disabled = true;
+                            } else if (isPro) {
+                                // User has DIFFERENT PRO plan (e.g. Monthly vs Yearly)
+                                // Allow upgrade/downgrade? 
+                                // For now, per requirements, if PRO is active, we might want to disable others or handle switch.
+                                // Requirement says: "Если план Pro уже активен... Кнопку отключить (disabled)"
+                                // But specifically for the ACTIVE plan. 
+                                // Let's assume we allow switching if it's a different PRO plan, 
+                                // OR if the requirement implies disabling ALL payment buttons if ANY Pro is active.
+                                // "Если пользователь на Pro... На карточке PRO (месячный)... Сделать неактивную кнопку"
+                                // Let's follow the specific instruction for the active plan.
+                                // If user has Monthly, and looks at Yearly, usually we want to allow upgrade.
+                                // But the prompt says: "Итог: у пользователя на «Дневнике» — Pro, а в «Подписке» — как будто он всё ещё на Free."
+                                // And "Если план Pro уже активен, не пытаться снова создавать платеж по нажатию" - this likely refers to the active plan.
+
+                                // Let's keep it simple: if it's the current plan, disable it. 
+                                // If it's another PRO plan, leave it enabled (upgrade path), unless explicitly told otherwise.
+                                // Wait, the prompt says: "На карточке PRO (месячный): Вместо кнопки... Сделать неактивную кнопку... Кнопку отключить".
+                                // This applies if the user HAS that plan.
+                            }
+                        }
+                    }
+
+                    return (
+                        <PlanCard
+                            key={plan.id}
+                            plan={plan}
+                            isCurrent={isCurrent}
+                            isLoading={loadingPlanId === plan.id}
+                            onSelect={handleSelectPlan}
+                            customButtonText={customButtonText}
+                            disabled={disabled}
+                        />
+                    );
+                })}
             </div>
 
             <p className="text-center text-xs text-gray-400 mt-8">

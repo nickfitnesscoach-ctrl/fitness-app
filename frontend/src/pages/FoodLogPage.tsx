@@ -259,13 +259,12 @@ const FoodLogPage: React.FC = () => {
 
                 {/* Billing Info Banner */}
                 {billing.data && !billing.loading && (
-                    <div className={`mb-6 rounded-2xl p-4 ${
-                        billing.isPro
+                    <div className={`mb-6 rounded-2xl p-4 ${billing.isPro
                             ? 'bg-gradient-to-r from-purple-100 to-blue-100 border-2 border-purple-200'
                             : billing.isLimitReached
                                 ? 'bg-red-50 border-2 border-red-200'
                                 : 'bg-blue-50 border-2 border-blue-200'
-                    }`}>
+                        }`}>
                         {billing.isPro ? (
                             <>
                                 <div className="flex items-center gap-2 mb-1">
@@ -277,6 +276,15 @@ const FoodLogPage: React.FC = () => {
                                 <p className="text-purple-700 text-sm">
                                     Анализ фото — без ограничений ∞
                                 </p>
+                                {billing.data.expires_at && (
+                                    <p className="text-purple-700 text-sm mt-1 font-medium">
+                                        Подписка активна до {new Date(billing.data.expires_at).toLocaleDateString('ru-RU', {
+                                            day: 'numeric',
+                                            month: 'long',
+                                            year: 'numeric'
+                                        })}
+                                    </p>
+                                )}
                             </>
                         ) : billing.isLimitReached ? (
                             <>
@@ -467,8 +475,8 @@ const FoodLogPage: React.FC = () => {
                                                 key={index}
                                                 onClick={() => toggleItemSelection(index)}
                                                 className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${selectedItems.has(index)
-                                                        ? 'border-blue-500 bg-blue-50'
-                                                        : 'border-gray-200 bg-gray-50'
+                                                    ? 'border-blue-500 bg-blue-50'
+                                                    : 'border-gray-200 bg-gray-50'
                                                     }`}
                                             >
                                                 <div className="flex items-start justify-between">
@@ -481,8 +489,8 @@ const FoodLogPage: React.FC = () => {
                                                             {Math.round(item.calories)} ккал
                                                         </span>
                                                         <div className={`w-6 h-6 rounded-full flex items-center justify-center ${selectedItems.has(index)
-                                                                ? 'bg-blue-500 text-white'
-                                                                : 'bg-gray-200 text-gray-400'
+                                                            ? 'bg-blue-500 text-white'
+                                                            : 'bg-gray-200 text-gray-400'
                                                             }`}>
                                                             {selectedItems.has(index) ? <Check size={16} /> : <Plus size={16} />}
                                                         </div>
@@ -530,8 +538,8 @@ const FoodLogPage: React.FC = () => {
                                     onClick={handleSaveMeal}
                                     disabled={selectedItems.size === 0 || saving}
                                     className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all ${selectedItems.size === 0
-                                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                            : 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg active:scale-95'
+                                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                        : 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg active:scale-95'
                                         }`}
                                 >
                                     {saving ? (
