@@ -81,6 +81,7 @@ class AIRecognitionService:
 
         Args:
             image_data_url: Image in data URL format (data:image/jpeg;base64,...)
+            user_description: Optional user-provided description
 
         Returns:
             Dict with recognized_items list
@@ -89,6 +90,10 @@ class AIRecognitionService:
             ValueError: If JSON is invalid after max retries
             Exception: If API call fails
         """
+        # Truncate image data for logging
+        image_preview = image_data_url[:50] + "..." if len(image_data_url) > 50 else image_data_url
+        logger.debug(f"Starting food recognition. Image: {image_preview}, Description: '{user_description}'")
+
         prompt = self._get_recognition_prompt(user_description)
 
         for attempt in range(1, self.max_retries + 1):
@@ -122,7 +127,13 @@ class AIRecognitionService:
                 )
 
                 response_text = completion.choices[0].message.content
-                logger.info(f"AI Response length: {len(response_text)} chars")
+                logger.debug(f"AI Response length: {len(response_text)} chars")
+
+                # Log response preview (first 200 chars) at INFO level
+                response_preview = response_text[:200] + "..." if len(response_text) > 200 else response_text
+                logger.info(f"AI Response preview: {response_preview}")
+
+                # Full response only at DEBUG level
                 logger.debug(f"Full AI Response (attempt {attempt}): {response_text}")
 
                 # Try to parse JSON
@@ -138,18 +149,23 @@ class AIRecognitionService:
                             raise ValueError("Invalid response structure after max retries")
                         continue
 
-                    logger.info(f"Successfully parsed JSON on attempt {attempt}")
+                    logger.info(f"Successfully parsed JSON on attempt {attempt}. Items found: {len(result.get('recognized_items', []))}")
                     return result
 
                 except json.JSONDecodeError as e:
-                    logger.warning(f"JSON decode error (attempt {attempt}): {e}")
+                    logger.warning(f"JSON decode error (attempt {attempt}/{self.max_retries}): {str(e)[:100]}")
                     if attempt == self.max_retries:
+                        logger.error(f"Failed to parse JSON after {self.max_retries} attempts. Last error: {e}")
                         raise ValueError(f"Invalid JSON after {self.max_retries} attempts: {e}")
                     continue
 
             except AuthenticationError as e:
                 # Don't retry on authentication errors - API key is invalid
-                logger.error(f"Authentication error with OpenRouter API: {e}")
+                logger.error(
+                    f"OpenRouter authentication failed. "
+                    f"API key prefix: {settings.OPENROUTER_API_KEY[:15]}..., "
+                    f"Error: {str(e)}"
+                )
                 raise ImproperlyConfigured(
                     "OpenRouter API authentication failed. "
                     "Please check your OPENROUTER_API_KEY. "
@@ -157,8 +173,13 @@ class AIRecognitionService:
                 )
 
             except Exception as e:
-                logger.error(f"AI Recognition error (attempt {attempt}): {e}")
+                error_type = type(e).__name__
+                logger.error(
+                    f"AI Recognition error (attempt {attempt}/{self.max_retries}): "
+                    f"{error_type}: {str(e)[:200]}"
+                )
                 if attempt == self.max_retries:
+                    logger.error(f"AI Recognition failed after {self.max_retries} attempts. Final error: {e}")
                     raise
                 continue
 

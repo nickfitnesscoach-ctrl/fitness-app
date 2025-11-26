@@ -519,8 +519,34 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 # YooKassa Payment Configuration
 # ============================================================
 
-YOOKASSA_SHOP_ID = os.environ.get("YOOKASSA_SHOP_ID", "")
-YOOKASSA_SECRET_KEY = os.environ.get("YOOKASSA_SECRET_KEY", "")
+# YooKassa mode: test or prod
+YOOKASSA_MODE = os.environ.get("YOOKASSA_MODE", "test")
+
+# Test credentials
+YOOKASSA_SHOP_ID_TEST = os.environ.get("YOOKASSA_SHOP_ID_TEST", "")
+YOOKASSA_API_KEY_TEST = os.environ.get("YOOKASSA_API_KEY_TEST", "")
+
+# Production credentials
+YOOKASSA_SHOP_ID_PROD = os.environ.get("YOOKASSA_SHOP_ID_PROD", "")
+YOOKASSA_API_KEY_PROD = os.environ.get("YOOKASSA_API_KEY_PROD", "")
+
+# Active credentials based on mode
+if YOOKASSA_MODE == "prod":
+    YOOKASSA_SHOP_ID = YOOKASSA_SHOP_ID_PROD
+    YOOKASSA_SECRET_KEY = YOOKASSA_API_KEY_PROD
+else:
+    YOOKASSA_SHOP_ID = YOOKASSA_SHOP_ID_TEST
+    YOOKASSA_SECRET_KEY = YOOKASSA_API_KEY_TEST
+
+# Return URL for payment confirmation
+YOOKASSA_RETURN_URL = os.environ.get("YOOKASSA_RETURN_URL", "https://eatfit24.ru/payments/return/")
+
+# Webhook secret for signature validation (optional)
+YOOKASSA_WEBHOOK_SECRET = os.environ.get("YOOKASSA_WEBHOOK_SECRET", "")
+
+# Billing constants
+BILLING_PLUS_PLAN_CODE = "PLUS"
+BILLING_PLUS_DURATION_DAYS = 30
 
 
 # ============================================================

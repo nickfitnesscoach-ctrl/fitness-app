@@ -7,9 +7,9 @@
  * - Методы обновления состояния
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
-import { BillingState, BillingMe, BillingPlanCode } from '../types/billing';
+import { BillingState, BillingMe } from '../types/billing';
 import { useAuth } from './AuthContext';
 
 interface BillingContextType extends BillingState {
@@ -23,6 +23,7 @@ const BillingContext = createContext<BillingContextType | undefined>(undefined);
 export const useBilling = () => {
     const context = useContext(BillingContext);
     if (!context) {
+        console.error('[useBilling] Error: Context is undefined. Check if component is wrapped in BillingProvider.');
         throw new Error('useBilling must be used within BillingProvider');
     }
     return context;
@@ -33,9 +34,8 @@ interface BillingProviderProps {
 }
 
 export const BillingProvider: React.FC<BillingProviderProps> = ({ children }) => {
-    console.log('[BillingProvider] Mounting...');
     const auth = useAuth();
-    console.log('[BillingProvider] auth.isInitialized:', auth.isInitialized);
+    const mounted = useRef(true);
 
     const [state, setState] = useState<BillingState>({
         data: null,
@@ -43,49 +43,69 @@ export const BillingProvider: React.FC<BillingProviderProps> = ({ children }) =>
         error: null,
     });
 
+    // Cleanup on unmount
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+        };
+    }, []);
+
     /**
      * Обновить данные подписки с сервера
      */
     const refresh = useCallback(async () => {
         // Не загружаем, пока не авторизовались
         if (!auth.isInitialized) {
+            console.log('[BillingProvider] Waiting for auth initialization...');
             return;
         }
 
         try {
-            setState(prev => ({ ...prev, loading: true, error: null }));
+            if (mounted.current) {
+                setState(prev => ({ ...prev, loading: true, error: null }));
+            }
+
             const data = await api.getBillingMe();
-            setState({
-                data,
-                loading: false,
-                error: null,
-            });
+
+            if (mounted.current) {
+                setState({
+                    data,
+                    loading: false,
+                    error: null,
+                });
+            }
         } catch (error) {
-            console.error('Failed to fetch billing data:', error);
+            console.error('[BillingProvider] Failed to fetch billing data:', error);
 
             // Fallback: устанавливаем FREE план с лимитом 3 при ошибке
-            setState({
-                loading: false,
-                error: error instanceof Error ? error.message : 'Failed to load billing data',
-                data: {
-                    plan_code: 'FREE',
-                    plan_name: 'Бесплатный',
-                    expires_at: null,
-                    is_active: true,
-                    daily_photo_limit: 3,
-                    used_today: 0,
-                    remaining_today: 3,
-                },
-            });
+            if (mounted.current) {
+                setState({
+                    loading: false,
+                    error: error instanceof Error ? error.message : 'Failed to load billing data',
+                    data: {
+                        plan_code: 'FREE',
+                        plan_name: 'Бесплатный',
+                        expires_at: null,
+                        is_active: true,
+                        daily_photo_limit: 3,
+                        used_today: 0,
+                        remaining_today: 3,
+                    },
+                });
+            }
         }
     }, [auth.isInitialized]);
 
     // Загрузка при инициализации авторизации
     useEffect(() => {
         if (auth.isInitialized) {
+            console.log('[BillingProvider] Auth initialized, fetching billing data...');
             refresh();
+        } else {
+            console.log('[BillingProvider] Auth not yet initialized');
         }
-    }, [auth.isInitialized, refresh]); // Запускаем когда авторизация готова
+    }, [auth.isInitialized, refresh]);
 
     // Вычисляемые значения
     const isLimitReached = state.data
@@ -94,12 +114,17 @@ export const BillingProvider: React.FC<BillingProviderProps> = ({ children }) =>
 
     const isPro = state.data ? ['MONTHLY', 'YEARLY'].includes(state.data.plan_code) : false;
 
-    const value: BillingContextType = {
+    const value = useMemo<BillingContextType>(() => ({
         ...state,
         refresh,
         isLimitReached,
         isPro,
-    };
+    }), [state, refresh, isLimitReached, isPro]);
+
+    // Debug mount
+    useEffect(() => {
+        console.log('[BillingProvider] Mounted');
+    }, []);
 
     return <BillingContext.Provider value={value}>{children}</BillingContext.Provider>;
 };

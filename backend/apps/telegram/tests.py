@@ -208,11 +208,14 @@ class PersonalPlanAPITestCase(TestCase):
         self.assertEqual(response.data['can_create'], True)
 
     def test_count_plans_today_user_not_found(self):
-        """Test counting plans for non-existent user."""
+        """Test counting plans for non-existent user - should return count=0, can_create=true."""
         url = reverse('personal-plan-count-today')
         response = self.client.get(url, {'telegram_id': 999999999})
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 0)
+        self.assertEqual(response.data['limit'], 3)
+        self.assertEqual(response.data['can_create'], True)
 
     def test_count_plans_today_missing_telegram_id(self):
         """Test counting plans without telegram_id."""
@@ -220,3 +223,29 @@ class PersonalPlanAPITestCase(TestCase):
         response = self.client.get(url, {})
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('telegram_id is required', response.data['error'])
+
+    def test_count_plans_today_invalid_telegram_id(self):
+        """Test counting plans with invalid telegram_id (not an integer)."""
+        url = reverse('personal-plan-count-today')
+        response = self.client.get(url, {'telegram_id': 'invalid_id'})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Invalid telegram_id', response.data['error'])
+
+    def test_count_plans_today_limit_reached(self):
+        """Test counting plans when daily limit is reached."""
+        # Create 3 plans (the limit)
+        for i in range(3):
+            PersonalPlan.objects.create(
+                user=self.user,
+                ai_text=f'Plan {i + 1}'
+            )
+
+        url = reverse('personal-plan-count-today')
+        response = self.client.get(url, {'telegram_id': 123456789})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 3)
+        self.assertEqual(response.data['limit'], 3)
+        self.assertEqual(response.data['can_create'], False)

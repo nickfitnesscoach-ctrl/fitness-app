@@ -1047,22 +1047,35 @@ def count_plans_today(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # Валидация telegram_id
     try:
         telegram_id = int(telegram_id)
-        telegram_user = TelegramUser.objects.get(telegram_id=telegram_id)
-    except (ValueError, TelegramUser.DoesNotExist):
+    except ValueError:
         return Response(
-            {"error": "User not found"},
-            status=status.HTTP_404_NOT_FOUND
+            {"error": "Invalid telegram_id"},
+            status=status.HTTP_400_BAD_REQUEST
         )
 
+    # Получаем лимит из settings или используем значение по умолчанию
+    max_plans = getattr(settings, 'PERSONAL_PLAN_DAILY_LIMIT', 3)
+
+    # Проверяем, существует ли пользователь
+    try:
+        telegram_user = TelegramUser.objects.get(telegram_id=telegram_id)
+    except TelegramUser.DoesNotExist:
+        # Если пользователь не найден, возвращаем count=0, can_create=true
+        return Response({
+            "count": 0,
+            "limit": max_plans,
+            "can_create": True,
+        })
+
+    # Считаем планы за сегодня
     today_start = datetime.combine(date.today(), datetime.min.time())
     count = PersonalPlan.objects.filter(
         user=telegram_user.user,
         created_at__gte=today_start
     ).count()
-
-    max_plans = 3  # Или из settings
 
     return Response({
         "count": count,

@@ -243,11 +243,37 @@ class AIRecognitionRequestSerializer(serializers.Serializer):
 
 class AIRecognitionResponseSerializer(serializers.Serializer):
     """Serializer for AI recognition response."""
-    data = serializers.DictField(child=serializers.JSONField())
 
     def to_representation(self, instance):
-        """Format response according to API docs with totals."""
+        """
+        Format response to match frontend expectations.
+
+        Frontend expects:
+        {
+          "recognized_items": [...],
+          "total_calories": number,
+          "total_protein": number,
+          "total_fat": number,
+          "total_carbohydrates": number
+        }
+
+        Also maps backend field names to frontend:
+        - estimated_weight -> grams
+        """
         items = instance.get("recognized_items", [])
+
+        # Map field names for frontend compatibility
+        mapped_items = []
+        for item in items:
+            mapped_item = {
+                "name": item.get("name", ""),
+                "grams": item.get("estimated_weight", 0),  # Map estimated_weight -> grams
+                "calories": item.get("calories", 0),
+                "protein": item.get("protein", 0),
+                "fat": item.get("fat", 0),
+                "carbohydrates": item.get("carbohydrates", 0),
+            }
+            mapped_items.append(mapped_item)
 
         # Calculate totals
         total_calories = sum(item.get("calories", 0) for item in items)
@@ -256,17 +282,9 @@ class AIRecognitionResponseSerializer(serializers.Serializer):
         total_carbs = sum(item.get("carbohydrates", 0) for item in items)
 
         return {
-            "data": {
-                "recognized_items": items,
-                "summary": {
-                    "total_items": len(items),
-                    "totals": {
-                        "calories": round(total_calories, 1),
-                        "protein": round(total_protein, 1),
-                        "fat": round(total_fat, 1),
-                        "carbohydrates": round(total_carbs, 1)
-                    },
-                    "formatted": f"Итого: {round(total_calories)} ккал, Б: {round(total_protein, 1)}г, Ж: {round(total_fat, 1)}г, У: {round(total_carbs, 1)}г"
-                }
-            }
+            "recognized_items": mapped_items,
+            "total_calories": round(total_calories, 1),
+            "total_protein": round(total_protein, 1),
+            "total_fat": round(total_fat, 1),
+            "total_carbohydrates": round(total_carbs, 1)
         }
