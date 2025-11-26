@@ -11,8 +11,7 @@ from aiogram.types import CallbackQuery
 from app.config import settings
 from app.keyboards import get_contact_trainer_keyboard, get_gender_keyboard
 from app.services.ai import openrouter_client
-from app.services.database import PlanRepository, SurveyRepository, UserRepository, async_session_maker
-from app.services.django_integration import send_test_results_to_django
+from app.services.backend_api import BackendAPIError, get_backend_api
 from app.services.events import log_ai_error, log_plan_generated, log_survey_completed
 from app.states import SurveyStates
 from app.texts.survey import (
@@ -49,24 +48,26 @@ async def confirm_and_generate(callback: CallbackQuery, state: FSMContext, bot: 
         logger.info(f"User {user_id} tried to confirm twice (race condition prevented)")
         return
 
-    # Проверка rate limit: количество планов за сегодня
+    # Проверка rate limit: количество планов за сегодня (через Backend API)
     try:
-        async with async_session_maker() as session:
-            plans_today = await PlanRepository.count_plans_today(session, user_id)
-            if plans_today >= settings.MAX_PLANS_PER_DAY:
-                await callback.answer("⚠️ Превышен лимит", show_alert=True)
-                await callback.message.edit_text(
-                    f"⚠️ <b>Превышен дневной лимит</b>\n\n"
-                    f"Вы уже сгенерировали <b>{plans_today}</b> {_plans_word(plans_today)} сегодня.\n"
-                    f"Максимум планов в день: <b>{settings.MAX_PLANS_PER_DAY}</b>.\n\n"
-                    f"Попробуйте завтра или свяжитесь с тренером для индивидуальной консультации.",
-                    parse_mode="HTML",
-                    reply_markup=get_contact_trainer_keyboard()
-                )
-                await state.clear()
-                logger.warning(f"User {user_id} hit rate limit: {plans_today} plans today")
-                return
-    except Exception as e:
+        backend_api = get_backend_api()
+        count_result = await backend_api.count_plans_today(user_id)
+
+        if not count_result["can_create"]:
+            plans_today = count_result["count"]
+            await callback.answer("⚠️ Превышен лимит", show_alert=True)
+            await callback.message.edit_text(
+                f"⚠️ <b>Превышен дневной лимит</b>\n\n"
+                f"Вы уже сгенерировали <b>{plans_today}</b> {_plans_word(plans_today)} сегодня.\n"
+                f"Максимум планов в день: <b>{settings.MAX_PLANS_PER_DAY}</b>.\n\n"
+                f"Попробуйте завтра или свяжитесь с тренером для индивидуальной консультации.",
+                parse_mode="HTML",
+                reply_markup=get_contact_trainer_keyboard()
+            )
+            await state.clear()
+            logger.warning(f"User {user_id} hit rate limit: {plans_today} plans today")
+            return
+    except BackendAPIError as e:
         # Если проверка rate limit не удалась, логируем и продолжаем (fail-open)
         logger.error(f"Rate limit check failed for user {user_id}: {e}", exc_info=True)
 
@@ -161,49 +162,54 @@ async def confirm_and_generate(callback: CallbackQuery, state: FSMContext, bot: 
             logger.warning(f"AI response validation failed: {validation['errors']}")
             log_plan_generated(user_id, ai_model, validation_passed=False)
 
-        # Сохранить в БД с обработкой ошибок
+        # Сохранить в Backend API с обработкой ошибок
         try:
-            async with async_session_maker() as session:
-                # Получить или создать пользователя
-                user = await UserRepository.get_or_create(
-                    session,
-                    tg_id=user_id,
-                    username=callback.from_user.username if callback.from_user else None,
-                    full_name=callback.from_user.full_name if callback.from_user else None
-                )
+            backend_api = get_backend_api()
 
-                # Сохранить ответы опроса
-                survey = await SurveyRepository.create_survey_answer(
-                    session,
-                    user_id=user.id,
-                    data=data
-                )
+            # Получить или создать пользователя
+            await backend_api.get_or_create_user(
+                telegram_id=user_id,
+                username=callback.from_user.username if callback.from_user else None,
+                full_name=callback.from_user.full_name if callback.from_user else None
+            )
 
-                # Сохранить план
-                await PlanRepository.create_plan(
-                    session,
-                    user_id=user.id,
-                    survey_answer_id=survey.id,
-                    ai_text=ai_text,
-                    ai_model=ai_model,
-                    prompt_version=prompt_version
-                )
+            # Сохранить ответы опроса
+            survey_response = await backend_api.create_survey(
+                telegram_id=user_id,
+                gender=data["gender"],
+                age=data["age"],
+                height_cm=data["height_cm"],
+                weight_kg=float(data["weight_kg"]),
+                target_weight_kg=float(data["target_weight_kg"]) if data.get("target_weight_kg") else None,
+                activity=data["activity"],
+                training_level=data.get("training_level"),
+                body_goals=data.get("body_goals", []),
+                health_limitations=data.get("health_limitations", []),
+                body_now_id=data["body_now_id"],
+                body_now_label=data.get("body_now_label"),
+                body_now_file=data["body_now_file"],
+                body_ideal_id=data["body_ideal_id"],
+                body_ideal_label=data.get("body_ideal_label"),
+                body_ideal_file=data["body_ideal_file"],
+                timezone=data["tz"],
+                utc_offset_minutes=data["utc_offset_minutes"]
+            )
+
+            # Сохранить план
+            await backend_api.create_plan(
+                telegram_id=user_id,
+                survey_id=survey_response["id"],
+                ai_text=ai_text,
+                ai_model=ai_model,
+                prompt_version=prompt_version
+            )
 
             log_survey_completed(user_id)
             log_plan_generated(user_id, ai_model, validation_passed=validation["valid"])
 
-            # ✅ Отправляем результаты в Django API (только данные опроса)
-            await send_test_results_to_django(
-                telegram_id=user_id,
-                first_name=callback.from_user.first_name if callback.from_user else "",
-                last_name=callback.from_user.last_name if callback.from_user else None,
-                username=callback.from_user.username if callback.from_user else None,
-                survey_data=data
-            )
-
-        except Exception as db_error:
-            # Критическая ошибка: план сгенерирован, но не сохранён в БД
-            logger.critical(f"DB save failed after AI generation for user {user_id}: {db_error}", exc_info=True)
+        except BackendAPIError as api_error:
+            # Критическая ошибка: план сгенерирован, но не сохранён в Backend API
+            logger.critical(f"Backend API save failed after AI generation for user {user_id}: {api_error}", exc_info=True)
 
             # Отправить план пользователю с предупреждением
             await callback.message.answer(

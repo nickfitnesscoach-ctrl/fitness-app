@@ -31,4 +31,10 @@ urlpatterns = [
 
     # Получить ссылку-приглашение
     path('invite-link/', views.get_invite_link, name='telegram-invite-link'),
+
+    # Personal Plan API (для бота)
+    path('users/get-or-create/', views.get_user_or_create, name='telegram-user-get-or-create'),
+    path('personal-plan/survey/', views.create_survey, name='personal-plan-create-survey'),
+    path('personal-plan/plan/', views.create_plan, name='personal-plan-create-plan'),
+    path('personal-plan/count-today/', views.count_plans_today, name='personal-plan-count-today'),
 ]

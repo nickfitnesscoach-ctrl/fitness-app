@@ -22,15 +22,20 @@ from .telegram_auth import (
     telegram_admin_required,
 )
 from .services.webapp_auth import get_webapp_auth_service
-from .models import TelegramUser
+from .models import TelegramUser, PersonalPlanSurvey, PersonalPlan
 from .serializers import (
     TelegramAuthSerializer,
     TelegramUserSerializer,
     SaveTestResultsSerializer,
     WebAppAuthResponseSerializer,
+    CreatePersonalPlanSurveySerializer,
+    PersonalPlanSurveySerializer,
+    CreatePersonalPlanSerializer,
+    PersonalPlanSerializer,
 )
 from apps.nutrition.models import DailyGoal
 from apps.users.models import Profile
+from datetime import datetime, date
 
 
 logger = logging.getLogger(__name__)
@@ -772,7 +777,293 @@ def get_invite_link(request):
     
     # Генерируем уникальную ссылку (можно добавить referral code)
     invite_link = f"https://t.me/{bot_username}?start=invite"
-    
+
     return Response({
         "link": invite_link
     }, status=status.HTTP_200_OK)
+
+
+# ============================================================
+# Personal Plan API (для бота)
+# ============================================================
+
+
+@extend_schema(
+    tags=['Telegram - Personal Plan'],
+    summary="Get or create user by telegram_id",
+    description="Получить или создать пользователя по Telegram ID (для бота)"
+)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_user_or_create(request):
+    """
+    Получить или создать пользователя по telegram_id.
+
+    GET /api/v1/telegram/users/get-or-create/?telegram_id=123456789&username=johndoe&full_name=John%20Doe
+
+    Response:
+        {
+            "id": 1,
+            "user_id": 5,
+            "telegram_id": 123456789,
+            "username": "johndoe",
+            "first_name": "John",
+            "last_name": "Doe",
+            "created": false
+        }
+    """
+    telegram_id = request.query_params.get('telegram_id')
+    username = request.query_params.get('username', '')
+    full_name = request.query_params.get('full_name', '')
+
+    if not telegram_id:
+        return Response(
+            {"error": "telegram_id is required"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        telegram_id = int(telegram_id)
+    except ValueError:
+        return Response(
+            {"error": "Invalid telegram_id"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Получаем или создаём
+    try:
+        telegram_user = TelegramUser.objects.get(telegram_id=telegram_id)
+        created = False
+
+        # Обновляем username/full_name если изменились
+        if username and telegram_user.username != username:
+            telegram_user.username = username
+            telegram_user.save()
+
+    except TelegramUser.DoesNotExist:
+        # Создаём
+        user = User.objects.create_user(
+            username=f"tg_{telegram_id}",
+            first_name=full_name,
+        )
+
+        # Разбиваем full_name на first_name и last_name
+        name_parts = full_name.split(' ', 1)
+        first_name = name_parts[0] if name_parts else ''
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
+
+        telegram_user = TelegramUser.objects.create(
+            user=user,
+            telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+        )
+        created = True
+
+    return Response({
+        "id": telegram_user.id,
+        "user_id": telegram_user.user.id,
+        "telegram_id": telegram_user.telegram_id,
+        "username": telegram_user.username,
+        "first_name": telegram_user.first_name,
+        "last_name": telegram_user.last_name,
+        "created": created,
+    })
+
+
+@extend_schema(
+    tags=['Telegram - Personal Plan'],
+    summary="Create Personal Plan Survey",
+    description="Создать ответ на опрос Personal Plan от бота"
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_survey(request):
+    """
+    Создать ответ на опрос Personal Plan от бота.
+
+    POST /api/v1/telegram/personal-plan/survey/
+
+    Body:
+        {
+            "telegram_id": 123456789,
+            "gender": "male",
+            "age": 30,
+            "height_cm": 180,
+            "weight_kg": 80.5,
+            "target_weight_kg": 75.0,
+            "activity": "moderate",
+            "training_level": "intermediate",
+            "body_goals": ["weight_loss", "muscle_gain"],
+            "health_limitations": ["back_problems"],
+            "body_now_id": 2,
+            "body_now_label": "Атлетичное тело",
+            "body_now_file": "body_2.png",
+            "body_ideal_id": 3,
+            "body_ideal_label": "Подтянутое тело",
+            "body_ideal_file": "body_3.png",
+            "timezone": "Europe/Moscow",
+            "utc_offset_minutes": 180
+        }
+    """
+    serializer = CreatePersonalPlanSurveySerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    telegram_id = data.pop('telegram_id')
+
+    # Получаем или создаём пользователя
+    try:
+        telegram_user = TelegramUser.objects.get(telegram_id=telegram_id)
+        user = telegram_user.user
+    except TelegramUser.DoesNotExist:
+        # Создаём нового пользователя
+        user = User.objects.create_user(
+            username=f"tg_{telegram_id}",
+        )
+        telegram_user = TelegramUser.objects.create(
+            user=user,
+            telegram_id=telegram_id,
+        )
+
+    # Создаём опрос
+    survey = PersonalPlanSurvey.objects.create(
+        user=user,
+        completed_at=datetime.now(),
+        **data
+    )
+
+    result_serializer = PersonalPlanSurveySerializer(survey)
+    return Response(result_serializer.data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    tags=['Telegram - Personal Plan'],
+    summary="Create Personal Plan",
+    description="Создать AI-генерированный Personal Plan от бота"
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_plan(request):
+    """
+    Создать Personal Plan от бота.
+
+    POST /api/v1/telegram/personal-plan/plan/
+
+    Body:
+        {
+            "telegram_id": 123456789,
+            "survey_id": 5,
+            "ai_text": "Ваш персональный план питания и тренировок...",
+            "ai_model": "meta-llama/llama-3.1-70b-instruct",
+            "prompt_version": "v1.0"
+        }
+    """
+    serializer = CreatePersonalPlanSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    telegram_id = data.pop('telegram_id')
+    survey_id = data.pop('survey_id', None)
+
+    # Получаем пользователя
+    try:
+        telegram_user = TelegramUser.objects.get(telegram_id=telegram_id)
+        user = telegram_user.user
+    except TelegramUser.DoesNotExist:
+        return Response(
+            {"error": "User not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Проверяем survey (если указан)
+    survey = None
+    if survey_id:
+        try:
+            survey = PersonalPlanSurvey.objects.get(id=survey_id, user=user)
+        except PersonalPlanSurvey.DoesNotExist:
+            return Response(
+                {"error": "Survey not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    # Проверяем лимит планов в день
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    plans_today = PersonalPlan.objects.filter(
+        user=user,
+        created_at__gte=today_start
+    ).count()
+
+    max_plans_per_day = 3  # Или из settings
+    if plans_today >= max_plans_per_day:
+        return Response(
+            {"error": f"Daily limit of {max_plans_per_day} plans reached"},
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
+
+    # Создаём план
+    plan = PersonalPlan.objects.create(
+        user=user,
+        survey=survey,
+        **data
+    )
+
+    result_serializer = PersonalPlanSerializer(plan)
+    return Response(result_serializer.data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    tags=['Telegram - Personal Plan'],
+    summary="Count plans created today",
+    description="Подсчитать количество планов пользователя за сегодня"
+)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def count_plans_today(request):
+    """
+    Подсчитать количество планов пользователя за сегодня.
+
+    GET /api/v1/telegram/personal-plan/count-today/?telegram_id=123456789
+
+    Response:
+        {
+            "count": 2,
+            "limit": 3,
+            "can_create": true
+        }
+    """
+    telegram_id = request.query_params.get('telegram_id')
+
+    if not telegram_id:
+        return Response(
+            {"error": "telegram_id is required"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        telegram_id = int(telegram_id)
+        telegram_user = TelegramUser.objects.get(telegram_id=telegram_id)
+    except (ValueError, TelegramUser.DoesNotExist):
+        return Response(
+            {"error": "User not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    count = PersonalPlan.objects.filter(
+        user=telegram_user.user,
+        created_at__gte=today_start
+    ).count()
+
+    max_plans = 3  # Или из settings
+
+    return Response({
+        "count": count,
+        "limit": max_plans,
+        "can_create": count < max_plans,
+    })

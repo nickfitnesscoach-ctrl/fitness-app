@@ -3,7 +3,7 @@ Serializers for Telegram integration.
 """
 
 from rest_framework import serializers
-from .models import TelegramUser
+from .models import TelegramUser, PersonalPlanSurvey, PersonalPlan
 from apps.users.serializers import ProfileSerializer
 from apps.nutrition.serializers import DailyGoalSerializer
 
@@ -89,3 +89,91 @@ class WebAppAuthResponseSerializer(serializers.Serializer):
     profile = ProfileSerializer()
     goals = DailyGoalSerializer(allow_null=True)
     is_admin = serializers.BooleanField()
+
+
+class PersonalPlanSurveySerializer(serializers.ModelSerializer):
+    """Serializer для опроса Personal Plan."""
+
+    class Meta:
+        model = PersonalPlanSurvey
+        fields = [
+            'id',
+            'user',
+            'gender',
+            'age',
+            'height_cm',
+            'weight_kg',
+            'target_weight_kg',
+            'activity',
+            'training_level',
+            'body_goals',
+            'health_limitations',
+            'body_now_id',
+            'body_now_label',
+            'body_now_file',
+            'body_ideal_id',
+            'body_ideal_label',
+            'body_ideal_file',
+            'timezone',
+            'utc_offset_minutes',
+            'completed_at',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class CreatePersonalPlanSurveySerializer(serializers.Serializer):
+    """
+    Serializer для создания опроса Personal Plan от бота.
+    Бот не передаёт user - он определяется по telegram_id.
+    """
+
+    telegram_id = serializers.IntegerField(required=True)
+    gender = serializers.ChoiceField(choices=['male', 'female'], required=True)
+    age = serializers.IntegerField(min_value=14, max_value=80, required=True)
+    height_cm = serializers.IntegerField(min_value=120, max_value=250, required=True)
+    weight_kg = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=30, max_value=300, required=True)
+    target_weight_kg = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=30, max_value=300, required=False, allow_null=True)
+    activity = serializers.ChoiceField(choices=['sedentary', 'light', 'moderate', 'active', 'very_active'], required=True)
+    training_level = serializers.CharField(max_length=32, required=False, allow_blank=True, allow_null=True)
+    body_goals = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    health_limitations = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    body_now_id = serializers.IntegerField(required=True)
+    body_now_label = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    body_now_file = serializers.CharField(required=True)
+    body_ideal_id = serializers.IntegerField(required=True)
+    body_ideal_label = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    body_ideal_file = serializers.CharField(required=True)
+    timezone = serializers.CharField(max_length=64, default='Europe/Moscow')
+    utc_offset_minutes = serializers.IntegerField(required=True)
+
+
+class PersonalPlanSerializer(serializers.ModelSerializer):
+    """Serializer для Personal Plan."""
+
+    class Meta:
+        model = PersonalPlan
+        fields = [
+            'id',
+            'user',
+            'survey',
+            'ai_text',
+            'ai_model',
+            'prompt_version',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class CreatePersonalPlanSerializer(serializers.Serializer):
+    """
+    Serializer для создания Personal Plan от бота.
+    Бот не передаёт user - он определяется по telegram_id.
+    """
+
+    telegram_id = serializers.IntegerField(required=True)
+    survey_id = serializers.IntegerField(required=False, allow_null=True)
+    ai_text = serializers.CharField(required=True)
+    ai_model = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
+    prompt_version = serializers.CharField(max_length=20, required=False, allow_blank=True, allow_null=True)
