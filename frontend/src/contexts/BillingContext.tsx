@@ -9,15 +9,32 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
-import { BillingState } from '../types/billing';
+import { SubscriptionDetails, BillingMe } from '../types/billing';
 import { useAuth } from './AuthContext';
 
-interface BillingContextType extends BillingState {
+interface BillingContextType {
+    // Subscription details
+    subscription: SubscriptionDetails | null;
+
+    // Legacy /billing/me/ data (для обратной совместимости)
+    billingMe: BillingMe | null;
+
+    // States
+    loading: boolean;
+    error: string | null;
+
+    // Methods
     refresh: () => Promise<void>;
-    toggleAutoRenew: (enable: boolean) => Promise<void>;
+    toggleAutoRenew: (enable: boolean) => Promise<void>; // Kept for compatibility, redirects to setAutoRenew
+    setAutoRenew: (enabled: boolean) => Promise<void>;
     addPaymentMethod: () => Promise<void>;
-    isLimitReached: boolean;
+
+    // Computed properties
     isPro: boolean;
+    isLimitReached: boolean;
+
+    // Legacy properties for compatibility
+    data: BillingMe | null;
 }
 
 const BillingContext = createContext<BillingContextType | undefined>(undefined);
@@ -31,21 +48,22 @@ export const useBilling = () => {
     return context;
 };
 
-interface BillingProviderProps {
-    children: React.ReactNode;
-}
-
-export const BillingProvider: React.FC<BillingProviderProps> = ({ children }) => {
-    const auth = useAuth();
+export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const auth = useAuth(); // Get full auth context for initialization check
     const mounted = useRef(true);
 
-    const [state, setState] = useState<BillingState>({
-        data: null,
+    const [state, setState] = useState<{
+        subscription: SubscriptionDetails | null;
+        billingMe: BillingMe | null;
+        loading: boolean;
+        error: string | null;
+    }>({
+        subscription: null,
+        billingMe: null,
         loading: true,
         error: null,
     });
 
-    // Cleanup on unmount
     useEffect(() => {
         mounted.current = true;
         return () => {
@@ -53,11 +71,7 @@ export const BillingProvider: React.FC<BillingProviderProps> = ({ children }) =>
         };
     }, []);
 
-    /**
-     * Обновить данные подписки с сервера
-     */
     const refresh = useCallback(async () => {
-        // Не загружаем, пока не авторизовались
         if (!auth.isInitialized) {
             console.log('[BillingProvider] Waiting for auth initialization...');
             return;
@@ -68,11 +82,16 @@ export const BillingProvider: React.FC<BillingProviderProps> = ({ children }) =>
                 setState(prev => ({ ...prev, loading: true, error: null }));
             }
 
-            const data = await api.getBillingMe();
+            // Загружаем ОБА эндпоинта параллельно
+            const [subscriptionData, billingMeData] = await Promise.all([
+                api.getSubscriptionDetails(),
+                api.getBillingMe(), // Для лимитов фото
+            ]);
 
             if (mounted.current) {
                 setState({
-                    data,
+                    subscription: subscriptionData,
+                    billingMe: billingMeData,
                     loading: false,
                     error: null,
                 });
@@ -80,94 +99,81 @@ export const BillingProvider: React.FC<BillingProviderProps> = ({ children }) =>
         } catch (error) {
             console.error('[BillingProvider] Failed to fetch billing data:', error);
 
-            // Fallback: устанавливаем FREE план с лимитом 3 при ошибке
             if (mounted.current) {
-                setState({
+                setState(prev => ({
+                    ...prev,
                     loading: false,
                     error: error instanceof Error ? error.message : 'Failed to load billing data',
-                    data: {
-                        plan_code: 'FREE',
-                        plan_name: 'Бесплатный',
-                        expires_at: null,
-                        is_active: true,
-                        daily_photo_limit: 3,
-                        used_today: 0,
-                        remaining_today: 3,
-                        auto_renew: false,
-                        payment_method: null,
-                    },
-                });
+                    // Fallback data is harder to mock with two sources, keeping nulls or partials might be better
+                    // But for safety, let's leave them as is or provide basic fallbacks if critical
+                }));
             }
         }
     }, [auth.isInitialized]);
 
-    // Загрузка при инициализации авторизации
+    // Initial load
     useEffect(() => {
         if (auth.isInitialized) {
-            console.log('[BillingProvider] Auth initialized, fetching billing data...');
             refresh();
-        } else {
-            console.log('[BillingProvider] Auth not yet initialized');
         }
     }, [auth.isInitialized, refresh]);
 
     /**
-     * Toggle auto-renew status
+     * Toggle auto-renew
      */
-    const toggleAutoRenew = useCallback(async (enable: boolean) => {
+    const setAutoRenew = useCallback(async (enabled: boolean) => {
         try {
-            if (enable) {
-                await api.resumeSubscription();
-            } else {
-                await api.cancelSubscription();
+            const updatedSubscription = await api.setAutoRenew(enabled);
+
+            if (mounted.current) {
+                setState(prev => ({
+                    ...prev,
+                    subscription: updatedSubscription,
+                }));
             }
-            // Optimistic update or refresh
-            await refresh();
         } catch (error) {
             console.error('[BillingContext] Failed to toggle auto-renew:', error);
             throw error;
         }
-    }, [refresh]);
+    }, []);
 
-    /**
-     * Initiate add payment method flow
-     */
+    const toggleAutoRenew = useCallback(async (enable: boolean) => {
+        return setAutoRenew(enable);
+    }, [setAutoRenew]);
+
     const addPaymentMethod = useCallback(async () => {
         try {
-            const { confirmation_url } = await api.addPaymentMethod();
-            // Open URL
-            const isTMA = typeof window !== 'undefined' && window.Telegram?.WebApp?.initData;
-            if (isTMA && window.Telegram) {
-                window.Telegram.WebApp.openLink(confirmation_url);
-            } else {
-                window.location.href = confirmation_url;
-            }
+            await api.addPaymentMethod();
+            await refresh();
         } catch (error) {
             console.error('[BillingContext] Failed to add payment method:', error);
             throw error;
         }
-    }, []);
+    }, [refresh]);
 
-    // Вычисляемые значения
-    const isLimitReached = state.data
-        ? state.data.daily_photo_limit !== null && state.data.used_today >= state.data.daily_photo_limit
-        : false;
+    const isPro = useMemo(() => {
+        return state.subscription?.plan === 'pro' && state.subscription?.is_active;
+    }, [state.subscription]);
 
-    const isPro = state.data ? ['MONTHLY', 'YEARLY'].includes(state.data.plan_code) : false;
+    const isLimitReached = useMemo(() => {
+        const remaining = state.billingMe?.remaining_today;
+        return remaining !== null && remaining !== undefined && remaining <= 0;
+    }, [state.billingMe]);
 
-    const value = useMemo<BillingContextType>(() => ({
+    const value = useMemo(() => ({
         ...state,
         refresh,
         toggleAutoRenew,
+        setAutoRenew,
         addPaymentMethod,
-        isLimitReached,
-        isPro,
-    }), [state, refresh, toggleAutoRenew, addPaymentMethod, isLimitReached, isPro]);
+        isPro: !!isPro,
+        isLimitReached: !!isLimitReached,
+        data: state.billingMe // Alias for legacy support
+    }), [state, refresh, toggleAutoRenew, setAutoRenew, addPaymentMethod, isPro, isLimitReached]);
 
-    // Debug mount
-    useEffect(() => {
-        console.log('[BillingProvider] Mounted');
-    }, []);
-
-    return <BillingContext.Provider value={value}>{children}</BillingContext.Provider>;
+    return (
+        <BillingContext.Provider value={value}>
+            {children}
+        </BillingContext.Provider>
+    );
 };

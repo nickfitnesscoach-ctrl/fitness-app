@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useBilling } from '../contexts/BillingContext';
 import { ChevronRight, CreditCard, Bell, Globe, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const SettingsPage: React.FC = () => {
     const billing = useBilling();
+    const navigate = useNavigate();
     const [togglingAutoRenew, setTogglingAutoRenew] = useState(false);
 
     // Mock settings state
@@ -18,30 +20,37 @@ const SettingsPage: React.FC = () => {
         }
     };
 
+    const subscription = billing.subscription;
+
+    // Проверки
+    const isPro = subscription?.plan === 'pro';
+    const expiresAt = subscription?.expires_at ?? null;
+    const autoRenewEnabled = subscription?.autorenew_enabled ?? false;
+    const autoRenewAvailable = subscription?.autorenew_available ?? false;
+    const paymentMethod = subscription?.payment_method;
+    const hasCard = paymentMethod?.is_attached ?? false;
+
     const handleToggleAutoRenew = async () => {
         if (togglingAutoRenew) return;
 
-        const currentAutoRenew = billing.data?.auto_renew ?? false;
-        const hasCard = !!billing.data?.payment_method;
-
-        if (!hasCard) {
+        if (!autoRenewAvailable) {
             showToast("Привяжите карту для включения автопродления");
             return;
         }
 
         try {
             setTogglingAutoRenew(true);
-            await billing.toggleAutoRenew(!currentAutoRenew);
-            showToast(currentAutoRenew ? "Автопродление отключено" : "Автопродление включено");
-        } catch (error) {
-            showToast("Не удалось изменить настройки");
+            await billing.setAutoRenew(!autoRenewEnabled);
+            showToast(autoRenewEnabled ? "Автопродление отключено" : "Автопродление включено");
+        } catch (error: any) {
+            const message = error?.message || "Не удалось изменить настройки";
+            showToast(message);
         } finally {
             setTogglingAutoRenew(false);
         }
     };
 
     const handlePaymentMethodClick = async () => {
-        const hasCard = !!billing.data?.payment_method;
         if (!hasCard) {
             try {
                 await billing.addPaymentMethod();
@@ -64,11 +73,18 @@ const SettingsPage: React.FC = () => {
         });
     };
 
-    const isPro = billing.isPro;
-    const expiresAt = billing.data?.expires_at ?? null;
-    const autoRenew = billing.data?.auto_renew ?? false;
-    const paymentMethod = billing.data?.payment_method;
-    const hasCard = !!paymentMethod;
+    const renderCardInfo = () => {
+        if (!hasCard || !paymentMethod) {
+            return <span>Карта не привязана</span>;
+        }
+
+        return (
+            <>
+                <CreditCard size={14} />
+                <span>{paymentMethod.card_mask} · {paymentMethod.card_brand || 'Card'}</span>
+            </>
+        );
+    };
 
     return (
         <div className="p-4 pb-24 space-y-6 bg-gray-50 min-h-screen">
@@ -94,19 +110,19 @@ const SettingsPage: React.FC = () => {
                             <span className="text-gray-900">Автопродление PRO</span>
                             <button
                                 onClick={handleToggleAutoRenew}
-                                disabled={togglingAutoRenew || !hasCard}
-                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${autoRenew ? 'bg-green-500' : 'bg-gray-200'
-                                    } ${(!hasCard || togglingAutoRenew) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                disabled={togglingAutoRenew || !autoRenewAvailable}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${autoRenewEnabled ? 'bg-green-500' : 'bg-gray-200'
+                                    } ${(!autoRenewAvailable || togglingAutoRenew) ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
                                 <span
-                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoRenew ? 'translate-x-6' : 'translate-x-1'
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoRenewEnabled ? 'translate-x-6' : 'translate-x-1'
                                         }`}
                                 />
                             </button>
                         </div>
                         <p className="text-xs text-gray-400 leading-relaxed">
-                            {hasCard ? (
-                                autoRenew
+                            {autoRenewAvailable ? (
+                                autoRenewEnabled
                                     ? "Ежемесячное списание через привязанную карту."
                                     : "Списание не выполняется. Доступ к PRO сохранится до конца оплаченного периода."
                             ) : (
@@ -123,14 +139,7 @@ const SettingsPage: React.FC = () => {
                         <div className="space-y-1">
                             <span className="text-gray-900 block">Способ оплаты</span>
                             <div className="flex items-center gap-2 text-sm text-gray-500">
-                                {hasCard ? (
-                                    <>
-                                        <CreditCard size={14} />
-                                        <span>•••• {paymentMethod.last4} · {paymentMethod.brand || 'Card'}</span>
-                                    </>
-                                ) : (
-                                    <span>Карта не привязана</span>
-                                )}
+                                {renderCardInfo()}
                             </div>
                         </div>
                         <ChevronRight size={20} className="text-gray-300" />
@@ -138,7 +147,7 @@ const SettingsPage: React.FC = () => {
 
                     {/* Payment History (Placeholder) */}
                     <div
-                        onClick={() => showToast("История оплат пока недоступна")}
+                        onClick={() => navigate('/settings/history')}
                         className="p-4 flex justify-between items-center active:bg-gray-50 cursor-pointer transition-colors"
                     >
                         <span className="text-gray-900">История оплат</span>

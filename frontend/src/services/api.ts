@@ -7,7 +7,7 @@
 
 import { buildTelegramHeaders, getTelegramDebugInfo } from '../lib/telegram';
 import { Profile } from '../types/profile';
-import { BillingMe, CreatePaymentRequest, CreatePaymentResponse } from '../types/billing';
+import { BillingMe, CreatePaymentRequest, CreatePaymentResponse, SubscriptionDetails, PaymentMethod, PaymentHistory } from '../types/billing';
 
 export interface TrainerPanelAuthResponse {
     ok: boolean;
@@ -63,6 +63,11 @@ const URLS = {
     cancelSubscription: `${API_BASE}/billing/cancel/`,
     resumeSubscription: `${API_BASE}/billing/resume/`,
     paymentMethods: `${API_BASE}/billing/payment-methods/`,
+    // NEW: Settings screen endpoints
+    subscriptionDetails: `${API_BASE}/billing/subscription/`,
+    subscriptionAutoRenew: `${API_BASE}/billing/subscription/autorenew/`,
+    paymentMethodDetails: `${API_BASE}/billing/payment-method/`,
+    paymentsHistory: `${API_BASE}/billing/payments/`,
     // AI endpoints
     recognize: `${API_BASE}/ai/recognize/`,
 };
@@ -768,6 +773,105 @@ export const api = {
         // For now, let's mock or use a placeholder if backend isn't ready.
         // User asked for "Старт flow привязки карты".
         return this.createPayment({ plan_code: 'MONTHLY' }); // Temporary: usually binding is 1 rub or specific intent
+    },
+
+    /**
+     * GET /api/v1/billing/subscription/
+     * Получение полной информации о подписке для настроек
+     */
+    async getSubscriptionDetails(): Promise<SubscriptionDetails> {
+        log('Fetching subscription details');
+        try {
+            const response = await fetchWithRetry(URLS.subscriptionDetails, {
+                headers: getHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch subscription details: ${response.status}`);
+            }
+
+            const data = await response.json();
+            log('Subscription details fetched successfully');
+            return data;
+        } catch (error) {
+            log(`Failed to fetch subscription details: ${error}`);
+            throw error;
+        }
+    },
+
+    /**
+     * POST /api/v1/billing/subscription/autorenew/
+     * Включение/отключение автопродления
+     */
+    async setAutoRenew(enabled: boolean): Promise<SubscriptionDetails> {
+        log(`Setting auto-renew: ${enabled}`);
+        try {
+            const response = await fetchWithRetry(URLS.subscriptionAutoRenew, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ enabled }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || 'Failed to toggle auto-renew');
+            }
+
+            const data = await response.json();
+            log('Auto-renew toggled successfully');
+            return data;
+        } catch (error) {
+            log(`Failed to toggle auto-renew: ${error}`);
+            throw error;
+        }
+    },
+
+    /**
+     * GET /api/v1/billing/payment-method/
+     * Получение информации о привязанном способе оплаты
+     */
+    async getPaymentMethod(): Promise<PaymentMethod> {
+        log('Fetching payment method');
+        try {
+            const response = await fetchWithRetry(URLS.paymentMethodDetails, {
+                headers: getHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch payment method: ${response.status}`);
+            }
+
+            const data = await response.json();
+            log('Payment method fetched successfully');
+            return data;
+        } catch (error) {
+            log(`Failed to fetch payment method: ${error}`);
+            throw error;
+        }
+    },
+
+    /**
+     * GET /api/v1/billing/payments/?limit=10
+     * Получение истории платежей
+     */
+    async getPaymentsHistory(limit = 10): Promise<PaymentHistory> {
+        log(`Fetching payments history (limit: ${limit})`);
+        try {
+            const response = await fetchWithRetry(`${URLS.paymentsHistory}?limit=${limit}`, {
+                headers: getHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch payments history: ${response.status}`);
+            }
+
+            const data = await response.json();
+            log(`Payments history fetched: ${data.results.length} items`);
+            return data;
+        } catch (error) {
+            log(`Failed to fetch payments history: ${error}`);
+            throw error;
+        }
     },
 
     // ========================================================

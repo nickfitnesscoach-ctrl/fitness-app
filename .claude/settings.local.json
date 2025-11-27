@@ -54,7 +54,8 @@
       "Bash(findstr:*)",
       "Bash(node test-mifflin.js:*)",
       "Bash(node test-new-kbju.js:*)",
-      "Bash(python manage.py migrate:*)"
+      "Bash(python manage.py migrate:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
