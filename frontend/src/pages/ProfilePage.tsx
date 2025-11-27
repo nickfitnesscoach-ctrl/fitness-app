@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Target, TrendingUp, Settings, LogOut, Edit2, X, Camera } from 'lucide-react';
+import { User, Target, TrendingUp, Settings, LogOut, Edit2, X, Camera, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api, UnauthorizedError, ForbiddenError } from '../services/api';
 import { Profile } from '../types/profile';
@@ -19,6 +20,7 @@ interface UserGoals {
 
 const ProfilePage: React.FC = () => {
     const { user, logout } = useAuth();
+    const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [isEditingGoals, setIsEditingGoals] = useState(false);
     const [goals, setGoals] = useState<UserGoals | null>(null);
@@ -520,29 +522,21 @@ const ProfilePage: React.FC = () => {
                 </div>
 
                 {/* Settings */}
-                <div className="bg-white rounded-3xl shadow-lg p-6 mb-6">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-gray-600 rounded-xl flex items-center justify-center">
-                            <Settings size={24} className="text-white" />
+                <div
+                    className="bg-white rounded-3xl shadow-lg p-6 mb-6 cursor-pointer active:scale-[0.98] transition-all"
+                    onClick={() => navigate('/settings')}
+                >
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-gray-600 rounded-xl flex items-center justify-center">
+                                <Settings size={24} className="text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-900">Настройки</h2>
+                                <p className="text-sm text-gray-500">Управление аккаунтом</p>
+                            </div>
                         </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-900">Настройки</h2>
-                            <p className="text-sm text-gray-500">Управление аккаунтом</p>
-                        </div>
-                    </div>
-                    <div className="space-y-3">
-                        <button className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                            <span className="text-gray-700 font-medium">Уведомления</span>
-                            <span className="text-sm text-gray-500">Вкл</span>
-                        </button>
-                        <button className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                            <span className="text-gray-700 font-medium">Язык</span>
-                            <span className="text-sm text-gray-500">Русский</span>
-                        </button>
-                        <button className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                            <span className="text-gray-700 font-medium">Часовой пояс</span>
-                            <span className="text-sm text-gray-500">GMT+3</span>
-                        </button>
+                        <ChevronRight size={24} className="text-gray-400" />
                     </div>
                 </div>
 
