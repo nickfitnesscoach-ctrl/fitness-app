@@ -213,6 +213,19 @@ def handle_payment_succeeded(payment_object):
                 subscription = Subscription.objects.get(user=payment.user)
                 subscription.yookassa_payment_method_id = payment_method_id
                 subscription.auto_renew = True  # Автоматически включаем автопродление
+
+                # Извлекаем информацию о карте из payment_object
+                if payment_object.payment_method and hasattr(payment_object.payment_method, 'card'):
+                    card_info = payment_object.payment_method.card
+                    if card_info:
+                        # Формируем маску карты (например "•••• 1234")
+                        if hasattr(card_info, 'last4'):
+                            subscription.card_mask = f"•••• {card_info.last4}"
+
+                        # Сохраняем тип карты (Visa, MasterCard, МИР и т.д.)
+                        if hasattr(card_info, 'card_type'):
+                            subscription.card_brand = card_info.card_type.upper()
+
                 subscription.save()
 
             logger.info(f"Payment {payment.id} succeeded. Subscription updated for plan {plan.name}")

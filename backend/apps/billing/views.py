@@ -23,6 +23,10 @@ from .serializers import (
     PaymentSerializer,
     SubscribeSerializer,
     CurrentPlanResponseSerializer,
+    SubscriptionStatusSerializer,
+    PaymentMethodSerializer,
+    AutoRenewToggleSerializer,
+    PaymentHistoryItemSerializer,
 )
 from .services import YooKassaService
 
@@ -480,3 +484,259 @@ def get_subscription_status(request):
     }
 
     return Response(response_data)
+
+
+# ============================================================
+# NEW ENDPOINTS: Settings screen API
+# ============================================================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_subscription_details(request):
+    """
+    GET /api/v1/billing/subscription/
+    Получение полной информации о подписке для экрана "Настройки".
+
+    Response:
+        {
+            "plan": "free" | "pro",
+            "plan_display": "Free" | "PRO",
+            "expires_at": "2025-12-26" или null,
+            "is_active": true/false,
+            "autorenew_available": true/false,
+            "autorenew_enabled": true/false,
+            "payment_method": {
+                "is_attached": true/false,
+                "card_mask": "•••• 1234" или null,
+                "card_brand": "Visa" или null
+            }
+        }
+    """
+    try:
+        subscription = request.user.subscription
+    except Subscription.DoesNotExist:
+        # Если подписки нет, возвращаем FREE план
+        return Response({
+            'plan': 'free',
+            'plan_display': 'Free',
+            'expires_at': None,
+            'is_active': True,
+            'autorenew_available': False,
+            'autorenew_enabled': False,
+            'payment_method': {
+                'is_attached': False,
+                'card_mask': None,
+                'card_brand': None
+            }
+        })
+
+    # Определяем plan (free или pro)
+    plan_code = subscription.plan.name
+    if plan_code == 'FREE':
+        plan = 'free'
+        plan_display = 'Free'
+    else:
+        plan = 'pro'
+        plan_display = 'PRO'
+
+    # Определяем expires_at
+    if subscription.plan.name == 'FREE':
+        expires_at = None
+    else:
+        expires_at = subscription.end_date.date() if subscription.end_date else None
+
+    # Проверяем активность
+    is_active = subscription.is_active and not subscription.is_expired()
+
+    # Автопродление доступно, если есть payment_method
+    autorenew_available = bool(subscription.yookassa_payment_method_id)
+
+    # Автопродление включено
+    autorenew_enabled = subscription.auto_renew
+
+    # Информация о способе оплаты
+    payment_method = {
+        'is_attached': bool(subscription.yookassa_payment_method_id),
+        'card_mask': subscription.card_mask,
+        'card_brand': subscription.card_brand
+    }
+
+    response_data = {
+        'plan': plan,
+        'plan_display': plan_display,
+        'expires_at': expires_at,
+        'is_active': is_active,
+        'autorenew_available': autorenew_available,
+        'autorenew_enabled': autorenew_enabled,
+        'payment_method': payment_method
+    }
+
+    return Response(response_data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def set_auto_renew(request):
+    """
+    POST /api/v1/billing/subscription/autorenew/
+    Включение/отключение автопродления.
+
+    Request Body:
+        {
+            "enabled": true | false
+        }
+
+    Response:
+        Возвращает тот же формат, что и GET /billing/subscription/
+    """
+    serializer = AutoRenewToggleSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    enabled = serializer.validated_data['enabled']
+
+    try:
+        subscription = request.user.subscription
+
+        # Проверяем, что это не бесплатный план
+        if subscription.plan.name == 'FREE':
+            return Response(
+                {
+                    'error': {
+                        'code': 'NOT_AVAILABLE_FOR_FREE',
+                        'message': 'Автопродление недоступно для бесплатного плана'
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Если пытаемся включить, проверяем наличие payment_method
+        if enabled and not subscription.yookassa_payment_method_id:
+            return Response(
+                {
+                    'error': {
+                        'code': 'payment_method_required',
+                        'message': 'Для автопродления необходима привязанная карта. Оформите подписку с сохранением карты.'
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Обновляем флаг
+        subscription.auto_renew = enabled
+        subscription.save()
+
+        # Возвращаем обновленные данные подписки
+        return get_subscription_details(request)
+
+    except Subscription.DoesNotExist:
+        return Response(
+            {
+                'error': {
+                    'code': 'NO_SUBSCRIPTION',
+                    'message': 'У вас нет активной подписки'
+                }
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_payment_method_details(request):
+    """
+    GET /api/v1/billing/payment-method/
+    Получение информации о привязанном способе оплаты.
+
+    Response:
+        {
+            "is_attached": true/false,
+            "card_mask": "•••• 1234" или null,
+            "card_brand": "Visa" или null
+        }
+    """
+    try:
+        subscription = request.user.subscription
+
+        response_data = {
+            'is_attached': bool(subscription.yookassa_payment_method_id),
+            'card_mask': subscription.card_mask,
+            'card_brand': subscription.card_brand
+        }
+
+        return Response(response_data)
+
+    except Subscription.DoesNotExist:
+        # Если подписки нет, возвращаем пустые данные
+        return Response({
+            'is_attached': False,
+            'card_mask': None,
+            'card_brand': None
+        })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_payments_history(request):
+    """
+    GET /api/v1/billing/payments/
+    Получение истории платежей пользователя.
+
+    Query parameters:
+        - limit: int (default: 10) - количество платежей
+
+    Response:
+        {
+            "results": [
+                {
+                    "id": "uuid",
+                    "amount": 299,
+                    "currency": "RUB",
+                    "status": "succeeded",
+                    "paid_at": "2025-02-10T12:34:56Z",
+                    "description": "PRO месяц"
+                },
+                ...
+            ]
+        }
+    """
+    # Получаем limit из query параметров
+    limit = request.query_params.get('limit', 10)
+    try:
+        limit = int(limit)
+        if limit < 1:
+            limit = 10
+        if limit > 100:
+            limit = 100
+    except (ValueError, TypeError):
+        limit = 10
+
+    # Получаем платежи пользователя
+    payments = Payment.objects.filter(
+        user=request.user
+    ).order_by('-created_at')[:limit]
+
+    # Формируем результат
+    results = []
+    for payment in payments:
+        # Маппинг статусов в lowercase для фронта
+        status_map = {
+            'PENDING': 'pending',
+            'WAITING_FOR_CAPTURE': 'pending',
+            'SUCCEEDED': 'succeeded',
+            'CANCELED': 'canceled',
+            'FAILED': 'failed',
+            'REFUNDED': 'refunded',
+        }
+
+        results.append({
+            'id': str(payment.id),
+            'amount': float(payment.amount),
+            'currency': payment.currency,
+            'status': status_map.get(payment.status, payment.status.lower()),
+            'paid_at': payment.paid_at.isoformat() if payment.paid_at else None,
+            'description': payment.description
+        })
+
+    return Response({
+        'results': results
+    })

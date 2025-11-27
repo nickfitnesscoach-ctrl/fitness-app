@@ -117,6 +117,20 @@ class Subscription(models.Model):
         null=True,
         help_text='Сохранённый способ оплаты для рекуррентных платежей'
     )
+    card_mask = models.CharField(
+        'Маска карты',
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text='Последние 4 цифры карты, например "•••• 1234"'
+    )
+    card_brand = models.CharField(
+        'Тип карты',
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text='Тип платёжной карты: Visa, MasterCard, МИР и т.д.'
+    )
 
     # Metadata
     created_at = models.DateTimeField('Создана', auto_now_add=True)

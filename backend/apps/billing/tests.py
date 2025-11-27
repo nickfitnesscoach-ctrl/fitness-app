@@ -351,3 +351,475 @@ class ActivateOrExtendSubscriptionTestCase(TestCase):
             delta=1
         )
 
+
+# ============================================================
+# NEW TESTS: Settings screen endpoints
+# ============================================================
+
+class SubscriptionDetailsTestCase(TestCase):
+    """Тесты для GET /api/v1/billing/subscription/"""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        self.client = APIClient()
+
+        # Создаем пользователя
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+
+        # Создаем планы
+        self.free_plan = SubscriptionPlan.objects.create(
+            name='FREE',
+            display_name='Бесплатный',
+            price=Decimal('0.00'),
+            duration_days=0,
+            is_active=True
+        )
+
+        self.monthly_plan = SubscriptionPlan.objects.create(
+            name='MONTHLY',
+            display_name='Pro Месячный',
+            price=Decimal('299.00'),
+            duration_days=30,
+            is_active=True
+        )
+
+    def test_get_subscription_free_user(self):
+        """Тест для пользователя с бесплатным планом без подписки."""
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:subscription-details')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data['plan'], 'free')
+        self.assertEqual(response.data['plan_display'], 'Free')
+        self.assertIsNone(response.data['expires_at'])
+        self.assertTrue(response.data['is_active'])
+        self.assertFalse(response.data['autorenew_available'])
+        self.assertFalse(response.data['autorenew_enabled'])
+        self.assertFalse(response.data['payment_method']['is_attached'])
+        self.assertIsNone(response.data['payment_method']['card_mask'])
+        self.assertIsNone(response.data['payment_method']['card_brand'])
+
+    def test_get_subscription_free_user_with_subscription(self):
+        """Тест для пользователя с бесплатной подпиской."""
+        # Создаем бесплатную подписку
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.free_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=365),
+            is_active=True
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:subscription-details')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data['plan'], 'free')
+        self.assertEqual(response.data['plan_display'], 'Free')
+        self.assertIsNone(response.data['expires_at'])
+
+    def test_get_subscription_pro_without_card(self):
+        """Тест для пользователя с PRO без привязанной карты."""
+        # Создаем PRO подписку без payment_method
+        end_date = timezone.now() + timedelta(days=30)
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=end_date,
+            is_active=True,
+            auto_renew=False
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:subscription-details')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data['plan'], 'pro')
+        self.assertEqual(response.data['plan_display'], 'PRO')
+        self.assertIsNotNone(response.data['expires_at'])
+        self.assertTrue(response.data['is_active'])
+        self.assertFalse(response.data['autorenew_available'])  # Нет карты
+        self.assertFalse(response.data['autorenew_enabled'])
+        self.assertFalse(response.data['payment_method']['is_attached'])
+
+    def test_get_subscription_pro_with_card(self):
+        """Тест для пользователя с PRO и привязанной картой."""
+        # Создаем PRO подписку с payment_method
+        end_date = timezone.now() + timedelta(days=30)
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=end_date,
+            is_active=True,
+            auto_renew=True,
+            yookassa_payment_method_id='pm_test_123',
+            card_mask='•••• 1234',
+            card_brand='Visa'
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:subscription-details')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data['plan'], 'pro')
+        self.assertTrue(response.data['is_active'])
+        self.assertTrue(response.data['autorenew_available'])  # Есть карта
+        self.assertTrue(response.data['autorenew_enabled'])
+        self.assertTrue(response.data['payment_method']['is_attached'])
+        self.assertEqual(response.data['payment_method']['card_mask'], '•••• 1234')
+        self.assertEqual(response.data['payment_method']['card_brand'], 'Visa')
+
+    def test_get_subscription_without_auth(self):
+        """Тест без авторизации."""
+        url = reverse('billing:subscription-details')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_401_UNAUTHORIZED)
+
+
+class AutoRenewToggleTestCase(TestCase):
+    """Тесты для POST /api/v1/billing/subscription/autorenew/"""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        self.client = APIClient()
+
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+
+        self.free_plan = SubscriptionPlan.objects.create(
+            name='FREE',
+            display_name='Бесплатный',
+            price=Decimal('0.00'),
+            duration_days=0,
+            is_active=True
+        )
+
+        self.monthly_plan = SubscriptionPlan.objects.create(
+            name='MONTHLY',
+            display_name='Pro Месячный',
+            price=Decimal('299.00'),
+            duration_days=30,
+            is_active=True
+        )
+
+    def test_toggle_autorenew_enable_without_card(self):
+        """Попытка включить автопродление без привязанной карты."""
+        # Создаем PRO подписку без payment_method
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True,
+            auto_renew=False
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:set-auto-renew')
+        response = self.client.post(url, {'enabled': True}, format='json')
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['code'], 'payment_method_required')
+
+    def test_toggle_autorenew_enable_with_card(self):
+        """Включение автопродления с привязанной картой."""
+        # Создаем PRO подписку с payment_method
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True,
+            auto_renew=False,
+            yookassa_payment_method_id='pm_test_123',
+            card_mask='•••• 1234',
+            card_brand='Visa'
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:set-auto-renew')
+        response = self.client.post(url, {'enabled': True}, format='json')
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertTrue(response.data['autorenew_enabled'])
+
+        # Проверяем, что флаг обновился в БД
+        subscription = Subscription.objects.get(user=self.user)
+        self.assertTrue(subscription.auto_renew)
+
+    def test_toggle_autorenew_disable(self):
+        """Отключение автопродления."""
+        # Создаем PRO подписку с включенным автопродлением
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True,
+            auto_renew=True,
+            yookassa_payment_method_id='pm_test_123',
+            card_mask='•••• 1234',
+            card_brand='Visa'
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:set-auto-renew')
+        response = self.client.post(url, {'enabled': False}, format='json')
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertFalse(response.data['autorenew_enabled'])
+
+        # Проверяем, что флаг обновился в БД
+        subscription = Subscription.objects.get(user=self.user)
+        self.assertFalse(subscription.auto_renew)
+
+    def test_toggle_autorenew_free_plan(self):
+        """Попытка включить автопродление на бесплатном плане."""
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.free_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=365),
+            is_active=True
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:set-auto-renew')
+        response = self.client.post(url, {'enabled': True}, format='json')
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['code'], 'NOT_AVAILABLE_FOR_FREE')
+
+
+class PaymentMethodDetailsTestCase(TestCase):
+    """Тесты для GET /api/v1/billing/payment-method/"""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        self.client = APIClient()
+
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+
+        self.monthly_plan = SubscriptionPlan.objects.create(
+            name='MONTHLY',
+            display_name='Pro Месячный',
+            price=Decimal('299.00'),
+            duration_days=30,
+            is_active=True
+        )
+
+    def test_get_payment_method_without_card(self):
+        """Получение данных о способе оплаты без привязанной карты."""
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:payment-method-details')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertFalse(response.data['is_attached'])
+        self.assertIsNone(response.data['card_mask'])
+        self.assertIsNone(response.data['card_brand'])
+
+    def test_get_payment_method_with_card(self):
+        """Получение данных о привязанной карте."""
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True,
+            yookassa_payment_method_id='pm_test_123',
+            card_mask='•••• 5678',
+            card_brand='MasterCard'
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:payment-method-details')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertTrue(response.data['is_attached'])
+        self.assertEqual(response.data['card_mask'], '•••• 5678')
+        self.assertEqual(response.data['card_brand'], 'MasterCard')
+
+
+class PaymentsHistoryTestCase(TestCase):
+    """Тесты для GET /api/v1/billing/payments/"""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        self.client = APIClient()
+
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+
+        self.monthly_plan = SubscriptionPlan.objects.create(
+            name='MONTHLY',
+            display_name='Pro Месячный',
+            price=Decimal('299.00'),
+            duration_days=30,
+            is_active=True
+        )
+
+        self.subscription = Subscription.objects.create(
+            user=self.user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True
+        )
+
+    def test_get_payments_empty(self):
+        """Получение истории платежей без платежей."""
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:payments-history')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 0)
+
+    def test_get_payments_with_data(self):
+        """Получение истории с несколькими платежами."""
+        # Создаем несколько платежей
+        payment1 = Payment.objects.create(
+            user=self.user,
+            subscription=self.subscription,
+            plan=self.monthly_plan,
+            amount=Decimal('299.00'),
+            currency='RUB',
+            status='SUCCEEDED',
+            description='Подписка Pro Месячный',
+            paid_at=timezone.now()
+        )
+
+        payment2 = Payment.objects.create(
+            user=self.user,
+            subscription=self.subscription,
+            plan=self.monthly_plan,
+            amount=Decimal('299.00'),
+            currency='RUB',
+            status='PENDING',
+            description='Подписка Pro Месячный'
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:payments-history')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 2)
+
+        # Проверяем порядок (новые первыми)
+        self.assertEqual(response.data['results'][0]['status'], 'pending')
+        self.assertEqual(response.data['results'][1]['status'], 'succeeded')
+
+    def test_get_payments_limit(self):
+        """Тест параметра limit."""
+        # Создаем 15 платежей
+        for i in range(15):
+            Payment.objects.create(
+                user=self.user,
+                subscription=self.subscription,
+                plan=self.monthly_plan,
+                amount=Decimal('299.00'),
+                currency='RUB',
+                status='SUCCEEDED',
+                description=f'Платеж {i}'
+            )
+
+        self.client.force_authenticate(user=self.user)
+
+        # Запрашиваем только 5
+        url = reverse('billing:payments-history')
+        response = self.client.get(url, {'limit': 5})
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 5)
+
+    def test_get_payments_only_own(self):
+        """Проверка, что возвращаются только платежи текущего пользователя."""
+        # Создаем другого пользователя
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='other@example.com',
+            password='testpass123'
+        )
+
+        other_subscription = Subscription.objects.create(
+            user=other_user,
+            plan=self.monthly_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True
+        )
+
+        # Создаем платежи для обоих пользователей
+        Payment.objects.create(
+            user=self.user,
+            subscription=self.subscription,
+            plan=self.monthly_plan,
+            amount=Decimal('299.00'),
+            currency='RUB',
+            status='SUCCEEDED',
+            description='My payment'
+        )
+
+        Payment.objects.create(
+            user=other_user,
+            subscription=other_subscription,
+            plan=self.monthly_plan,
+            amount=Decimal('299.00'),
+            currency='RUB',
+            status='SUCCEEDED',
+            description='Other payment'
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('billing:payments-history')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['description'], 'My payment')
+
