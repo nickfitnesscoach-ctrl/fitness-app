@@ -23,6 +23,7 @@ const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [isEditingGoals, setIsEditingGoals] = useState(false);
+    const [isWeeklyStatsOpen, setIsWeeklyStatsOpen] = useState(false);
     const [goals, setGoals] = useState<UserGoals | null>(null);
     const [editedGoals, setEditedGoals] = useState<UserGoals | null>(null);
     const [loading, setLoading] = useState(true);
@@ -487,17 +488,28 @@ const ProfilePage: React.FC = () => {
                 </div>
 
                 {/* Statistics - Average Weekly KBJU */}
-                <div className="bg-white rounded-3xl shadow-lg p-6 mb-6">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-500 rounded-xl flex items-center justify-center">
-                            <TrendingUp size={24} className="text-white" />
+                <div className="bg-white rounded-3xl shadow-lg overflow-hidden mb-6 transition-all duration-300">
+                    <div
+                        className="p-6 flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
+                        onClick={() => setIsWeeklyStatsOpen(!isWeeklyStatsOpen)}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-500 rounded-xl flex items-center justify-center">
+                                <TrendingUp size={24} className="text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-900">Среднее КБЖУ за неделю</h2>
+                                <p className="text-sm text-gray-500">Ваш прогресс</p>
+                            </div>
                         </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-900">Среднее КБЖУ за неделю</h2>
-                            <p className="text-sm text-gray-500">Ваш прогресс</p>
-                        </div>
+                        <ChevronRight
+                            size={24}
+                            className={`text-gray-400 transition-transform duration-300 ${isWeeklyStatsOpen ? 'rotate-90' : ''}`}
+                        />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+
+                    <div className={`grid grid-cols-2 gap-3 px-6 pb-6 transition-all duration-300 origin-top ${isWeeklyStatsOpen ? 'opacity-100 max-h-[500px] mt-0' : 'opacity-0 max-h-0 overflow-hidden mt-0 pb-0'
+                        }`}>
                         <div className="flex flex-col p-4 bg-orange-50 rounded-xl">
                             <span className="text-gray-600 text-sm mb-1">Калории</span>
                             <span className="text-2xl font-bold text-orange-600">{goals?.avgCalories || 0}</span>
