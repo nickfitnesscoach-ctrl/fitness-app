@@ -361,6 +361,149 @@ def create_payment(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def create_test_live_payment(request):
+    """
+    POST /api/v1/billing/create-test-live-payment/
+    Создание ТЕСТОВОГО платежа за 1₽ на боевом магазине YooKassa.
+
+    ДОСТУП: Только для владельца/админов (проверка по TELEGRAM_ADMINS).
+
+    Используется для проверки:
+    - Корректности настройки live credentials
+    - Работы webhooks на боевом магазине
+    - Полного цикла: оплата → webhook → обновление БД → отображение в UI
+
+    Body (опционально):
+        {
+            "return_url": "https://example.com/success"  // Кастомный URL возврата
+        }
+
+    Response (201):
+        {
+            "payment_id": "uuid",
+            "yookassa_payment_id": "...",
+            "confirmation_url": "https://...",
+            "test_mode": true,
+            "amount": "1.00"
+        }
+
+    Errors:
+        - 403: Доступ запрещён (пользователь не является админом)
+        - 404: Тестовый план не найден (запустите миграции)
+        - 502: Ошибка создания платежа в YooKassa
+    """
+    from .services import create_subscription_payment
+    from .models import SubscriptionPlan
+    from django.conf import settings
+
+    # SECURITY: Проверка прав доступа (только админы)
+    telegram_user = getattr(request.user, 'telegram_user', None)
+    if not telegram_user:
+        return Response(
+            {
+                'error': {
+                    'code': 'FORBIDDEN',
+                    'message': 'Доступ запрещён: пользователь не привязан к Telegram'
+                }
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', set())
+    is_admin = telegram_user.telegram_id in telegram_admins
+
+    if not is_admin:
+        logger.warning(
+            f"Unauthorized test payment attempt by user {request.user.id} "
+            f"(telegram_id: {telegram_user.telegram_id})"
+        )
+        return Response(
+            {
+                'error': {
+                    'code': 'FORBIDDEN',
+                    'message': 'Доступ запрещён: только для админов'
+                }
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # Получаем тестовый план
+    try:
+        test_plan = SubscriptionPlan.objects.get(name='TEST_LIVE', is_test=True)
+    except SubscriptionPlan.DoesNotExist:
+        logger.error("Test plan TEST_LIVE not found. Run migrations first.")
+        return Response(
+            {
+                'error': {
+                    'code': 'TEST_PLAN_NOT_FOUND',
+                    'message': 'Тестовый план не найден. Запустите миграции: python manage.py migrate billing'
+                }
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Получаем кастомный return_url из body или используем дефолтный
+    return_url = request.data.get('return_url')
+
+    try:
+        # Создаем платеж через тестовый план
+        payment, confirmation_url = create_subscription_payment(
+            user=request.user,
+            plan_code='TEST_LIVE',
+            return_url=return_url
+        )
+
+        # SECURITY: Log test payment creation
+        SecurityAuditLogger.log_payment_created(
+            user=request.user,
+            amount=float(payment.amount),
+            plan='TEST_LIVE (admin test)',
+            request=request
+        )
+
+        logger.info(
+            f"Test live payment created by admin {request.user.id} "
+            f"(telegram_id: {telegram_user.telegram_id}). "
+            f"Payment ID: {payment.id}, YooKassa Mode: {settings.YOOKASSA_MODE}"
+        )
+
+        return Response(
+            {
+                'payment_id': str(payment.id),
+                'yookassa_payment_id': payment.yookassa_payment_id,
+                'confirmation_url': confirmation_url,
+                'test_mode': True,
+                'amount': str(payment.amount),
+                'yookassa_mode': settings.YOOKASSA_MODE,
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+    except ValueError as e:
+        return Response(
+            {
+                'error': {
+                    'code': 'INVALID_PLAN',
+                    'message': str(e)
+                }
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        logger.error(f"Test payment creation error: {str(e)}", exc_info=True)
+        return Response(
+            {
+                'error': {
+                    'code': 'PAYMENT_CREATE_FAILED',
+                    'message': f'Не удалось создать тестовый платёж: {str(e)}'
+                }
+            },
+            status=status.HTTP_502_BAD_GATEWAY
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def create_plus_payment(request):
     """
     POST /api/v1/billing/create-plus-payment/

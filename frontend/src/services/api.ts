@@ -804,6 +804,43 @@ export const api = {
     },
 
     /**
+     * POST /api/v1/billing/create-test-live-payment/
+     * Создание тестового платежа за 1₽ на боевом магазине YooKassa
+     * ДОСТУП: Только для админов
+     */
+    async createTestLivePayment() {
+        log('Creating test live payment (admin only)');
+        try {
+            const response = await fetchWithRetry(URLS.createPayment.replace('create-payment', 'create-test-live-payment'), {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({}),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error?.message || errorData.detail || 'Не удалось создать тестовый платёж');
+            }
+
+            const data = await response.json();
+            log(`Test payment created: ${data.payment_id}, mode: ${data.yookassa_mode}`);
+
+            // Открываем платёжную форму
+            const isTMA = typeof window !== 'undefined' && window.Telegram?.WebApp?.initData;
+            if (isTMA && window.Telegram) {
+                window.Telegram.WebApp.openLink(data.confirmation_url);
+            } else {
+                window.location.href = data.confirmation_url;
+            }
+
+            return data;
+        } catch (error) {
+            console.error('Error creating test payment:', error);
+            throw error;
+        }
+    },
+
+    /**
      * GET /api/v1/billing/subscription/
      * Получение полной информации о подписке для настроек
      */

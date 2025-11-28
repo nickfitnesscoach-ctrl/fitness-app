@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
 import { useBilling } from '../contexts/BillingContext';
-import { ChevronRight, CreditCard } from 'lucide-react';
+import { ChevronRight, CreditCard, TestTube } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import { useAuth } from '../contexts/AuthContext';
+import { api } from '../services/api';
 
 const SubscriptionDetailsPage: React.FC = () => {
     const billing = useBilling();
+    const auth = useAuth();
     const navigate = useNavigate();
     const [togglingAutoRenew, setTogglingAutoRenew] = useState(false);
+    const [creatingTestPayment, setCreatingTestPayment] = useState(false);
 
     const showToast = (message: string) => {
         const tg = window.Telegram?.WebApp;
@@ -149,6 +153,54 @@ const SubscriptionDetailsPage: React.FC = () => {
                         <ChevronRight size={20} className="text-gray-300" />
                     </div>
                 </div>
+
+                {/* ADMIN ONLY: Test Live Payment Button */}
+                {auth.isAdmin && (
+                    <div className="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl">
+                        <div className="flex items-start gap-3 mb-3">
+                            <TestTube size={20} className="text-yellow-600 mt-0.5" />
+                            <div className="flex-1">
+                                <h3 className="text-sm font-semibold text-yellow-900">
+                                    Тестирование Live-платежей
+                                </h3>
+                                <p className="text-xs text-yellow-700 mt-1">
+                                    Проверка боевого магазина YooKassa. Платёж 1₽ на реальную карту.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={async () => {
+                                if (creatingTestPayment) return;
+                                try {
+                                    setCreatingTestPayment(true);
+                                    await api.createTestLivePayment();
+                                    // Redirect handled by api method
+                                } catch (error: any) {
+                                    showToast(error?.message || 'Ошибка при создании тестового платежа');
+                                } finally {
+                                    setCreatingTestPayment(false);
+                                }
+                            }}
+                            disabled={creatingTestPayment}
+                            className="w-full py-2.5 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            {creatingTestPayment ? (
+                                <>
+                                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                    <span>Создание...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <TestTube size={16} />
+                                    <span>Тест: Оплатить 1₽ (live)</span>
+                                </>
+                            )}
+                        </button>
+                        <p className="text-xs text-yellow-600 mt-2 text-center">
+                            Доступно только админам • Режим: {process.env.NODE_ENV || 'production'}
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
     );

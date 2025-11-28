@@ -27,6 +27,7 @@ interface User {
     completed_ai_test: boolean;
     is_client?: boolean;
     role?: 'trainer' | 'client';
+    is_admin?: boolean;
 }
 
 interface AuthContextType {
@@ -35,6 +36,7 @@ interface AuthContextType {
     loading: boolean;
     error: string | null;
     isInitialized: boolean;
+    isAdmin: boolean;
     authenticate: () => Promise<void>;
     logout: () => void;
 }
@@ -84,7 +86,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (response.user) {
                     const userData = response.user;
                     const role = userData.is_client ? 'client' : 'trainer';
-                    setUser({ ...userData, role });
+                    // is_admin приходит из backend в response
+                    setUser({
+                        ...userData,
+                        role,
+                        is_admin: response.is_admin || false
+                    });
                 }
             } catch (authError) {
                 // Backend auth failed, но Telegram init успешен
@@ -118,6 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 loading,
                 error,
                 isInitialized,
+                isAdmin: user?.is_admin || false,
                 authenticate,
                 logout,
             }}

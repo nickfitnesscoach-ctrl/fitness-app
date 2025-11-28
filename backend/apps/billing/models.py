@@ -60,6 +60,11 @@ class SubscriptionPlan(models.Model):
 
     # Metadata
     is_active = models.BooleanField('Активен', default=True)
+    is_test = models.BooleanField(
+        'Тестовый план',
+        default=False,
+        help_text='Тестовый план для проверки live-платежей (только для владельца/админов)'
+    )
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Обновлён', auto_now=True)
 
