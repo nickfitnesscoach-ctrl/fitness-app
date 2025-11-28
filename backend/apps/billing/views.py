@@ -590,7 +590,8 @@ def get_subscription_status(request):
             "is_active": true/false,
             "daily_photo_limit": 3 или null (безлимит),
             "used_today": 2,
-            "remaining_today": 1 или null (безлимит)
+            "remaining_today": 1 или null (безлимит),
+            "test_live_payment_available": true/false  // Только для админов в prod режиме
         }
     """
     from .services import get_effective_plan_for_user
@@ -618,6 +619,17 @@ def get_subscription_status(request):
         is_active = True  # FREE план всегда активен
         expires_at = None
 
+    # Проверяем, доступна ли кнопка тестового платежа (только для админов в prod режиме)
+    from django.conf import settings
+    test_live_payment_available = False
+
+    telegram_user = getattr(request.user, 'telegram_profile', None)
+    if telegram_user:
+        telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', set())
+        is_admin = telegram_user.telegram_id in telegram_admins
+        is_prod_mode = settings.YOOKASSA_MODE == 'prod'
+        test_live_payment_available = is_admin and is_prod_mode
+
     response_data = {
         'plan_code': plan.name,
         'plan_name': plan.display_name,
@@ -626,6 +638,7 @@ def get_subscription_status(request):
         'daily_photo_limit': plan.daily_photo_limit,
         'used_today': used_today,
         'remaining_today': remaining_today,
+        'test_live_payment_available': test_live_payment_available,
     }
 
     return Response(response_data)
