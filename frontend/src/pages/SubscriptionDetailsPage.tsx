@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useBilling } from '../contexts/BillingContext';
-import { ChevronRight, CreditCard, ArrowLeft } from 'lucide-react';
+import { ChevronRight, CreditCard } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import PageHeader from '../components/PageHeader';
 
 const SubscriptionDetailsPage: React.FC = () => {
     const billing = useBilling();
@@ -83,16 +84,10 @@ const SubscriptionDetailsPage: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-24">
-            {/* Header */}
-            <div className="bg-white px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-                <button
-                    onClick={() => navigate(-1)}
-                    className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                >
-                    <ArrowLeft size={24} />
-                </button>
-                <h1 className="text-xl font-bold text-gray-900">Подписка и оплата</h1>
-            </div>
+            <PageHeader
+                title="Подписка и оплата"
+                fallbackRoute="/subscription"
+            />
 
             <div className="p-4 space-y-6">
                 <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
