@@ -447,10 +447,12 @@ def create_test_live_payment(request):
 
     try:
         # Создаем платеж через тестовый план
+        # ВАЖНО: save_payment_method=False, т.к. боевой магазин может не поддерживать рекуррентные платежи
         payment, confirmation_url = create_subscription_payment(
             user=request.user,
             plan_code='TEST_LIVE',
-            return_url=return_url
+            return_url=return_url,
+            save_payment_method=False  # Не сохраняем карту для тестового платежа
         )
 
         # SECURITY: Log test payment creation

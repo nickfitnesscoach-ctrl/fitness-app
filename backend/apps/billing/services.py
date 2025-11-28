@@ -258,7 +258,7 @@ class YooKassaService:
 # Сервисы для создания платежей (без SDK)
 # ============================================================
 
-def create_subscription_payment(user, plan_code: str, return_url: str = None):
+def create_subscription_payment(user, plan_code: str, return_url: str = None, save_payment_method: bool = True):
     """
     Универсальный сервис для создания платежа подписки.
 
@@ -266,6 +266,7 @@ def create_subscription_payment(user, plan_code: str, return_url: str = None):
         user: Объект пользователя Django
         plan_code: Код плана (MONTHLY, YEARLY, и т.д.)
         return_url: URL для возврата после оплаты (опционально)
+        save_payment_method: Сохранять ли способ оплаты для рекуррентных платежей (по умолчанию True)
 
     Returns:
         Tuple (Payment, confirmation_url)
@@ -318,7 +319,7 @@ def create_subscription_payment(user, plan_code: str, return_url: str = None):
             status='PENDING',
             provider='YOOKASSA',
             description=f'Подписка {plan.display_name}',
-            save_payment_method=True,
+            save_payment_method=save_payment_method,
         )
 
         # Генерируем idempotence_key
@@ -332,7 +333,7 @@ def create_subscription_payment(user, plan_code: str, return_url: str = None):
                 plan=plan,
                 idempotence_key=idempotence_key,
                 return_url=return_url,
-                save_payment_method=True
+                save_payment_method=save_payment_method
             )
 
             # Сохраняем данные от YooKassa
