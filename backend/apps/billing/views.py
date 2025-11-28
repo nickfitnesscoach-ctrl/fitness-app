@@ -397,7 +397,7 @@ def create_test_live_payment(request):
     from django.conf import settings
 
     # SECURITY: Проверка прав доступа (только админы)
-    telegram_user = getattr(request.user, 'telegram_user', None)
+    telegram_user = getattr(request.user, 'telegram_profile', None)
     if not telegram_user:
         return Response(
             {
