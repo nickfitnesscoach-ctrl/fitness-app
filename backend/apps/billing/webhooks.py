@@ -83,7 +83,12 @@ def yookassa_webhook(request):
     """
     try:
         # Verify IP address from YooKassa
-        client_ip = request.META.get('REMOTE_ADDR')
+        # Use X-Real-IP or X-Forwarded-For from NGINX proxy, fallback to REMOTE_ADDR
+        client_ip = (
+            request.META.get('HTTP_X_REAL_IP') or 
+            request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or
+            request.META.get('REMOTE_ADDR')
+        )
 
         # Check IP whitelist (disabled in DEBUG mode for localhost)
         if not is_ip_allowed(client_ip):
@@ -201,10 +206,17 @@ def handle_payment_succeeded(payment_object):
             # Определяем количество дней в зависимости от плана
             duration_days = plan.duration_days if plan.duration_days > 0 else settings.BILLING_PLUS_DURATION_DAYS
 
+            # ВАЖНО: Если это тестовый план TEST_LIVE, активируем MONTHLY
+            # TEST_LIVE создан для проверки платёжной системы за 1₽ перед покупкой полной подписки
+            target_plan_code = plan.name
+            if plan.name == 'TEST_LIVE':
+                target_plan_code = 'MONTHLY'
+                logger.info(f"Converting TEST_LIVE payment to MONTHLY subscription for user {payment.user.id}")
+
             # Активируем или продлеваем подписку
             activate_or_extend_subscription(
                 user=payment.user,
-                plan_code=plan.name,
+                plan_code=target_plan_code,
                 duration_days=duration_days
             )
 

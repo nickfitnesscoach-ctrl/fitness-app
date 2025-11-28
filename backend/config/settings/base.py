@@ -72,12 +72,12 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "apps.telegram.telegram_auth.TelegramAdminOnlyMiddleware",
     "corsheaders.middleware.CorsMiddleware",  # CORS должен быть высоко в списке
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.telegram.telegram_auth.TelegramAdminOnlyMiddleware",  # After AuthenticationMiddleware so request.user exists
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

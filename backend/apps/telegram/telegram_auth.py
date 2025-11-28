@@ -160,9 +160,21 @@ class TelegramAdminOnlyMiddleware(MiddlewareMixin):
 
     def process_request(self, request):  # noqa: D401 - middleware hook
         path = request.path.rstrip("/") or "/"
+        
+        # Always allow standard Django admin login page
+        if path in ("/dj-admin/login", "/dj-admin/login/"):
+            return None
+        
         if any(path == prefix.rstrip("/") or path.startswith(prefix) for prefix in self.protected_prefixes):
+            # Allow GET/HEAD requests
             if request.method in {"GET", "HEAD"}:
                 return None
+            
+            # Allow POST if user is authenticated as staff/superuser via Django session
+            if request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser):
+                return None
+            
+            # Otherwise require Telegram admin validation for POST requests
             if not _is_telegram_admin(request):
                 return _forbidden_response()
         return None

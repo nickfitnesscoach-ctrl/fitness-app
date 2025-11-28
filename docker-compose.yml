@@ -21,6 +21,8 @@ services:
       - db-data:/var/lib/postgresql/data
     networks:
       - backend-net
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-foodmind} -d ${POSTGRES_DB:-foodmind}"]
       interval: 10s
