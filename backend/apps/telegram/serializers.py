@@ -40,6 +40,7 @@ class TelegramAuthSerializer(serializers.Serializer):
     access = serializers.CharField()
     refresh = serializers.CharField()
     user = TelegramUserSerializer()
+    is_admin = serializers.BooleanField(default=False)
 
 
 class SaveTestResultsSerializer(serializers.Serializer):

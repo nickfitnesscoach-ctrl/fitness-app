@@ -156,10 +156,16 @@ def telegram_auth(request):
         # Получаем Telegram профиль
         telegram_user = user.telegram_profile
 
+        # Проверяем, является ли пользователь админом
+        from django.conf import settings
+        telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', set())
+        is_admin = telegram_user.telegram_id in telegram_admins
+
         serializer = TelegramAuthSerializer({
             'access': str(refresh.access_token),
             'refresh': str(refresh),
-            'user': telegram_user
+            'user': telegram_user,
+            'is_admin': is_admin
         })
 
         return Response(serializer.data)
