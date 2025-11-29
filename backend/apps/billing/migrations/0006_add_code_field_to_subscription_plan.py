@@ -15,7 +15,6 @@ def populate_code_field(apps, schema_editor):
         'MONTHLY': 'PRO_MONTHLY',
         'YEARLY': 'PRO_YEARLY',
         'TEST_LIVE': 'TEST_LIVE',
-        'MONTHLY_TEST': 'MONTHLY_TEST',  # Legacy test plan
     }
 
     for plan in SubscriptionPlan.objects.all():
