@@ -16,6 +16,8 @@ from .serializers import (
     RecognizedItemSerializer
 )
 from .services import AIRecognitionService
+from apps.ai_proxy.service import AIProxyRecognitionService
+from apps.ai_proxy.exceptions import AIProxyError
 from .throttles import AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle
 from apps.billing.services import get_effective_plan_for_user
 from apps.billing.usage import DailyUsage
@@ -55,11 +57,22 @@ class AIRecognitionView(APIView):
         responses={
             200: AIRecognitionResponseSerializer,
             400: OpenApiResponse(description="Некорректные данные (неверный формат изображения или отсутствует)"),
-            429: OpenApiResponse(description="Превышен лимит запросов (10/мин или 100/день)"),
-            500: OpenApiResponse(description="Ошибка AI распознавания (после 3 попыток)"),
+            429: OpenApiResponse(description="Превышен лимит запросов (10/мин или 100/день или дневной лимит по тарифу)"),
+            500: OpenApiResponse(description="Ошибка AI Proxy распознавания"),
         },
         summary="Распознать блюда на фото",
-        description="Отправь изображение еды в Base64 и получи список распознанных блюд с КБЖУ"
+        description="""
+Отправь изображение еды в Base64 и получи список распознанных блюд с КБЖУ.
+
+**Параметры:**
+- `image` (обязательно): Изображение в формате Base64 (data:image/jpeg;base64,...)
+- `description` (опционально): Дополнительное описание блюд (устаревшее поле)
+- `comment` (опционально): Комментарий пользователя о блюде (новое поле, передается в AI Proxy)
+- `date` (опционально): Дата приёма пищи
+
+**Обработка:**
+Изображение отправляется в AI Proxy сервис (внутренний сервис EatFit24), который использует OpenRouter для распознавания.
+        """
     )
     def post(self, request):
         """Handle POST request for AI food recognition."""
@@ -73,6 +86,7 @@ class AIRecognitionView(APIView):
 
         image_data_url = serializer.validated_data['image']
         description = serializer.validated_data.get('description', '')
+        comment = serializer.validated_data.get('comment', '')
 
         # Check daily photo limit based on user's subscription plan
         plan = get_effective_plan_for_user(request.user)
@@ -95,12 +109,16 @@ class AIRecognitionView(APIView):
             )
 
         try:
-            # Initialize AI service
-            ai_service = AIRecognitionService()
+            # Initialize AI Proxy service (replaces old OpenRouter service)
+            ai_service = AIProxyRecognitionService()
 
             # Recognize food items
-            logger.info(f"Starting AI recognition for user {request.user.username}")
-            result = ai_service.recognize_food(image_data_url, user_description=description)
+            logger.info(f"Starting AI Proxy recognition for user {request.user.username}")
+            result = ai_service.recognize_food(
+                image_data_url,
+                user_description=description,
+                user_comment=comment
+            )
 
             logger.info(
                 f"AI recognition successful for user {request.user.username}. "
@@ -119,6 +137,16 @@ class AIRecognitionView(APIView):
             return Response(
                 response_serializer.data,
                 status=status.HTTP_200_OK
+            )
+
+        except AIProxyError as e:
+            logger.error(f"AI Proxy error: {e}", exc_info=True)
+            return Response(
+                {
+                    "error": "AI_PROXY_ERROR",
+                    "detail": "Сервис распознавания временно недоступен. Попробуйте позже"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
         except ValueError as e:

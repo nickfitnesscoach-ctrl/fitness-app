@@ -63,6 +63,7 @@ LOCAL_APPS = [
     "apps.nutrition",
     "apps.billing",
     "apps.ai",
+    "apps.ai_proxy",
     "apps.common",
     "apps.telegram",
 ]
@@ -484,6 +485,14 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 AI_MAX_RETRIES = 3  # Maximum retries for invalid JSON
 AI_RATE_LIMIT_PER_MINUTE = 10  # Requests per minute per IP
 AI_RATE_LIMIT_PER_DAY = 100  # Requests per day per IP
+
+# ============================================================
+# AI Proxy Configuration (EatFit24 Internal Service)
+# ============================================================
+# AI Proxy is an internal service that wraps OpenRouter API calls
+# Accessible only via Tailscale VPN
+AI_PROXY_URL = os.environ.get("AI_PROXY_URL", "")
+AI_PROXY_SECRET = os.environ.get("AI_PROXY_SECRET", "")
 
 
 # ============================================================

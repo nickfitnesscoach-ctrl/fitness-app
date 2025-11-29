@@ -46,8 +46,16 @@ class AIRecognitionRequestSerializer(serializers.Serializer):
     description = serializers.CharField(
         required=False,
         allow_blank=True,
+        allow_null=True,
         max_length=500,
         help_text="Дополнительное описание блюд, до 500 символов (например: '3 сэндвича, овсянка на молоке 2.5%, 1 ч.л. сахара')"
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        max_length=500,
+        help_text="Комментарий пользователя о блюде (передается в AI Proxy как user_comment)"
     )
     date = serializers.DateField(
         required=False,
