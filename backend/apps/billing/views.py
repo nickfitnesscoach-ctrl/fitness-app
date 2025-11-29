@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from decimal import Decimal
 import logging
 
 from apps.common.audit import SecurityAuditLogger
@@ -361,6 +362,100 @@ def create_payment(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def bind_card_start(request):
+    """
+    POST /api/v1/billing/bind-card/start/
+    Запуск процесса привязки карты без оплаты подписки.
+
+    Создаёт платёж на 1₽ для сохранения карты для автопродления.
+    Пользователь берётся из контекста авторизации.
+
+    Body (опционально):
+        {
+            "return_url": "https://example.com/success"  // Кастомный URL возврата
+        }
+
+    Response (201):
+        {
+            "confirmation_url": "https://...",
+            "payment_id": "uuid"
+        }
+
+    Errors:
+        - 502: Ошибка создания платежа в YooKassa
+    """
+    from .models import Payment
+    from django.conf import settings
+
+    # Получаем return_url из body или используем дефолтный
+    return_url = request.data.get('return_url') or settings.YOOKASSA_RETURN_URL
+
+    try:
+        # Инициализируем YooKassa сервис
+        yookassa_service = YooKassaService()
+
+        # Создаём платёж на 1₽ для привязки карты
+        payment_result = yookassa_service.create_payment(
+            amount=Decimal('1.00'),
+            description='Привязка карты для автопродления PRO',
+            return_url=return_url,
+            save_payment_method=True,
+            metadata={
+                'user_id': str(request.user.id),
+                'purpose': 'card_binding',
+            }
+        )
+
+        # Сохраняем платёж в БД
+        payment = Payment.objects.create(
+            user=request.user,
+            subscription=request.user.subscription,
+            amount=Decimal('1.00'),
+            currency='RUB',
+            status='PENDING',
+            yookassa_payment_id=payment_result['id'],
+            description='Привязка карты для автопродления PRO',
+            save_payment_method=True,
+            is_recurring=False,
+        )
+
+        # SECURITY: Log card binding attempt
+        SecurityAuditLogger.log_payment_created(
+            user=request.user,
+            amount=1.0,
+            plan='card_binding',
+            request=request
+        )
+
+        logger.info(
+            f"Card binding payment created for user {request.user.id}: "
+            f"payment_id={payment.id}, yookassa_id={payment_result['id']}"
+        )
+
+        return Response(
+            {
+                'confirmation_url': payment_result['confirmation_url'],
+                'payment_id': str(payment.id),
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+    except Exception as e:
+        logger.error(f"Card binding payment creation error: {str(e)}", exc_info=True)
+        return Response(
+            {
+                'detail': 'cannot_create_binding_payment',
+                'error': {
+                    'code': 'BINDING_PAYMENT_CREATE_FAILED',
+                    'message': 'Не удалось создать платёж для привязки карты. Попробуйте позже.'
+                }
+            },
+            status=status.HTTP_502_BAD_GATEWAY
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def create_test_live_payment(request):
     """
     POST /api/v1/billing/create-test-live-payment/
@@ -674,6 +769,7 @@ def get_subscription_details(request):
             "is_active": true/false,
             "autorenew_available": true/false,
             "autorenew_enabled": true/false,
+            "card_bound": true/false,
             "payment_method": {
                 "is_attached": true/false,
                 "card_mask": "•••• 1234" или null,
@@ -692,6 +788,7 @@ def get_subscription_details(request):
             'is_active': True,
             'autorenew_available': False,
             'autorenew_enabled': False,
+            'card_bound': False,
             'payment_method': {
                 'is_attached': False,
                 'card_mask': None,
@@ -737,6 +834,7 @@ def get_subscription_details(request):
         'is_active': is_active,
         'autorenew_available': autorenew_available,
         'autorenew_enabled': autorenew_enabled,
+        'card_bound': bool(subscription.yookassa_payment_method_id),  # Explicit card_bound flag
         'payment_method': payment_method
     }
 

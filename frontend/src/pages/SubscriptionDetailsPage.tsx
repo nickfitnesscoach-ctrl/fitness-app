@@ -57,7 +57,16 @@ const SubscriptionDetailsPage: React.FC = () => {
             try {
                 await billing.addPaymentMethod();
             } catch (error) {
-                showToast("Ошибка при запуске привязки карты");
+                // Пытаемся распарсить структурированную ошибку
+                let errorMessage = "Ошибка при запуске привязки карты";
+                try {
+                    const errorData = JSON.parse((error as Error).message);
+                    errorMessage = errorData.message || errorMessage;
+                } catch {
+                    // Если не JSON, используем сообщение как есть
+                    errorMessage = (error as Error).message || errorMessage;
+                }
+                showToast(errorMessage);
             }
         } else {
             showToast("Смена карты будет доступна позже");

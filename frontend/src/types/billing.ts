@@ -56,6 +56,7 @@ export interface SubscriptionDetails {
     is_active: boolean;
     autorenew_available: boolean;
     autorenew_enabled: boolean;
+    card_bound: boolean;  // Explicit flag for card binding status
     payment_method: {
         is_attached: boolean;
         card_mask: string | null;    // "•••• 1234"

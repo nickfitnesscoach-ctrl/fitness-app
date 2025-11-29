@@ -11,6 +11,7 @@ from django.utils.decorators import method_decorator
 from django.db import transaction
 from django.utils import timezone
 from django.conf import settings
+from decimal import Decimal
 import logging
 import json
 import ipaddress
@@ -172,6 +173,44 @@ def handle_payment_succeeded(payment_object):
             subscription = payment.subscription
             plan = payment.plan
 
+            # Проверяем, является ли это платежом для привязки карты (без плана)
+            is_card_binding = payment.plan is None and payment.amount == Decimal('1.00')
+
+            if is_card_binding:
+                # Это платеж только для привязки карты - сохраняем payment_method_id
+                logger.info(f"Processing card binding payment {payment.id}")
+
+                if payment_method_id and payment.save_payment_method:
+                    subscription = Subscription.objects.get(user=payment.user)
+                    subscription.yookassa_payment_method_id = payment_method_id
+                    # НЕ включаем автопродление автоматически для привязки карты
+                    # Пользователь должен сам включить его в настройках
+
+                    # Извлекаем информацию о карте из payment_object
+                    if payment_object.payment_method and hasattr(payment_object.payment_method, 'card'):
+                        card_info = payment_object.payment_method.card
+                        if card_info:
+                            # Формируем маску карты (например "•••• 1234")
+                            if hasattr(card_info, 'last4'):
+                                subscription.card_mask = f"•••• {card_info.last4}"
+
+                            # Сохраняем тип карты (Visa, MasterCard, МИР и т.д.)
+                            if hasattr(card_info, 'card_type'):
+                                subscription.card_brand = card_info.card_type.upper()
+
+                    subscription.save()
+                    logger.info(f"Card binding succeeded for payment {payment.id}. Card saved to subscription.")
+
+                # SECURITY: Log successful card binding
+                SecurityAuditLogger.log_payment_success(
+                    user=payment.user,
+                    payment_id=str(payment.id),
+                    amount=float(payment.amount),
+                    plan='card_binding'
+                )
+                return
+
+            # Обычный платеж за подписку - требуется план
             if not subscription or not plan:
                 logger.error(f"Payment {payment.id} has no subscription or plan")
                 return
@@ -224,7 +263,7 @@ def handle_payment_succeeded(payment_object):
             if payment_method_id and payment.save_payment_method:
                 subscription = Subscription.objects.get(user=payment.user)
                 subscription.yookassa_payment_method_id = payment_method_id
-                subscription.auto_renew = True  # Автоматически включаем автопродление
+                subscription.auto_renew = True  # Автоматически включаем автопродление при оплате подписки
 
                 # Извлекаем информацию о карте из payment_object
                 if payment_object.payment_method and hasattr(payment_object.payment_method, 'card'):

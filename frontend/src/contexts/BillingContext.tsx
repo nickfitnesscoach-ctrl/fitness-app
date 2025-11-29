@@ -143,10 +143,11 @@ export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const addPaymentMethod = useCallback(async () => {
         try {
-            await api.addPaymentMethod();
+            await api.bindCard();
+            // После привязки карты обновляем данные подписки
             await refresh();
         } catch (error) {
-            console.error('[BillingContext] Failed to add payment method:', error);
+            console.error('[BillingContext] Failed to bind card:', error);
             throw error;
         }
     }, [refresh]);

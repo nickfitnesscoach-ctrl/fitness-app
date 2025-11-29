@@ -68,6 +68,7 @@ const URLS = {
     subscriptionAutoRenew: `${API_BASE}/billing/subscription/autorenew/`,
     paymentMethodDetails: `${API_BASE}/billing/payment-method/`,
     paymentsHistory: `${API_BASE}/billing/payments/`,
+    bindCardStart: `${API_BASE}/billing/bind-card/start/`,
     // AI endpoints
     recognize: `${API_BASE}/ai/recognize/`,
 };
@@ -766,27 +767,35 @@ export const api = {
      * Инициация привязки карты
      * Создает платёж для подписки, который автоматически сохраняет карту (backend всегда save_payment_method=true)
      */
-    async addPaymentMethod() {
-        log('Initiating card attachment via payment flow');
+    /**
+     * POST /api/v1/billing/bind-card/start/
+     * Запуск процесса привязки карты (платёж 1₽)
+     */
+    async bindCard() {
+        log('Starting card binding flow (1₽ payment)');
         try {
-            // Создаём обычный платёж MONTHLY - backend автоматически сохранит карту
-            // (в backend save_payment_method=True установлен по умолчанию для всех платежей)
-            const response = await fetchWithRetry(URLS.createPayment, {
+            const response = await fetchWithRetry(URLS.bindCardStart, {
                 method: 'POST',
                 headers: getHeaders(),
-                body: JSON.stringify({
-                    plan_code: 'MONTHLY',
-                }),
+                body: JSON.stringify({}),
             });
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                log(`Card attachment error: ${errorData.error?.code || response.status}`);
-                throw new Error(errorData.error?.message || errorData.detail || 'Не удалось запустить привязку карты');
+                log(`Card binding error: ${errorData.error?.code || response.status}`);
+
+                // Возвращаем структурированную ошибку
+                const errorMessage = errorData.error?.message || errorData.detail || 'Не удалось запустить привязку карты';
+                const errorCode = errorData.detail || errorData.error?.code || 'UNKNOWN_ERROR';
+
+                throw new Error(JSON.stringify({
+                    message: errorMessage,
+                    code: errorCode
+                }));
             }
 
             const data = await response.json();
-            log(`Payment created for card attachment: ${data.payment_id}`);
+            log(`Card binding payment created: ${data.payment_id}`);
 
             // Открываем платёжную форму в Telegram WebApp или браузере
             const isTMA = typeof window !== 'undefined' && window.Telegram?.WebApp?.initData;
@@ -798,9 +807,17 @@ export const api = {
 
             return data;
         } catch (error) {
-            console.error('Error initiating card attachment:', error);
+            console.error('Error initiating card binding:', error);
             throw error;
         }
+    },
+
+    /**
+     * @deprecated Use bindCard() instead
+     * Legacy method for backwards compatibility
+     */
+    async addPaymentMethod() {
+        return this.bindCard();
     },
 
     /**

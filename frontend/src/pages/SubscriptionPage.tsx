@@ -105,7 +105,16 @@ const SubscriptionPage: React.FC = () => {
             setTogglingAutoRenew(true);
             await billing.addPaymentMethod();
         } catch (error) {
-            showToast("Не удалось запустить привязку карты");
+            // Пытаемся распарсить структурированную ошибку
+            let errorMessage = "Не удалось запустить привязку карты";
+            try {
+                const errorData = JSON.parse((error as Error).message);
+                errorMessage = errorData.message || errorMessage;
+            } catch {
+                // Если не JSON, используем сообщение как есть
+                errorMessage = (error as Error).message || errorMessage;
+            }
+            showToast(errorMessage);
         } finally {
             setTogglingAutoRenew(false);
         }

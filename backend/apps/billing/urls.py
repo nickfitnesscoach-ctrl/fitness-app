@@ -14,6 +14,7 @@ urlpatterns = [
     path('subscribe', views.subscribe, name='subscribe'),
     path('create-payment/', views.create_payment, name='create-payment'),  # Universal payment creation
     path('create-plus-payment/', views.create_plus_payment, name='create-plus-payment'),  # Deprecated, use create-payment
+    path('bind-card/start/', views.bind_card_start, name='bind-card-start'),  # Start card binding flow (1₽ payment)
     path('create-test-live-payment/', views.create_test_live_payment, name='create-test-live-payment'),  # Admin-only: test live 1₽ payment
     path('auto-renew/toggle', views.toggle_auto_renew, name='toggle-auto-renew'),
     path('payments', views.get_payment_history, name='payment-history'),
