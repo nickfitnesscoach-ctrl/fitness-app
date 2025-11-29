@@ -17,7 +17,7 @@ from .serializers import (
 )
 from .services import AIRecognitionService
 from apps.ai_proxy.service import AIProxyRecognitionService
-from apps.ai_proxy.exceptions import AIProxyError
+from apps.ai_proxy.exceptions import AIProxyError, AIProxyValidationError
 from .throttles import AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle
 from apps.billing.services import get_effective_plan_for_user
 from apps.billing.usage import DailyUsage
@@ -137,6 +137,16 @@ class AIRecognitionView(APIView):
             return Response(
                 response_serializer.data,
                 status=status.HTTP_200_OK
+            )
+
+        except AIProxyValidationError as e:
+            logger.error(f"AI Proxy validation error: {e}")
+            return Response(
+                {
+                    "error": "INVALID_IMAGE",
+                    "detail": "Некорректный формат изображения. Проверьте data URL и попробуйте снова"
+                },
+                status=status.HTTP_400_BAD_REQUEST
             )
 
         except AIProxyError as e:

@@ -2,23 +2,16 @@
 AI Recognition Service using AI Proxy.
 
 This service replaces the old OpenRouter-based recognition.
-It uploads images to a temporary CDN and sends the URL to AI Proxy.
+It decodes data URL images and sends them as multipart/form-data to AI Proxy.
 """
 
 import logging
-import base64
-import tempfile
-import os
 from typing import Dict, Optional
-from pathlib import Path
-
-from django.core.files.storage import default_storage
-from django.core.files.base import ContentFile
-from django.conf import settings
 
 from .client import AIProxyClient
 from .adapter import adapt_ai_proxy_response
-from .exceptions import AIProxyError
+from .exceptions import AIProxyError, AIProxyValidationError
+from .utils import parse_data_url
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +21,9 @@ class AIProxyRecognitionService:
     Service for recognizing food items using AI Proxy.
 
     This service:
-    1. Converts base64 image to file
-    2. Uploads to CDN or generates public URL
-    3. Calls AI Proxy with image URL
-    4. Adapts response to legacy format
+    1. Decodes data URL to image bytes
+    2. Sends image bytes via multipart/form-data to AI Proxy
+    3. Adapts response to legacy format
     """
 
     def __init__(self):
@@ -57,19 +49,32 @@ class AIProxyRecognitionService:
 
         Raises:
             AIProxyError: If AI Proxy call fails
-            ValueError: If image format is invalid
+            AIProxyValidationError: If data URL format is invalid
         """
         # Merge description and comment (prioritize comment)
         final_comment = user_comment or user_description or ""
 
-        # Extract base64 data
-        image_url = self._convert_base64_to_url(image_data_url)
+        try:
+            # Parse data URL to bytes
+            logger.debug("Parsing data URL to image bytes")
+            image_bytes, content_type = parse_data_url(image_data_url)
+
+            logger.info(
+                f"Parsed data URL: size={len(image_bytes)/1024:.1f}KB, "
+                f"content_type={content_type}"
+            )
+
+        except ValueError as e:
+            # Wrap ValueError in AIProxyValidationError for consistent error handling
+            logger.error(f"Invalid data URL format: {e}")
+            raise AIProxyValidationError(f"Invalid image data URL: {e}")
 
         try:
-            # Call AI Proxy
-            logger.info(f"Calling AI Proxy with image URL: {image_url[:80]}...")
+            # Call AI Proxy with image bytes via multipart/form-data
+            logger.info("Calling AI Proxy with image bytes")
             ai_proxy_response = self.client.recognize_food(
-                image_url=image_url,
+                image_bytes=image_bytes,
+                content_type=content_type,
                 user_comment=final_comment,
                 locale="ru",
             )
@@ -87,20 +92,3 @@ class AIProxyRecognitionService:
         except AIProxyError as e:
             logger.error(f"AI Proxy error: {e}")
             raise
-
-    def _convert_base64_to_url(self, image_data_url: str) -> str:
-        """
-        Convert base64 data URL to publicly accessible URL.
-
-        For now, we just pass the data URL directly to AI Proxy.
-        AI Proxy can handle data URLs.
-
-        Args:
-            image_data_url: Image in data URL format
-
-        Returns:
-            Public URL or data URL
-        """
-        # AI Proxy accepts data URLs directly, so we can just return it
-        # In future, we could upload to CDN here if needed
-        return image_data_url

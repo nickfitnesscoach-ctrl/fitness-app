@@ -23,6 +23,7 @@ apps/ai_proxy/
 ├── service.py           # Сервис-обертка для интеграции
 ├── adapter.py           # Адаптер ответов AI Proxy -> legacy формат
 ├── exceptions.py        # Кастомные исключения
+├── utils.py             # Утилиты (парсинг data URL)
 └── README.md            # Документация
 ```
 
@@ -110,12 +111,18 @@ except AIProxyServerError as e:
 
 ```python
 from apps.ai_proxy.client import AIProxyClient
+from apps.ai_proxy.utils import parse_data_url
 
 client = AIProxyClient()
 
-# Распознавание с пользовательским комментарием
+# Парсинг data URL в bytes
+data_url = "data:image/jpeg;base64,/9j/4AAQ..."
+image_bytes, content_type = parse_data_url(data_url)
+
+# Отправка файла через multipart/form-data
 response = client.recognize_food(
-    image_url="https://example.com/food.jpg",
+    image_bytes=image_bytes,
+    content_type=content_type,
     user_comment="3 сэндвича с сыром",
     locale="ru"
 )
@@ -144,16 +151,64 @@ print(response)
 # }
 ```
 
-## Формат данных
+### Утилиты
 
-### Входные данные (запрос)
+#### parse_data_url
+
+Парсинг data URL в байты:
 
 ```python
+from apps.ai_proxy.utils import parse_data_url
+
+# Парсинг data URL
+data_url = "data:image/jpeg;base64,/9j/4AAQ..."
+image_bytes, content_type = parse_data_url(data_url)
+
+print(f"Content Type: {content_type}")  # "image/jpeg"
+print(f"Size: {len(image_bytes)} bytes")  # 12345 bytes
+
+# Валидация:
+# - Формат data URL
+# - Content type (только JPEG/PNG)
+# - Base64 декодирование
+# - Минимальный размер (50 bytes)
+```
+
+## Формат данных
+
+### Архитектура обработки изображений
+
+```
+Client (Mini-app) → Django → AI Proxy
+     JSON           JSON→     multipart/
+  data URL         bytes     form-data
+```
+
+**Важно:**
+- Внешний API Django (`/api/v1/ai/recognize/`) принимает JSON с data URL
+- Django декодирует data URL → bytes
+- Django отправляет в AI Proxy файл через `multipart/form-data`
+
+### Входные данные Django API
+
+```python
+# POST /api/v1/ai/recognize/
 {
-    "image_url": str,        # URL изображения или data URL
-    "user_comment": str,     # Опционально: комментарий пользователя
-    "locale": str           # Язык: "ru" или "en"
+    "image": str,        # data URL: "data:image/jpeg;base64,..."
+    "comment": str,      # Опционально: комментарий пользователя
 }
+```
+
+### Входные данные AI Proxy (multipart/form-data)
+
+```
+POST /api/v1/ai/recognize-food
+Content-Type: multipart/form-data
+
+Fields:
+- image: file (binary, JPEG/PNG)
+- user_comment: string (optional)
+- locale: string (default: "ru")
 ```
 
 ### Выходные данные (AI Proxy формат)

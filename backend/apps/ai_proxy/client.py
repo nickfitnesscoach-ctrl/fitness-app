@@ -11,10 +11,17 @@ Security:
 
 Usage:
     from apps.ai_proxy.client import AIProxyClient
+    from apps.ai_proxy.utils import parse_data_url
 
     client = AIProxyClient()
+
+    # Parse data URL to bytes
+    image_bytes, content_type = parse_data_url(data_url)
+
+    # Send file via multipart/form-data
     result = client.recognize_food(
-        image_url="https://example.com/food.jpg",
+        image_bytes=image_bytes,
+        content_type=content_type,
         user_comment="Grilled chicken with rice",
         locale="ru"
     )
@@ -92,15 +99,17 @@ class AIProxyClient:
 
     def recognize_food(
         self,
-        image_url: str,
+        image_bytes: bytes,
+        content_type: str,
         user_comment: Optional[str] = None,
         locale: str = "ru",
     ) -> Dict:
         """
-        Recognize food items from an image URL.
+        Recognize food items from image bytes via multipart/form-data.
 
         Args:
-            image_url: Publicly accessible URL of the food image
+            image_bytes: Raw image bytes (JPEG or PNG)
+            content_type: MIME type of the image (e.g., 'image/jpeg', 'image/png')
             user_comment: Optional user comment about the food
             locale: Language code (default: "ru")
 
@@ -135,34 +144,38 @@ class AIProxyClient:
         """
         endpoint = f"{self.api_url}/api/v1/ai/recognize-food"
 
-        # Prepare headers
+        # Prepare headers (no Content-Type, httpx will set it for multipart)
         headers = {
             "X-API-Key": self.api_key,
-            "Content-Type": "application/json",
         }
 
-        # Prepare payload
-        payload = {
-            "image_url": image_url,
-            "locale": locale,
+        # Prepare multipart files
+        files = {
+            "image": ("image", image_bytes, content_type or "application/octet-stream")
+        }
+
+        # Prepare form data
+        data = {
+            "locale": locale or "ru",
         }
 
         if user_comment:
-            payload["user_comment"] = user_comment
+            data["user_comment"] = user_comment
 
-        # Log request (truncate image URL for readability)
-        image_url_preview = image_url[:80] + "..." if len(image_url) > 80 else image_url
+        # Log request (log size and type, not the actual bytes)
+        image_size_kb = len(image_bytes) / 1024
         logger.info(
-            f"AI Proxy request: image={image_url_preview}, "
-            f"comment={user_comment!r}, locale={locale}"
+            f"AI Proxy request: image_size={image_size_kb:.1f}KB, "
+            f"content_type={content_type}, comment={user_comment!r}, locale={locale}"
         )
 
         try:
-            # Make HTTP POST request
+            # Make HTTP POST request with multipart/form-data
             response = self.client.post(
                 endpoint,
-                json=payload,
                 headers=headers,
+                files=files,
+                data=data,
             )
 
             # Handle different status codes
