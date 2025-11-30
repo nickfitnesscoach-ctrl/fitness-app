@@ -35,7 +35,7 @@ def update_subscription_plans(apps, schema_editor):
         monthly_plan.price = Decimal('299.00')
         monthly_plan.duration_days = 30
         monthly_plan.daily_photo_limit = None  # Безлимит
-        monthly_plan.history_days = -1  # Неограниченно
+        monthly_plan.history_days = 180  # 180 дней
         monthly_plan.ai_recognition = True
         monthly_plan.advanced_stats = True
         monthly_plan.priority_support = True
@@ -50,7 +50,7 @@ def update_subscription_plans(apps, schema_editor):
         yearly_plan.price = Decimal('2490.00')
         yearly_plan.duration_days = 365
         yearly_plan.daily_photo_limit = None  # Безлимит
-        yearly_plan.history_days = -1  # Неограниченно
+        yearly_plan.history_days = 180  # 180 дней
         yearly_plan.ai_recognition = True
         yearly_plan.advanced_stats = True
         yearly_plan.priority_support = True
