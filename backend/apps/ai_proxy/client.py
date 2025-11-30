@@ -90,9 +90,9 @@ class AIProxyClient:
         self.api_url = self.api_url.rstrip("/")
 
         # Initialize HTTP client with timeout
-        # Set to 20s to ensure response before frontend timeout (30s)
-        # This leaves 10s margin for Django processing and network delays
-        self.timeout = 20.0  # 20 seconds
+        # Temporarily increased to 130s to allow OpenRouter (120s) to respond
+        # TODO: Implement async processing for production
+        self.timeout = 130.0  # 130 seconds
         self.client = httpx.Client(timeout=self.timeout)
 
         logger.info(

@@ -9,9 +9,9 @@ backlog = 2048
 workers = multiprocessing.cpu_count() * 2 + 1
 worker_class = "sync"
 worker_connections = 1000
-# Timeout set to 25s to ensure worker doesn't kill request before AI Proxy timeout (20s)
-# but still responds before frontend timeout (30s)
-timeout = 25
+# Temporarily increased to 140s to allow AI recognition to complete
+# TODO: Implement async processing for production
+timeout = 140
 keepalive = 2
 
 # Logging
