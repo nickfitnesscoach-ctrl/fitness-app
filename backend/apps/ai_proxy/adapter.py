@@ -8,20 +8,19 @@ AI Proxy response format (new):
 {
     "items": [
         {
-            "food_name_ru": "Куриная грудка гриль",
-            "food_name_en": "Grilled Chicken Breast",
-            "portion_weight_g": 150.0,
-            "calories": 165,
-            "protein_g": 31.0,
-            "fat_g": 3.6,
-            "carbs_g": 0.0
+            "name": "Куриная грудка гриль",
+            "grams": 150.0,
+            "kcal": 165,
+            "protein": 31.0,
+            "fat": 3.6,
+            "carbs": 0.0
         }
     ],
     "total": {
-        "calories": 165,
-        "protein_g": 31.0,
-        "fat_g": 3.6,
-        "carbs_g": 0.0
+        "kcal": 165,
+        "protein": 31.0,
+        "fat": 3.6,
+        "carbs": 0.0
     },
     "model_notes": "High protein meal"  # optional
 }
@@ -62,17 +61,17 @@ def adapt_ai_proxy_response(ai_proxy_response: Dict) -> Dict:
 
     recognized_items = []
     for item in items:
-        # Use Russian name if available, fallback to English
-        name = item.get("food_name_ru") or item.get("food_name_en", "Unknown")
+        # AI Proxy returns simple field names
+        name = item.get("name", "Unknown")
 
         recognized_item = {
             "name": name,
             "confidence": 0.95,  # AI Proxy doesn't return confidence, use default
-            "estimated_weight": int(item.get("portion_weight_g", 0)),
-            "calories": item.get("calories", 0),
-            "protein": item.get("protein_g", 0.0),
-            "fat": item.get("fat_g", 0.0),
-            "carbohydrates": item.get("carbs_g", 0.0),
+            "estimated_weight": int(item.get("grams", 0)),
+            "calories": item.get("kcal", 0),
+            "protein": item.get("protein", 0.0),
+            "fat": item.get("fat", 0.0),
+            "carbohydrates": item.get("carbs", 0.0),
         }
         recognized_items.append(recognized_item)
 

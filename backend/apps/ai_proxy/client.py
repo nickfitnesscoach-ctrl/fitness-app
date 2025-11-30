@@ -89,7 +89,8 @@ class AIProxyClient:
         self.api_url = self.api_url.rstrip("/")
 
         # Initialize HTTP client with timeout
-        self.timeout = 30.0  # 30 seconds
+        # AI Proxy uses 60s timeout for OpenRouter calls
+        self.timeout = 60.0  # 60 seconds
         self.client = httpx.Client(timeout=self.timeout)
 
         logger.info(
@@ -114,24 +115,23 @@ class AIProxyClient:
             locale: Language code (default: "ru")
 
         Returns:
-            Dict with structure:
+            Dict with structure (as returned by AI Proxy):
             {
                 "items": [
                     {
-                        "food_name_ru": "Куриная грудка гриль",
-                        "food_name_en": "Grilled Chicken Breast",
-                        "portion_weight_g": 150.0,
-                        "calories": 165,
-                        "protein_g": 31.0,
-                        "fat_g": 3.6,
-                        "carbs_g": 0.0
+                        "name": "Куриная грудка гриль",
+                        "grams": 150.0,
+                        "kcal": 165,
+                        "protein": 31.0,
+                        "fat": 3.6,
+                        "carbs": 0.0
                     }
                 ],
                 "total": {
-                    "calories": 165,
-                    "protein_g": 31.0,
-                    "fat_g": 3.6,
-                    "carbs_g": 0.0
+                    "kcal": 165,
+                    "protein": 31.0,
+                    "fat": 3.6,
+                    "carbs": 0.0
                 },
                 "model_notes": "High protein meal, low fat"  # optional
             }
@@ -181,8 +181,9 @@ class AIProxyClient:
             # Handle different status codes
             if response.status_code == 200:
                 result = response.json()
+
                 items_count = len(result.get("items", []))
-                total_calories = result.get("total", {}).get("calories", 0)
+                total_calories = result.get("total", {}).get("kcal", 0)
 
                 logger.info(
                     f"AI Proxy success: {items_count} items found, "
