@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Upload, CreditCard, AlertCircle, Check } from 'lucide-react';
+import { Camera, Upload, CreditCard, AlertCircle, Check, X, Send } from 'lucide-react';
 import { api, CreateMealRequest } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { useBilling } from '../contexts/BillingContext';
@@ -17,6 +17,10 @@ const FoodLogPage: React.FC = () => {
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
     const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
     const [showBatchResults, setShowBatchResults] = useState(false);
+
+    // Preview state
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [description, setDescription] = useState('');
 
     const [error, setError] = useState<string | null>(null);
     const [showLimitModal, setShowLimitModal] = useState(false);
@@ -46,8 +50,21 @@ const FoodLogPage: React.FC = () => {
                 return;
             }
 
-            processBatch(validFiles);
+            // Instead of processing immediately, set selected files for preview
+            setSelectedFiles(validFiles);
+            setError(null);
         }
+    };
+
+    const handleRemoveFile = (index: number) => {
+        const newFiles = [...selectedFiles];
+        newFiles.splice(index, 1);
+        setSelectedFiles(newFiles);
+    };
+
+    const handleAnalyze = () => {
+        if (selectedFiles.length === 0) return;
+        processBatch(selectedFiles, description);
     };
 
     const getMealTypeByTime = (): 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK' => {
@@ -58,7 +75,7 @@ const FoodLogPage: React.FC = () => {
         return 'SNACK';
     };
 
-    const processBatch = async (files: File[]) => {
+    const processBatch = async (files: File[], desc: string) => {
         setIsBatchProcessing(true);
         setBatchProgress({ current: 0, total: files.length });
         setBatchResults([]);
@@ -81,8 +98,8 @@ const FoodLogPage: React.FC = () => {
                 setBatchProgress({ current: i + 1, total: files.length });
 
                 try {
-                    // Recognize
-                    const result = await api.recognizeFood(file) as AnalysisResult;
+                    // Recognize with description
+                    const result = await api.recognizeFood(file, desc) as AnalysisResult;
 
                     if (result.recognized_items && result.recognized_items.length > 0) {
                         // Filter out "Total" row if present
@@ -118,9 +135,6 @@ const FoodLogPage: React.FC = () => {
                     // Check for daily limit
                     if (err.error === 'DAILY_LIMIT_REACHED' || err.code === 'DAILY_LIMIT_REACHED') {
                         setShowLimitModal(true);
-                        // Add remaining files as errors or just stop?
-                        // Requirement: "If one photo fails... do not break the batch". 
-                        // But limit reached is a hard stop.
                         results.push({
                             file,
                             status: 'error',
@@ -144,6 +158,10 @@ const FoodLogPage: React.FC = () => {
 
             // Show results modal
             setShowBatchResults(true);
+
+            // Clear selection
+            setSelectedFiles([]);
+            setDescription('');
 
         } catch (err: any) {
             console.error('[Batch] Global error:', err);
@@ -259,8 +277,119 @@ const FoodLogPage: React.FC = () => {
                 )}
 
                 {/* Main Content Area */}
-                {!isBatchProcessing ? (
-                    /* Initial state - show capture options */
+                {isBatchProcessing ? (
+                    /* Batch Processing State */
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-3xl p-8 shadow-lg text-center">
+                            <div className="relative w-16 h-16 mx-auto mb-4">
+                                <div className="absolute inset-0 border-4 border-gray-100 rounded-full"></div>
+                                <div className="absolute inset-0 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <span className="text-sm font-bold text-blue-600">
+                                        {batchProgress.current}/{batchProgress.total}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                Обработка фотографий
+                            </h3>
+                            <p className="text-gray-600 font-medium">
+                                Загружаю {batchProgress.current} из {batchProgress.total}...
+                            </p>
+                            <p className="text-gray-400 text-sm mt-4">
+                                Пожалуйста, не закрывайте приложение
+                            </p>
+                        </div>
+                    </div>
+                ) : selectedFiles.length > 0 ? (
+                    /* Preview State */
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div className="bg-white rounded-3xl p-6 shadow-sm">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-lg font-bold text-gray-900">Выбранные фото</h2>
+                                <button
+                                    onClick={() => setSelectedFiles([])}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Horizontal scroll for photos */}
+                            <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-hide">
+                                {selectedFiles.map((file, index) => (
+                                    <div key={index} className="relative shrink-0 w-24 h-24 rounded-xl overflow-hidden group">
+                                        <img
+                                            src={URL.createObjectURL(file)}
+                                            alt={`Preview ${index}`}
+                                            className="w-full h-full object-cover"
+                                        />
+                                        <button
+                                            onClick={() => handleRemoveFile(index)}
+                                            className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {selectedFiles.length < 5 && (
+                                    <label className="shrink-0 w-24 h-24 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors cursor-pointer">
+                                        <Camera size={24} />
+                                        <span className="text-xs mt-1">Добавить</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            multiple
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                if (e.target.files) {
+                                                    const newFiles = Array.from(e.target.files);
+                                                    if (selectedFiles.length + newFiles.length > 5) {
+                                                        alert('Максимум 5 фото');
+                                                        return;
+                                                    }
+                                                    setSelectedFiles([...selectedFiles, ...newFiles]);
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                )}
+                            </div>
+
+                            {/* Comment Input */}
+                            <div className="mt-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Комментарий к еде (опционально)
+                                </label>
+                                <textarea
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                    placeholder="С комментарием анализ будет точнее. Пример: кура 150 гр, рис 200 гр..."
+                                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none h-32"
+                                />
+                            </div>
+
+                            {/* Actions */}
+                            <div className="mt-6 grid grid-cols-2 gap-3">
+                                <button
+                                    onClick={() => setSelectedFiles([])}
+                                    className="py-3 px-4 rounded-xl font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                                >
+                                    Отмена
+                                </button>
+                                <button
+                                    onClick={handleAnalyze}
+                                    className="py-3 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Send size={18} />
+                                    Отправить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    /* Initial Upload State */
                     <div className="space-y-6">
                         <p className="text-center text-gray-500 mb-4">
                             Выберите способ добавления фото
@@ -319,31 +448,6 @@ const FoodLogPage: React.FC = () => {
                                 <p className="text-red-600 text-center font-medium">{error}</p>
                             </div>
                         )}
-                    </div>
-                ) : (
-                    /* Batch Processing State */
-                    <div className="space-y-6">
-                        <div className="bg-white rounded-3xl p-8 shadow-lg text-center">
-                            <div className="relative w-16 h-16 mx-auto mb-4">
-                                <div className="absolute inset-0 border-4 border-gray-100 rounded-full"></div>
-                                <div className="absolute inset-0 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <span className="text-sm font-bold text-blue-600">
-                                        {batchProgress.current}/{batchProgress.total}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                Обработка фотографий
-                            </h3>
-                            <p className="text-gray-600 font-medium">
-                                Загружаю {batchProgress.current} из {batchProgress.total}...
-                            </p>
-                            <p className="text-gray-400 text-sm mt-4">
-                                Пожалуйста, не закрывайте приложение
-                            </p>
-                        </div>
                     </div>
                 )}
 
