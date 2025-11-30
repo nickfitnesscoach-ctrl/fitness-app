@@ -250,6 +250,25 @@ const fetchWithRetry = async (
 // API Client
 // ============================================================
 
+// Helper to resolve image URLs
+const resolveImageUrl = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    if (url.startsWith('http')) return url;
+
+    // If API_BASE is absolute (e.g. http://localhost:8000/api/v1), use its origin
+    if (API_BASE.startsWith('http')) {
+        try {
+            const urlObj = new URL(API_BASE);
+            return `${urlObj.origin}${url}`;
+        } catch (e) {
+            console.error('Error parsing API_BASE:', e);
+            return url;
+        }
+    }
+
+    return url;
+};
+
 export const api = {
     // Debug methods
     getLogs() {
@@ -540,7 +559,7 @@ export const api = {
 
             return {
                 id: data.id,
-                photo_url: mainPhoto,
+                photo_url: resolveImageUrl(mainPhoto),
                 label: data.meal_type_display,
                 recognized_items: data.items.map((item: any) => ({
                     id: item.id,
@@ -727,7 +746,8 @@ export const api = {
             // Remove Content-Type to let browser set it with boundary
             delete (headers as any)['Content-Type'];
 
-            log(`Uploading avatar: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+            log(`Uploading avatar: ${file.name
+                }(${(file.size / 1024).toFixed(1)} KB)`);
 
             const response = await fetchWithTimeout(URLS.uploadAvatar, {
                 method: 'POST',
@@ -750,7 +770,7 @@ export const api = {
                 // Handle other errors
                 const errorData = await response.json().catch(() => ({}));
                 const errorMessage = errorData.error || errorData.detail || 'Failed to upload avatar';
-                log(`Avatar upload failed: ${errorMessage}`);
+                log(`Avatar upload failed: ${errorMessage} `);
                 throw new Error(errorMessage);
             }
 
@@ -812,12 +832,12 @@ export const api = {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                log(`Billing status error: ${response.status}`);
+                log(`Billing status error: ${response.status} `);
                 throw new Error(errorData.detail || errorData.error || 'Failed to fetch billing status');
             }
 
             const data = await response.json();
-            log(`Billing status: plan=${data.plan_code}, limit=${data.daily_photo_limit}, used=${data.used_today}`);
+            log(`Billing status: plan = ${data.plan_code}, limit = ${data.daily_photo_limit}, used = ${data.used_today} `);
             return data;
         } catch (error) {
             console.error('Error fetching billing status:', error);
@@ -830,7 +850,7 @@ export const api = {
      * Создание платежа для подписки
      */
     async createPayment(request: CreatePaymentRequest): Promise<CreatePaymentResponse> {
-        log(`Creating payment for plan: ${request.plan_code}`);
+        log(`Creating payment for plan: ${request.plan_code} `);
         try {
             const response = await fetchWithRetry(URLS.createPayment, {
                 method: 'POST',
@@ -840,12 +860,12 @@ export const api = {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                log(`Payment creation error: ${errorData.error?.code || response.status}`);
+                log(`Payment creation error: ${errorData.error?.code || response.status} `);
                 throw new Error(errorData.error?.message || errorData.detail || 'Failed to create payment');
             }
 
             const data = await response.json();
-            log(`Payment created: ${data.payment_id}`);
+            log(`Payment created: ${data.payment_id} `);
             return data;
         } catch (error) {
             console.error('Error creating payment:', error);
@@ -928,7 +948,7 @@ export const api = {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                log(`Card binding error: ${errorData.error?.code || response.status}`);
+                log(`Card binding error: ${errorData.error?.code || response.status} `);
 
                 // Возвращаем структурированную ошибку
                 const errorMessage = errorData.error?.message || errorData.detail || 'Не удалось запустить привязку карты';
@@ -941,7 +961,7 @@ export const api = {
             }
 
             const data = await response.json();
-            log(`Card binding payment created: ${data.payment_id}`);
+            log(`Card binding payment created: ${data.payment_id} `);
 
             // Открываем платёжную форму в Telegram WebApp или браузере
             const isTMA = typeof window !== 'undefined' && window.Telegram?.WebApp?.initData;
@@ -986,7 +1006,7 @@ export const api = {
             }
 
             const data = await response.json();
-            log(`Test payment created: ${data.payment_id}, mode: ${data.yookassa_mode}`);
+            log(`Test payment created: ${data.payment_id}, mode: ${data.yookassa_mode} `);
 
             // Открываем платёжную форму
             const isTMA = typeof window !== 'undefined' && window.Telegram?.WebApp?.initData;
@@ -1015,14 +1035,14 @@ export const api = {
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch subscription details: ${response.status}`);
+                throw new Error(`Failed to fetch subscription details: ${response.status} `);
             }
 
             const data = await response.json();
             log('Subscription details fetched successfully');
             return data;
         } catch (error) {
-            log(`Failed to fetch subscription details: ${error}`);
+            log(`Failed to fetch subscription details: ${error} `);
             throw error;
         }
     },
@@ -1032,7 +1052,7 @@ export const api = {
      * Включение/отключение автопродления
      */
     async setAutoRenew(enabled: boolean): Promise<SubscriptionDetails> {
-        log(`Setting auto-renew: ${enabled}`);
+        log(`Setting auto - renew: ${enabled} `);
         try {
             const response = await fetchWithRetry(URLS.subscriptionAutoRenew, {
                 method: 'POST',
@@ -1049,7 +1069,7 @@ export const api = {
             log('Auto-renew toggled successfully');
             return data;
         } catch (error) {
-            log(`Failed to toggle auto-renew: ${error}`);
+            log(`Failed to toggle auto - renew: ${error} `);
             throw error;
         }
     },
@@ -1066,14 +1086,14 @@ export const api = {
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch payment method: ${response.status}`);
+                throw new Error(`Failed to fetch payment method: ${response.status} `);
             }
 
             const data = await response.json();
             log('Payment method fetched successfully');
             return data;
         } catch (error) {
-            log(`Failed to fetch payment method: ${error}`);
+            log(`Failed to fetch payment method: ${error} `);
             throw error;
         }
     },
@@ -1083,21 +1103,21 @@ export const api = {
      * Получение истории платежей
      */
     async getPaymentsHistory(limit = 10): Promise<PaymentHistory> {
-        log(`Fetching payments history (limit: ${limit})`);
+        log(`Fetching payments history(limit: ${limit})`);
         try {
-            const response = await fetchWithRetry(`${URLS.paymentsHistory}?limit=${limit}`, {
+            const response = await fetchWithRetry(`${URLS.paymentsHistory}?limit = ${limit} `, {
                 headers: getHeaders(),
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch payments history: ${response.status}`);
+                throw new Error(`Failed to fetch payments history: ${response.status} `);
             }
 
             const data = await response.json();
             log(`Payments history fetched: ${data.results.length} items`);
             return data;
         } catch (error) {
-            log(`Failed to fetch payments history: ${error}`);
+            log(`Failed to fetch payments history: ${error} `);
             throw error;
         }
     },
@@ -1107,7 +1127,7 @@ export const api = {
     // ========================================================
 
     async recognizeFood(imageFile: File, description?: string) {
-        log(`Calling AI recognize endpoint with file: ${imageFile.name}`);
+        log(`Calling AI recognize endpoint with file: ${imageFile.name} `);
         try {
             const formData = new FormData();
             formData.append('image', imageFile);
@@ -1131,9 +1151,9 @@ export const api = {
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 console.log('RECOGNIZE ERROR RESPONSE', response.status, errorData);
-                log(`AI recognition error: ${errorData.error || errorData.detail || response.status}`);
+                log(`AI recognition error: ${errorData.error || errorData.detail || response.status} `);
 
-                const error = new Error(errorData.detail || errorData.error || `AI recognition failed (${response.status})`);
+                const error = new Error(errorData.detail || errorData.error || `AI recognition failed(${response.status})`);
                 (error as any).error = errorData.error || 'UNKNOWN_ERROR';
                 (error as any).detail = errorData.detail || error.message;
                 (error as any).status = response.status;
@@ -1143,7 +1163,7 @@ export const api = {
 
             const backendResult = await response.json();
             console.log('RECOGNIZE OK', response.status, backendResult);
-            log(`RAW AI response: ${JSON.stringify(backendResult)}`);
+            log(`RAW AI response: ${JSON.stringify(backendResult)} `);
 
             // Backend returns: { recognized_items: [...], total_calories: ..., total_protein: ..., total_fat: ..., total_carbohydrates: ... }
             // Items already have correct field names: name, grams, calories, protein, fat, carbohydrates
