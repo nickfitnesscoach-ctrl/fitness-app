@@ -186,6 +186,10 @@ class AIProxyClient:
 
             elapsed_time = time.time() - start_time
 
+            logger.info(
+                "AI proxy response: status=%s body=%s", response.status_code, response.text[:500]
+            )
+
             # Handle different status codes
             if response.status_code == 200:
                 result = response.json()
@@ -211,13 +215,38 @@ class AIProxyClient:
                 )
 
             elif response.status_code == 422:
-                error_detail = response.json().get("detail", "Validation error")
+                try:
+                    error_json = response.json()
+                except Exception:
+                    error_json = {}
+                error_detail = error_json.get("detail", response.text or "Validation error")
                 logger.error(
                     f"AI Proxy validation error: {error_detail}, "
                     f"elapsed_time={elapsed_time:.2f}s"
                 )
                 raise AIProxyValidationError(
                     f"AI Proxy validation error: {error_detail}"
+                )
+
+            elif response.status_code == 400:
+                try:
+                    error_json = response.json()
+                except Exception:
+                    error_json = {}
+                error_detail = error_json.get("detail", response.text or "Bad request")
+                error_code = error_json.get("error") or error_json.get("code")
+                logger.error(
+                    f"AI Proxy bad request: {error_detail}, code={error_code}, "
+                    f"elapsed_time={elapsed_time:.2f}s"
+                )
+
+                if error_code in {"INVALID_IMAGE", "MISSING_IMAGE", "UNSUPPORTED_IMAGE", "INVALID_FILE", "INVALID_IMAGE_FORMAT"}:
+                    raise AIProxyValidationError(
+                        f"AI Proxy bad request: {error_detail}"
+                    )
+
+                raise AIProxyServerError(
+                    f"AI Proxy bad request (non-image issue): {error_detail}"
                 )
 
             elif response.status_code == 500:
