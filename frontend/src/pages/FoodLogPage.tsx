@@ -41,7 +41,19 @@ const FoodLogPage: React.FC = () => {
     // Detect Android
     const isAndroid = () => {
         const tg = window.Telegram?.WebApp;
-        return tg?.platform === 'android' || /android/i.test(navigator.userAgent);
+        const platformCheck = tg?.platform === 'android';
+        const userAgentCheck = /android/i.test(navigator.userAgent);
+        const result = platformCheck || userAgentCheck;
+
+        console.log('[FoodLog] Platform detection:', {
+            platform: tg?.platform,
+            userAgent: navigator.userAgent,
+            platformCheck,
+            userAgentCheck,
+            isAndroid: result
+        });
+
+        return result;
     };
 
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
