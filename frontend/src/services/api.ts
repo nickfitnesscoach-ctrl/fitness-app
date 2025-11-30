@@ -987,6 +987,9 @@ export const api = {
                 formData.append('description', description);
             }
 
+            // Debug: Verify FormData
+            console.log('FormData check - image:', formData.get('image'));
+
             // Get headers without Content-Type (browser sets it with boundary)
             const headers = getHeaders();
             delete (headers as any)['Content-Type'];
@@ -999,16 +1002,19 @@ export const api = {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
+                console.log('RECOGNIZE ERROR RESPONSE', response.status, errorData);
                 log(`AI recognition error: ${errorData.error || errorData.detail || response.status}`);
 
                 const error = new Error(errorData.detail || errorData.error || `AI recognition failed (${response.status})`);
                 (error as any).error = errorData.error || 'UNKNOWN_ERROR';
                 (error as any).detail = errorData.detail || error.message;
+                (error as any).status = response.status;
+                (error as any).data = errorData;
                 throw error;
             }
 
             const backendResult = await response.json();
-            console.log('RAW RECOGNIZE RESPONSE', backendResult);
+            console.log('RECOGNIZE OK', response.status, backendResult);
             log(`RAW AI response: ${JSON.stringify(backendResult)}`);
 
             // Map backend response to frontend structure
@@ -1031,7 +1037,13 @@ export const api = {
             log(`AI recognized ${mappedResult.recognized_items.length} items`);
             console.log('MAPPED RESULT', mappedResult);
             return mappedResult;
-        } catch (error) {
+        } catch (error: any) {
+            console.log(
+                'RECOGNIZE ERROR CATCH',
+                error?.message,
+                error?.status,
+                error?.data
+            );
             console.error('AI recognition error:', error);
             throw error;
         }
