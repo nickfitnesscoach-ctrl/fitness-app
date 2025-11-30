@@ -27,43 +27,16 @@ export interface TelegramAuthData {
 // ============================================================
 // Internal State
 // ============================================================
+// ============================================================
+// Internal State
+// ============================================================
 
 let _telegramAuthData: TelegramAuthData | null = null;
 let _initPromise: Promise<TelegramAuthData | null> | null = null;
-openLink: (url: string) => window.open(url, '_blank'),
-    showAlert: (msg: string) => alert(`[Telegram Alert] ${msg}`),
-        showConfirm: (msg: string, cb: (ok: boolean) => void) => {
-            const result = confirm(`[Telegram Confirm] ${msg}`);
-            cb?.(result);
-        },
-            platform: 'unknown',
-                colorScheme: 'light',
-                    themeParams: { },
-MainButton: {
-    text: '',
-        color: '',
-            textColor: '',
-                isVisible: false,
-                    isActive: true,
-                        show: () => console.log('[Telegram Mock] MainButton.show()'),
-                            hide: () => console.log('[Telegram Mock] MainButton.hide()'),
-                                onClick: () => { },
-                                    offClick: () => { },
-                                        setText: () => { },
-                                            enable: () => { },
-                                                disable: () => { },
-            },
-BackButton: {
-    isVisible: false,
-        show: () => console.log('[Telegram Mock] BackButton.show()'),
-            hide: () => console.log('[Telegram Mock] BackButton.hide()'),
-                onClick: () => { },
-                    offClick: () => { },
-            }
-        };
-    }
 
-return (window as any).Telegram?.WebApp || null;
+export function getTelegramWebApp(): any | null {
+    if (typeof window === 'undefined') return null;
+    return (window as any).Telegram?.WebApp || null;
 }
 
 /**
@@ -122,20 +95,8 @@ async function _doInitTelegramWebApp(): Promise<TelegramAuthData | null> {
         return _telegramAuthData;
     }
 
-    // DEV MODE: используем фейковые данные
-    if (isDevMode && skipTelegramAuth) {
-        console.warn('[Telegram] DEV MODE: Using fake Telegram data');
-
-        _telegramAuthData = {
-            initData: DEV_INIT_DATA,
-            user: DEV_USER,
-        };
-
-        return _telegramAuthData;
-    }
-
-    // Telegram недоступен и DEV режим выключен
-    console.error('[Telegram] WebApp not available and DEV mode disabled');
+    // Telegram недоступен
+    console.error('[Telegram] WebApp not available');
     return null;
 }
 
@@ -166,21 +127,12 @@ export function isTelegramInitialized(): boolean {
  */
 export function buildTelegramHeaders(): HeadersInit {
     if (!_telegramAuthData) {
-        // В DEV режиме пробуем синхронно инициализировать
-        if (isDevMode && skipTelegramAuth) {
-            console.warn('[Telegram] Auth data not initialized, using DEV mode');
-            _telegramAuthData = {
-                initData: DEV_INIT_DATA,
-                user: DEV_USER,
-            };
-        } else {
-            console.error('[Telegram] Headers requested but not initialized!');
-            console.error('[Telegram] Stack trace:', new Error().stack);
-            // Возвращаем пустые headers вместо throw - для graceful degradation
-            return {
-                'Content-Type': 'application/json',
-            };
-        }
+        console.error('[Telegram] Headers requested but not initialized!');
+        console.error('[Telegram] Stack trace:', new Error().stack);
+        // Возвращаем пустые headers вместо throw - для graceful degradation
+        return {
+            'Content-Type': 'application/json',
+        };
     }
 
     const { initData, user } = _telegramAuthData;
@@ -221,9 +173,7 @@ export function getTelegramInitData(devMode = false): string | null {
         return tg.initData;
     }
 
-    if (devMode && isDevMode) {
-        return DEV_INIT_DATA;
-    }
+
 
     return null;
 }
@@ -322,6 +272,6 @@ export function getTelegramDebugInfo() {
         platform: tg?.platform || null,
         version: tg?.version || null,
         colorScheme: tg?.colorScheme || null,
-        devMode: isDevMode && skipTelegramAuth,
+        devMode: false,
     };
 }
