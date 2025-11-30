@@ -36,7 +36,7 @@ export class ForbiddenError extends Error {
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 const TRAINER_PANEL_AUTH_URL = import.meta.env.VITE_TRAINER_PANEL_AUTH_URL || '/api/v1/trainer-panel/auth/';
-const API_TIMEOUT = 30000; // 30 seconds
+const API_TIMEOUT = 150000; // 150 seconds
 const API_RETRY_ATTEMPTS = 3; // Number of retry attempts
 const API_RETRY_DELAY = 1000; // Initial delay between retries (ms)
 
