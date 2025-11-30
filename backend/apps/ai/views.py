@@ -65,11 +65,21 @@ class AIRecognitionView(APIView):
 
     def _file_to_data_url(self, image_file):
         """Convert uploaded file to data URL for existing serializer validation."""
+        if getattr(image_file, "size", 0) <= 0:
+            raise ValueError("Image file is empty")
+
         if image_file.size > self.MAX_IMAGE_SIZE_BYTES:
             raise ValueError("Image exceeds maximum allowed size of 10MB")
 
         content_type = image_file.content_type or "application/octet-stream"
-        encoded = base64.b64encode(image_file.read()).decode("utf-8")
+        if not content_type.startswith("image/"):
+            raise ValueError(f"Unsupported content type: {content_type}")
+
+        encoded_bytes = image_file.read()
+        if not encoded_bytes:
+            raise ValueError("Failed to read image bytes from uploaded file")
+
+        encoded = base64.b64encode(encoded_bytes).decode("utf-8")
         return f"data:{content_type};base64,{encoded}"
 
     @extend_schema(
@@ -117,7 +127,7 @@ class AIRecognitionView(APIView):
                 try:
                     data["image"] = self._file_to_data_url(request.FILES["image"])
                 except ValueError as exc:
-                    logger.error("Invalid image file: %s", exc)
+                    logger.warning("AI INVALID_IMAGE: %s", exc)
                     return Response(
                         {
                             "error": "INVALID_IMAGE",
@@ -126,7 +136,7 @@ class AIRecognitionView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
             else:
-                logger.error("Missing image in request data and files")
+                logger.warning("AI MISSING_IMAGE: no file in request.FILES and no image field")
                 return Response(
                     {
                         "error": "MISSING_IMAGE",
@@ -138,7 +148,7 @@ class AIRecognitionView(APIView):
         serializer = AIRecognitionRequestSerializer(data=data)
 
         if not serializer.is_valid():
-            logger.error("AI recognition validation failed: %s", serializer.errors)
+            logger.warning("AI INVALID_IMAGE: serializer validation failed: %s", serializer.errors)
             return Response(
                 {
                     "error": "INVALID_IMAGE",
@@ -186,6 +196,20 @@ class AIRecognitionView(APIView):
             )
             recognition_elapsed = time.time() - recognition_start
 
+            if not result.get("recognized_items"):
+                logger.info(
+                    "AI NO_FOOD_DETECTED for user %s: empty recognition result after %.2fs",
+                    request.user.username,
+                    recognition_elapsed,
+                )
+                return Response(
+                    {
+                        "error": "NO_FOOD_DETECTED",
+                        "detail": "Мы не нашли на фото еду. Попробуйте другое изображение",
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
             logger.info(
                 f"AI recognition successful for user {request.user.username}. "
                 f"Found {len(result.get('recognized_items', []))} items, "
@@ -230,8 +254,8 @@ class AIRecognitionView(APIView):
 
         except AIProxyValidationError as e:
             view_total = time.time() - view_start_time
-            logger.error(
-                f"AI Proxy validation error for user {request.user.username}: {e}, "
+            logger.warning(
+                f"AI INVALID_IMAGE from AI Proxy for user {request.user.username}: {e}, "
                 f"total_view_time={view_total:.2f}s"
             )
             return Response(
@@ -259,8 +283,8 @@ class AIRecognitionView(APIView):
 
         except ValueError as e:
             view_total = time.time() - view_start_time
-            logger.error(
-                f"AI recognition validation error for user {request.user.username}: {e}, "
+            logger.warning(
+                f"AI INVALID_IMAGE during recognition for user {request.user.username}: {e}, "
                 f"total_view_time={view_total:.2f}s"
             )
             return Response(

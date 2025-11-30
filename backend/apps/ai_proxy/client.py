@@ -186,6 +186,10 @@ class AIProxyClient:
 
             elapsed_time = time.time() - start_time
 
+            logger.info(
+                "AI proxy response: status=%s body=%s", response.status_code, response.text[:500]
+            )
+
             # Handle different status codes
             if response.status_code == 200:
                 result = response.json()
@@ -218,6 +222,16 @@ class AIProxyClient:
                 )
                 raise AIProxyValidationError(
                     f"AI Proxy validation error: {error_detail}"
+                )
+
+            elif response.status_code == 400:
+                error_detail = response.json().get("detail", "Bad request")
+                logger.error(
+                    f"AI Proxy bad request: {error_detail}, "
+                    f"elapsed_time={elapsed_time:.2f}s"
+                )
+                raise AIProxyValidationError(
+                    f"AI Proxy bad request: {error_detail}"
                 )
 
             elif response.status_code == 500:
