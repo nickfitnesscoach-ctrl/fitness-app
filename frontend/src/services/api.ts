@@ -566,8 +566,8 @@ export const api = {
             const data = await response.json();
 
             // Map MealSerializer response to MealAnalysis
-            // Find the first item with a photo to use as the main photo
-            const mainPhoto = data.items?.find((item: any) => item.photo)?.photo || null;
+            // Use meal photo_url if available, otherwise fallback to first item photo (legacy)
+            const mainPhoto = data.photo_url || data.items?.find((item: any) => item.photo)?.photo || null;
 
             return {
                 id: data.id,
@@ -1184,7 +1184,9 @@ export const api = {
                 total_calories: backendResult.total_calories || 0,
                 total_protein: backendResult.total_protein || 0,
                 total_fat: backendResult.total_fat || 0,
-                total_carbohydrates: backendResult.total_carbohydrates || 0
+                total_carbohydrates: backendResult.total_carbohydrates || 0,
+                meal_id: backendResult.meal_id,
+                photo_url: backendResult.photo_url
             };
 
             log(`AI recognized ${mappedResult.recognized_items.length} items`);

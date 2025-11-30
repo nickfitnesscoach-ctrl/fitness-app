@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Camera, Upload, CreditCard, AlertCircle, Check, X, Send } from 'lucide-react';
-import { api, CreateMealRequest } from '../services/api';
+import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { useBilling } from '../contexts/BillingContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { isIOS } from '../utils/platform';
-import { BatchResultsModal, BatchResult, AnalysisResult, RecognizedItem } from '../components/BatchResultsModal';
+import { BatchResultsModal, BatchResult, AnalysisResult } from '../components/BatchResultsModal';
 
 const FoodLogPage: React.FC = () => {
     const navigate = useNavigate();
@@ -17,7 +17,6 @@ const FoodLogPage: React.FC = () => {
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
     const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
     const [showBatchResults, setShowBatchResults] = useState(false);
-    const [createdMealId, setCreatedMealId] = useState<number | null>(null);
 
     // Preview state
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -68,13 +67,7 @@ const FoodLogPage: React.FC = () => {
         processBatch(selectedFiles, description);
     };
 
-    const getMealTypeByTime = (): 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK' => {
-        const hour = new Date().getHours();
-        if (hour >= 5 && hour < 11) return 'BREAKFAST';
-        if (hour >= 11 && hour < 16) return 'LUNCH';
-        if (hour >= 16 && hour < 22) return 'DINNER';
-        return 'SNACK';
-    };
+
 
     const processBatch = async (files: File[], desc: string) => {
         setIsBatchProcessing(true);
@@ -85,40 +78,16 @@ const FoodLogPage: React.FC = () => {
         const results: BatchResult[] = [];
 
         try {
-            // 1. Create a meal upfront to add items to
-            const mealData: CreateMealRequest = {
-                date: new Date().toISOString().split('T')[0],
-                meal_type: getMealTypeByTime()
-            };
-            const meal = await api.createMeal(mealData);
-            console.log('[Batch] Meal created:', meal.id);
-            setCreatedMealId(meal.id);
-
-            // 2. Process files sequentially
+            // Process files sequentially
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 setBatchProgress({ current: i + 1, total: files.length });
 
                 try {
-                    // Recognize with description
+                    // Recognize with description (Backend now creates the meal)
                     const result = await api.recognizeFood(file, desc) as AnalysisResult;
 
                     if (result.recognized_items && result.recognized_items.length > 0) {
-                        // Filter out "Total" row if present
-                        const itemsToAdd = result.recognized_items.filter((item: RecognizedItem) => !item.name.toLowerCase().includes('итого'));
-
-                        // Add items to meal
-                        for (const item of itemsToAdd) {
-                            await api.addFoodItem(meal.id, {
-                                name: item.name,
-                                grams: item.grams,
-                                calories: item.calories,
-                                protein: item.protein,
-                                fat: item.fat,
-                                carbohydrates: item.carbohydrates
-                            });
-                        }
-
                         results.push({
                             file,
                             status: 'success',
@@ -512,7 +481,6 @@ const FoodLogPage: React.FC = () => {
                             setShowBatchResults(false);
                             navigate('/');
                         }}
-                        mealId={createdMealId}
                     />
                 )}
             </div>

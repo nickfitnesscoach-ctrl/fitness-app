@@ -61,6 +61,12 @@ class AIRecognitionRequestSerializer(serializers.Serializer):
         required=False,
         help_text="Дата приёма пищи (опционально, по умолчанию текущая дата)"
     )
+    meal_type = serializers.ChoiceField(
+        choices=['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'],
+        required=False,
+        default='SNACK',
+        help_text="Тип приёма пищи"
+    )
 
     def validate_image(self, value):
         """
@@ -262,7 +268,10 @@ class AIRecognitionResponseSerializer(serializers.Serializer):
           "total_calories": number,
           "total_protein": number,
           "total_fat": number,
-          "total_carbohydrates": number
+          "total_fat": number,
+          "total_carbohydrates": number,
+          "meal_id": number,
+          "photo_url": string
         }
 
         Also maps backend field names to frontend:
@@ -294,5 +303,7 @@ class AIRecognitionResponseSerializer(serializers.Serializer):
             "total_calories": round(total_calories, 1),
             "total_protein": round(total_protein, 1),
             "total_fat": round(total_fat, 1),
-            "total_carbohydrates": round(total_carbs, 1)
+            "total_carbohydrates": round(total_carbs, 1),
+            "meal_id": instance.get("meal_id"),
+            "photo_url": instance.get("photo_url")
         }

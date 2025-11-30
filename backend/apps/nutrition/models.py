@@ -41,6 +41,16 @@ class Meal(models.Model):
         auto_now_add=True,
         verbose_name='Создано'
     )
+    photo = models.ImageField(
+        upload_to=upload_to_meal_photos,
+        blank=True,
+        null=True,
+        verbose_name='Фотография приёма пищи',
+        validators=[
+            FileSizeValidator(max_mb=10),
+            ImageDimensionValidator(max_width=4096, max_height=4096)
+        ]
+    )
 
     class Meta:
         db_table = 'nutrition_meals'

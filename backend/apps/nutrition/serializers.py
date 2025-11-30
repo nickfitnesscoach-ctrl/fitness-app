@@ -59,12 +59,13 @@ class MealSerializer(serializers.ModelSerializer):
     items = FoodItemSerializer(many=True, read_only=True)
     meal_type_display = serializers.CharField(source='get_meal_type_display', read_only=True)
     total = serializers.SerializerMethodField()
+    photo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Meal
         fields = [
             'id', 'meal_type', 'meal_type_display', 'date',
-            'created_at', 'items', 'total'
+            'created_at', 'items', 'total', 'photo_url'
         ]
         read_only_fields = ['id', 'created_at']
 
@@ -76,6 +77,15 @@ class MealSerializer(serializers.ModelSerializer):
             'fat': float(obj.total_fat),
             'carbohydrates': float(obj.total_carbohydrates),
         }
+
+    def get_photo_url(self, obj):
+        request = self.context.get("request")
+        if obj.photo and hasattr(obj.photo, "url"):
+            url = obj.photo.url
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        return None
 
     def validate_date(self, value):
         """Validate that date is not in the future."""

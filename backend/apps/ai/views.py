@@ -22,6 +22,8 @@ from apps.ai_proxy.exceptions import AIProxyError, AIProxyValidationError, AIPro
 from .throttles import AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle
 from apps.billing.services import get_effective_plan_for_user
 from apps.billing.usage import DailyUsage
+from apps.nutrition.models import Meal, FoodItem
+from django.core.files.base import ContentFile
 
 logger = logging.getLogger(__name__)
 
@@ -115,15 +117,20 @@ class AIRecognitionView(APIView):
             if key != 'image':  # Skip image field, we'll handle it separately
                 data[key] = value
 
+        image_file = None
+        image_data_url = None
+
         if request.FILES.get("image"):
-            # Multipart file upload - convert to data URL
+            # Multipart file upload
+            image_file = request.FILES["image"]
             logger.info(
-                f"Received multipart image: name={request.FILES['image'].name}, "
-                f"size={request.FILES['image'].size} bytes, "
-                f"content_type={request.FILES['image'].content_type}"
+                f"Received multipart image: name={image_file.name}, "
+                f"size={image_file.size} bytes, "
+                f"content_type={image_file.content_type}"
             )
             try:
-                data["image"] = self._file_to_data_url(request.FILES["image"])
+                image_data_url = self._file_to_data_url(image_file)
+                data["image"] = image_data_url
                 logger.info("Successfully converted multipart file to data URL")
             except ValueError as e:
                 logger.warning(f"Invalid multipart file: {e}")
@@ -145,7 +152,18 @@ class AIRecognitionView(APIView):
                 )
         elif 'image' in request.data:
             # Base64 image already in request.data
-            data['image'] = request.data['image']
+            image_data_url = request.data['image']
+            data['image'] = image_data_url
+            
+            # Convert base64 to ContentFile for saving to model
+            try:
+                format, imgstr = image_data_url.split(';base64,') 
+                ext = format.split('/')[-1] 
+                image_file = ContentFile(base64.b64decode(imgstr), name=f'meal_{int(time.time())}.{ext}')
+            except Exception as e:
+                logger.warning(f"Failed to convert base64 to file: {e}")
+                # We can continue without saving file if strictly necessary, but requirement says save it.
+                # If base64 is invalid, serializer will catch it anyway.
 
         serializer = AIRecognitionRequestSerializer(data=data)
 
@@ -155,9 +173,12 @@ class AIRecognitionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Ensure we have a valid image_data_url from serializer (it validates it)
         image_data_url = serializer.validated_data['image']
         description = serializer.validated_data.get('description', '')
         comment = serializer.validated_data.get('comment', '')
+        meal_date = serializer.validated_data.get('date', date.today())
+        meal_type = serializer.validated_data.get('meal_type', 'SNACK')
 
         # Check daily photo limit based on user's subscription plan
         plan = get_effective_plan_for_user(request.user)
@@ -180,12 +201,24 @@ class AIRecognitionView(APIView):
             )
 
         try:
-            # Initialize AI Proxy service (replaces old OpenRouter service)
+            # 1. Create Meal and save photo
+            meal = Meal.objects.create(
+                user=request.user,
+                meal_type=meal_type,
+                date=meal_date,
+                photo=image_file
+            )
+            logger.info(f"Created Meal id={meal.id} with photo for user {request.user.username}")
+
+            # 2. Initialize AI Proxy service
             ai_service = AIProxyRecognitionService()
 
-            # Recognize food items
+            # 3. Recognize food items
             recognition_start = time.time()
             logger.info(f"Starting AI Proxy recognition for user {request.user.username}")
+            
+            # Use the data URL for AI service (as it expects it)
+            # Alternatively, we could read from meal.photo if service supported it
             result = ai_service.recognize_food(
                 image_data_url,
                 user_description=description,
@@ -199,12 +232,33 @@ class AIRecognitionView(APIView):
                 f"recognition_time={recognition_elapsed:.2f}s"
             )
 
+            # 4. Save recognized items to Meal
+            recognized_items = result.get('recognized_items', [])
+            for item in recognized_items:
+                FoodItem.objects.create(
+                    meal=meal,
+                    name=item.get('name', 'Unknown'),
+                    grams=item.get('estimated_weight', 100),
+                    calories=item.get('calories', 0),
+                    protein=item.get('protein', 0),
+                    fat=item.get('fat', 0),
+                    carbohydrates=item.get('carbohydrates', 0)
+                )
+
             # Increment photo usage counter after successful recognition
             DailyUsage.objects.increment_photo_requests(request.user)
             logger.info(
                 f"Incremented photo counter for user {request.user.username}. "
                 f"Total today: {usage.photo_ai_requests + 1}"
             )
+
+            # Add meal_id and photo_url to result for serializer
+            result['meal_id'] = meal.id
+            # Get absolute URL for photo if possible, or relative
+            if meal.photo:
+                result['photo_url'] = request.build_absolute_uri(meal.photo.url)
+            else:
+                result['photo_url'] = None
 
             # Use serializer to add summary/totals
             response_serializer = AIRecognitionResponseSerializer(result)

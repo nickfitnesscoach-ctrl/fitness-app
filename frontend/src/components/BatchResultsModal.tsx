@@ -17,6 +17,8 @@ export interface AnalysisResult {
     total_protein: number;
     total_fat: number;
     total_carbohydrates: number;
+    meal_id?: number;
+    photo_url?: string | null;
 }
 
 export interface BatchResult {
@@ -33,7 +35,7 @@ interface BatchResultsModalProps {
     mealId?: number | null;
 }
 
-export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, onClose, onOpenDiary, mealId }) => {
+export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, onClose, onOpenDiary }) => {
     const navigate = useNavigate();
     const successCount = results.filter(r => r.status === 'success').length;
     const totalCount = results.length;
@@ -100,9 +102,9 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                                 У {Math.round(result.data.total_carbohydrates)}
                                             </span>
                                         </div>
-                                        {mealId && (
+                                        {result.data?.meal_id && (
                                             <button
-                                                onClick={() => navigate(`/meal/${mealId}`)}
+                                                onClick={() => navigate(`/meal/${result.data?.meal_id}`)}
                                                 className="mt-2 text-sm text-blue-600 font-medium hover:underline text-left"
                                             >
                                                 Подробнее
