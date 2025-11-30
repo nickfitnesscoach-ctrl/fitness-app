@@ -531,9 +531,9 @@ export const api = {
     },
 
     async addFoodItem(mealId: number, data: CreateFoodItemRequest): Promise<FoodItem> {
-        log(`Adding food item "${data.name}" to meal ${mealId} `);
+        log(`Adding food item "${data.name}" to meal ${mealId}`);
         try {
-            const response = await fetchWithRetry(`${URLS.meals}${mealId} /items/`, {
+            const response = await fetchWithRetry(`${URLS.meals}${mealId}/items/`, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify(data),

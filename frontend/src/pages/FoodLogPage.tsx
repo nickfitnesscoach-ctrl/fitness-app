@@ -145,10 +145,22 @@ const FoodLogPage: React.FC = () => {
                         break;
                     }
 
+                    // Show specific error message
+                    let errorMessage = 'Ошибка распознавания';
+                    if (err.message) {
+                        if (err.message.includes('Failed to add food item')) {
+                            errorMessage = 'Ошибка сохранения';
+                        } else if (err.message.includes('timeout')) {
+                            errorMessage = 'Превышено время ожидания';
+                        } else if (err.message.includes('Network') || err.message.includes('fetch')) {
+                            errorMessage = 'Ошибка сети';
+                        }
+                    }
+
                     results.push({
                         file,
                         status: 'error',
-                        error: 'Ошибка распознавания'
+                        error: errorMessage
                     });
                 }
             }
