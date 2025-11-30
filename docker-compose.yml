@@ -66,6 +66,7 @@ services:
       - YOOKASSA_API_KEY_PROD=${YOOKASSA_API_KEY_PROD}
       - YOOKASSA_RETURN_URL=${YOOKASSA_RETURN_URL}
       - AI_PROXY_URL=${AI_PROXY_URL}
+      - AI_PROXY_SECRET=${AI_PROXY_SECRET}
     depends_on:
       db:
         condition: service_healthy
