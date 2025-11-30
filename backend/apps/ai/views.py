@@ -56,12 +56,25 @@ class AIRecognitionView(APIView):
     MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 
     @staticmethod
+    def _log_client_response(http_status: int, payload: dict):
+        logger.info("AI response to client: status=%s, error=%s", http_status, payload.get("error"))
+
+    @staticmethod
     def _log_request_files(files: Iterable[str]):
         file_list = list(files)
         if file_list:
             logger.info(f"Incoming multipart files: {file_list}")
         else:
             logger.info("No multipart files received")
+
+    @staticmethod
+    def _log_request_summary(request):
+        logger.info(
+            "AI recognize request: FILE_KEYS=%s, CONTENT_TYPES=%s, SIZES=%s",
+            list(request.FILES.keys()),
+            [getattr(f, "content_type", None) for f in request.FILES.values()],
+            [getattr(f, "size", None) for f in request.FILES.values()],
+        )
 
     def _file_to_data_url(self, image_file):
         """Convert uploaded file to data URL for existing serializer validation."""
@@ -75,7 +88,13 @@ class AIRecognitionView(APIView):
         if not content_type.startswith("image/"):
             raise ValueError(f"Unsupported content type: {content_type}")
 
-        encoded_bytes = image_file.read()
+        try:
+            image_file.seek(0)
+            encoded_bytes = image_file.read()
+        except Exception as exc:
+            logger.exception("AI image convert failed during read: %s", exc)
+            raise
+
         if not encoded_bytes:
             raise ValueError("Failed to read image bytes from uploaded file")
 
@@ -109,6 +128,8 @@ class AIRecognitionView(APIView):
         view_start_time = time.time()
         logger.info(f"AI recognition request START for user {request.user.username}")
 
+        self._log_request_summary(request)
+
         # Log multipart payload details
         self._log_request_files(request.FILES.keys())
         if request.FILES.get("image"):
@@ -128,20 +149,32 @@ class AIRecognitionView(APIView):
                     data["image"] = self._file_to_data_url(request.FILES["image"])
                 except ValueError as exc:
                     logger.warning("AI INVALID_IMAGE: %s", exc)
+                    payload = {
+                        "error": "INVALID_IMAGE",
+                        "detail": str(exc),
+                    }
+                    self._log_client_response(status.HTTP_400_BAD_REQUEST, payload)
                     return Response(
-                        {
-                            "error": "INVALID_IMAGE",
-                            "detail": str(exc),
-                        },
+                        payload,
                         status=status.HTTP_400_BAD_REQUEST,
                     )
+                except Exception as exc:
+                    logger.exception("AI image conversion failed: %s", exc)
+                    payload = {
+                        "error": "AI_SERVICE_ERROR",
+                        "detail": "Сервис распознавания временно недоступен. Попробуйте позже",
+                    }
+                    self._log_client_response(status.HTTP_502_BAD_GATEWAY, payload)
+                    return Response(payload, status=status.HTTP_502_BAD_GATEWAY)
             else:
                 logger.warning("AI MISSING_IMAGE: no file in request.FILES and no image field")
+                payload = {
+                    "error": "MISSING_IMAGE",
+                    "detail": "Изображение обязательно",
+                }
+                self._log_client_response(status.HTTP_400_BAD_REQUEST, payload)
                 return Response(
-                    {
-                        "error": "MISSING_IMAGE",
-                        "detail": "Изображение обязательно",
-                    },
+                    payload,
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -149,12 +182,14 @@ class AIRecognitionView(APIView):
 
         if not serializer.is_valid():
             logger.warning("AI INVALID_IMAGE: serializer validation failed: %s", serializer.errors)
+            payload = {
+                "error": "INVALID_IMAGE",
+                "detail": serializer.errors.get("image", ["Некорректные данные запроса"])[0],
+                "fields": serializer.errors,
+            }
+            self._log_client_response(status.HTTP_400_BAD_REQUEST, payload)
             return Response(
-                {
-                    "error": "INVALID_IMAGE",
-                    "detail": serializer.errors.get("image", ["Некорректные данные запроса"])[0],
-                    "fields": serializer.errors,
-                },
+                payload,
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -202,11 +237,13 @@ class AIRecognitionView(APIView):
                     request.user.username,
                     recognition_elapsed,
                 )
+                payload = {
+                    "error": "NO_FOOD_DETECTED",
+                    "detail": "Мы не нашли на фото еду. Попробуйте другое изображение",
+                }
+                self._log_client_response(status.HTTP_200_OK, payload)
                 return Response(
-                    {
-                        "error": "NO_FOOD_DETECTED",
-                        "detail": "Мы не нашли на фото еду. Попробуйте другое изображение",
-                    },
+                    payload,
                     status=status.HTTP_200_OK,
                 )
 
@@ -243,12 +280,14 @@ class AIRecognitionView(APIView):
                 f"AI Proxy timeout for user {request.user.username}: {e}, "
                 f"total_view_time={view_total:.2f}s"
             )
+            payload = {
+                "error": "AI_SERVICE_TIMEOUT",
+                "detail": "Сервис распознавания не ответил вовремя. Попробуйте позже или используйте фото меньшего размера.",
+                "timeout": True
+            }
+            self._log_client_response(status.HTTP_503_SERVICE_UNAVAILABLE, payload)
             return Response(
-                {
-                    "error": "AI_SERVICE_TIMEOUT",
-                    "detail": "Сервис распознавания не ответил вовремя. Попробуйте позже или используйте фото меньшего размера.",
-                    "timeout": True
-                },
+                payload,
                 status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
 
@@ -258,11 +297,13 @@ class AIRecognitionView(APIView):
                 f"AI INVALID_IMAGE from AI Proxy for user {request.user.username}: {e}, "
                 f"total_view_time={view_total:.2f}s"
             )
+            payload = {
+                "error": "INVALID_IMAGE",
+                "detail": "Некорректный формат изображения. Проверьте data URL и попробуйте снова"
+            }
+            self._log_client_response(status.HTTP_400_BAD_REQUEST, payload)
             return Response(
-                {
-                    "error": "INVALID_IMAGE",
-                    "detail": "Некорректный формат изображения. Проверьте data URL и попробуйте снова"
-                },
+                payload,
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -273,11 +314,13 @@ class AIRecognitionView(APIView):
                 f"total_view_time={view_total:.2f}s",
                 exc_info=True
             )
+            payload = {
+                "error": "AI_SERVICE_ERROR",
+                "detail": "Сервис распознавания временно недоступен. Попробуйте позже"
+            }
+            self._log_client_response(status.HTTP_502_BAD_GATEWAY, payload)
             return Response(
-                {
-                    "error": "AI_SERVICE_ERROR",
-                    "detail": "Сервис распознавания временно недоступен. Попробуйте позже"
-                },
+                payload,
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
@@ -287,11 +330,13 @@ class AIRecognitionView(APIView):
                 f"AI INVALID_IMAGE during recognition for user {request.user.username}: {e}, "
                 f"total_view_time={view_total:.2f}s"
             )
+            payload = {
+                "error": "INVALID_IMAGE",
+                "detail": "Проверьте формат изображения и попробуйте снова"
+            }
+            self._log_client_response(status.HTTP_400_BAD_REQUEST, payload)
             return Response(
-                {
-                    "error": "INVALID_IMAGE",
-                    "detail": "Проверьте формат изображения и попробуйте снова"
-                },
+                payload,
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -302,10 +347,12 @@ class AIRecognitionView(APIView):
                 f"total_view_time={view_total:.2f}s",
                 exc_info=True
             )
+            payload = {
+                "error": "AI_SERVICE_ERROR",
+                "detail": "Сервис распознавания временно недоступен. Попробуйте позже"
+            }
+            self._log_client_response(status.HTTP_500_INTERNAL_SERVER_ERROR, payload)
             return Response(
-                {
-                    "error": "AI_SERVICE_ERROR",
-                    "detail": "Сервис распознавания временно недоступен. Попробуйте позже"
-                },
+                payload,
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
