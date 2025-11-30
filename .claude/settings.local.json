@@ -75,7 +75,8 @@
       "Bash(powershell.exe -Command \"Invoke-WebRequest -Uri ''http://localhost:8080/app'' -Method Head | Select-Object StatusCode,Headers\")",
       "Bash(powershell.exe -Command \"docker exec eatfit24-test tail -20 /var/log/nginx/error.log\")",
       "Bash(powershell.exe -Command \"docker rm -f eatfit24-test\")",
-      "Bash(powershell.exe -Command \"docker logs eatfit24-test | tail -20\")"
+      "Bash(powershell.exe -Command \"docker logs eatfit24-test | tail -20\")",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []
