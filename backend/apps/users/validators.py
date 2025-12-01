@@ -183,6 +183,10 @@ AVATAR_MAX_SIZE_BYTES = AVATAR_MAX_SIZE_MB * 1024 * 1024
 AVATAR_ALLOWED_TYPES = ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence')
 AVATAR_ALLOWED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif')
 
+# HEIC-specific constants for conversion
+HEIC_MIME_TYPES = ('image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence')
+HEIC_EXTENSIONS = ('.heic', '.heif')
+
 
 def validate_avatar_file_extension(value):
     """
