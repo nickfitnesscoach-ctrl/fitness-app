@@ -164,6 +164,52 @@ const log = (msg: string) => {
     console.log('[API]', msg);
 };
 
+const FIELD_LABELS: Record<string, string> = {
+    avatar: 'Аватар',
+    birth_date: 'Дата рождения',
+    gender: 'Пол',
+    height: 'Рост',
+    weight: 'Вес',
+    activity_level: 'Уровень активности',
+    goal_type: 'Цель',
+    timezone: 'Часовой пояс',
+};
+
+const parseErrorResponse = async (response: Response, fallback: string) => {
+    const responseText = await response.text();
+
+    if (!responseText) return fallback;
+
+    try {
+        const data = JSON.parse(responseText);
+
+        if (typeof data.detail === 'string') return data.detail;
+        if (typeof data.error === 'string') return data.error;
+
+        const fieldMessages: string[] = [];
+        Object.entries(data).forEach(([field, messages]) => {
+            if (['detail', 'error', 'code'].includes(field)) return;
+
+            const label = FIELD_LABELS[field] || field;
+
+            if (Array.isArray(messages)) {
+                fieldMessages.push(`${label}: ${messages.join(' ')}`);
+            } else if (typeof messages === 'string') {
+                fieldMessages.push(`${label}: ${messages}`);
+            }
+        });
+
+        if (fieldMessages.length > 0) {
+            return fieldMessages.join(' ');
+        }
+
+        return fallback;
+    } catch (parseError) {
+        console.warn('Failed to parse error response', parseError);
+        return fallback;
+    }
+};
+
 // ============================================================
 // Helper Functions
 // ============================================================
@@ -734,8 +780,8 @@ export const api = {
                 body: JSON.stringify(data),
             });
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || errorData.error || 'Failed to update profile');
+                const message = await parseErrorResponse(response, 'Не удалось сохранить профиль');
+                throw new Error(message);
             }
             const userData = await response.json();
             // Backend returns UserSerializer {id, username, email, profile: {...}}
@@ -780,8 +826,7 @@ export const api = {
                 }
 
                 // Handle other errors
-                const errorData = await response.json().catch(() => ({}));
-                const errorMessage = errorData.error || errorData.detail || 'Failed to upload avatar';
+                const errorMessage = await parseErrorResponse(response, 'Не удалось загрузить фото');
                 log(`Avatar upload failed: ${errorMessage} `);
                 throw new Error(errorMessage);
             }
