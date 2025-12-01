@@ -175,8 +175,9 @@ def mark_email_as_verified(user):
 # Avatar validation settings
 AVATAR_MAX_SIZE_MB = 5
 AVATAR_MAX_SIZE_BYTES = AVATAR_MAX_SIZE_MB * 1024 * 1024
-AVATAR_ALLOWED_TYPES = ('image/jpeg', 'image/png', 'image/webp')
-AVATAR_ALLOWED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp')
+# iOS cameras produce HEIC by default - we support it
+AVATAR_ALLOWED_TYPES = ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')
+AVATAR_ALLOWED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif')
 
 
 def validate_avatar_file_extension(value):
@@ -237,6 +238,6 @@ def validate_avatar_mime_type(file):
     content_type = getattr(file, 'content_type', None)
     if content_type and content_type not in AVATAR_ALLOWED_TYPES:
         raise ValidationError(
-            _(f'Неверный формат файла. Разрешены только: JPEG, PNG, WebP'),
+            _(f'Неверный формат файла. Разрешены: JPEG, PNG, WebP, HEIC'),
             code='invalid_mime_type'
         )

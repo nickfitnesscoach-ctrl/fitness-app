@@ -238,15 +238,33 @@ const ProfilePage: React.FC = () => {
         const file = event.target.files?.[0];
         if (!file) return;
 
+        console.log('[ProfilePage] Selected file:', {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            sizeKB: (file.size / 1024).toFixed(1)
+        });
+
         // Limit size to 5MB
         if (file.size > 5 * 1024 * 1024) {
-            setError('Размер файла превышает 5 МБ. Пожалуйста, выберите файл меньшего размера.');
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+            setError(`Размер файла ${sizeMB} МБ превышает лимит 5 МБ. Пожалуйста, выберите файл меньшего размера.`);
             return;
         }
 
-        // Show local preview immediately
-        const objectUrl = URL.createObjectURL(file);
-        setAvatarPreview(objectUrl);
+        // iOS-specific: Check for HEIC format and inform user
+        if (file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+            console.log('[ProfilePage] HEIC/HEIF image detected, uploading directly (backend supports HEIC)');
+        }
+
+        // Show local preview immediately (works for most formats except HEIC)
+        try {
+            const objectUrl = URL.createObjectURL(file);
+            setAvatarPreview(objectUrl);
+        } catch (err) {
+            console.warn('[ProfilePage] Failed to create preview:', err);
+            // Continue with upload anyway
+        }
 
         // Upload to backend
         setUploadingAvatar(true);
@@ -257,21 +275,36 @@ const ProfilePage: React.FC = () => {
             setProfile(updatedProfile);
             // Update preview from server URL (with cache busting version parameter)
             setAvatarPreview(updatedProfile.avatar_url || null);
-            console.log('Avatar uploaded successfully:', updatedProfile.avatar_url);
+            console.log('[ProfilePage] Avatar uploaded successfully:', updatedProfile.avatar_url);
         } catch (err: any) {
-            console.error('Failed to upload avatar:', err);
+            console.error('[ProfilePage] Failed to upload avatar:', err);
+
+            // Parse error message
+            let errorMessage = 'Не удалось загрузить фото. Попробуй ещё раз.';
 
             // Handle authentication errors specifically
             if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
-                setError('Сессия истекла. Пожалуйста, откройте приложение заново из Telegram.');
-            } else {
-                setError(err.message || 'Не удалось загрузить фото. Попробуй ещё раз.');
+                errorMessage = 'Сессия истекла. Пожалуйста, откройте приложение заново из Telegram.';
+            } else if (err.message) {
+                // Use backend error message if available
+                errorMessage = err.message;
+
+                // Add helpful context for common errors
+                if (errorMessage.includes('формат') || errorMessage.includes('format')) {
+                    errorMessage += ' На iOS фотографии могут быть в формате HEIC. Попробуйте сохранить фото как JPEG.';
+                }
             }
+
+            setError(errorMessage);
 
             // Revert to old avatar on any error
             setAvatarPreview(profile?.avatar_url || null);
         } finally {
             setUploadingAvatar(false);
+            // Clear file input to allow re-selecting the same file
+            if (event.target) {
+                event.target.value = '';
+            }
         }
     };
 

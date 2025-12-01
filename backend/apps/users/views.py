@@ -235,8 +235,13 @@ class ProfileView(generics.RetrieveUpdateAPIView):
         partial = kwargs.pop('partial', False)
         user = self.get_object()
 
-        # DEBUG: Log incoming request data
-        logger.info(f"[ProfileView] PATCH /api/v1/users/profile/ - User: {user.id}, Data: {request.data}")
+        # Log incoming request data with platform info
+        platform = request.META.get('HTTP_SEC_CH_UA_PLATFORM', 'unknown')
+        user_agent = request.META.get('HTTP_USER_AGENT', 'unknown')[:100]
+        logger.info(
+            f"[ProfileView] {'PATCH' if partial else 'PUT'} /api/v1/users/profile/ - "
+            f"User: {user.id}, Platform: {platform}, Data: {request.data}"
+        )
 
         # Update username if provided
         if 'username' in request.data:
@@ -248,22 +253,28 @@ class ProfileView(generics.RetrieveUpdateAPIView):
         profile_serializer = ProfileSerializer(
             profile,
             data=request.data,
-            partial=partial
+            partial=partial,
+            context={'request': request}
         )
 
-        # DEBUG: Log validation result
-        if not profile_serializer.is_valid():
-            logger.error(f"[ProfileView] Validation failed: {profile_serializer.errors}")
+        # Validate and handle errors
+        try:
+            profile_serializer.is_valid(raise_exception=True)
+            profile_serializer.save()
 
-        profile_serializer.is_valid(raise_exception=True)
-        profile_serializer.save()
+            logger.info(f"[ProfileView] Profile updated successfully for user {user.id}")
 
-        # DEBUG: Log successful save
-        logger.info(f"[ProfileView] Profile updated successfully for user {user.id}")
+            # Return updated user with profile
+            user_serializer = self.get_serializer(user)
+            return Response(user_serializer.data)
 
-        # Return updated user with profile
-        user_serializer = self.get_serializer(user)
-        return Response(user_serializer.data)
+        except Exception as e:
+            logger.error(
+                f"[ProfileView] Profile update failed for user {user.id}: "
+                f"{type(e).__name__}: {str(e)}, "
+                f"Errors: {getattr(profile_serializer, 'errors', 'N/A')}"
+            )
+            raise
 
 
 @extend_schema(tags=['Profile'])
@@ -510,7 +521,7 @@ class ResendVerificationEmailView(APIView):
 
         **Ограничения:**
         - Максимальный размер файла: 5 МБ
-        - Допустимые форматы: JPEG, PNG, WebP
+        - Допустимые форматы: JPEG, PNG, WebP, HEIC (iOS)
         - Content-Type: multipart/form-data
         - Поле файла: avatar
 
@@ -575,9 +586,21 @@ class UploadAvatarView(APIView):
             validate_avatar_file_extension(avatar_file)
 
         except DjangoValidationError as e:
-            # Return validation error message
+            # Extract error message and code
+            error_message = str(e.message) if hasattr(e, 'message') else str(e)
+            error_code = e.code if hasattr(e, 'code') else 'validation_error'
+
+            logger.warning(
+                f"Avatar validation failed for user {request.user.id}: {error_code} - {error_message}"
+            )
+
+            # Return structured validation error
             return Response(
-                {"error": str(e.message) if hasattr(e, 'message') else str(e)},
+                {
+                    "error": error_message,
+                    "code": error_code,
+                    "detail": error_message
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 

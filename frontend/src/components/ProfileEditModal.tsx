@@ -60,22 +60,75 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
             if (formData.goal_type) {
                 payload.goal_type = formData.goal_type;
             }
+
+            // Validate numeric fields before sending
             if (formData.height) {
-                payload.height = Number(formData.height);
+                const height = Number(formData.height);
+                if (isNaN(height) || height < 50 || height > 250) {
+                    setError('Рост должен быть от 50 до 250 см');
+                    setIsSaving(false);
+                    return;
+                }
+                payload.height = height;
             }
+
             if (formData.weight) {
-                payload.weight = Number(formData.weight);
+                const weight = Number(formData.weight);
+                if (isNaN(weight) || weight < 20 || weight > 500) {
+                    setError('Вес должен быть от 20 до 500 кг');
+                    setIsSaving(false);
+                    return;
+                }
+                payload.weight = weight;
             }
+
             if (formData.timezone) {
                 payload.timezone = formData.timezone;
             }
 
+            console.log('[ProfileEditModal] Updating profile with payload:', payload);
             const updated = await api.updateProfile(payload);
+            console.log('[ProfileEditModal] Profile updated successfully:', updated);
             onProfileUpdated(updated);
             onClose();
         } catch (err: any) {
-            console.error('Failed to update profile:', err);
-            setError(err.message || 'Ошибка при сохранении профиля');
+            console.error('[ProfileEditModal] Failed to update profile:', err);
+
+            // Parse detailed error messages from backend
+            let errorMessage = 'Ошибка при сохранении профиля';
+
+            if (err.message) {
+                errorMessage = err.message;
+            }
+
+            // Handle field-level validation errors
+            if (err.response?.data) {
+                const errorData = err.response.data;
+
+                // Check for field-specific errors
+                if (typeof errorData === 'object' && !errorData.detail && !errorData.error) {
+                    const fieldErrors = Object.entries(errorData)
+                        .map(([field, messages]) => {
+                            const fieldName = field === 'birth_date' ? 'Дата рождения' :
+                                            field === 'height' ? 'Рост' :
+                                            field === 'weight' ? 'Вес' :
+                                            field === 'gender' ? 'Пол' :
+                                            field;
+                            return `${fieldName}: ${Array.isArray(messages) ? messages.join(', ') : messages}`;
+                        })
+                        .join('\n');
+
+                    if (fieldErrors) {
+                        errorMessage = fieldErrors;
+                    }
+                } else if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                } else if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            }
+
+            setError(errorMessage);
         } finally {
             setIsSaving(false);
         }
