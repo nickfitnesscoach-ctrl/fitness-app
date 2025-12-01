@@ -547,9 +547,11 @@ class UploadAvatarView(APIView):
         import logging
         from django.core.exceptions import ValidationError as DjangoValidationError
         from .validators import (
+            convert_heic_to_jpeg,
+            is_heic_file,
+            validate_avatar_file_extension,
             validate_avatar_file_size,
             validate_avatar_mime_type,
-            validate_avatar_file_extension,
         )
 
         logger = logging.getLogger(__name__)
@@ -559,12 +561,25 @@ class UploadAvatarView(APIView):
 
         if not avatar_file:
             return Response(
-                {"error": "Файл аватара не предоставлен. Используйте поле 'avatar' в multipart/form-data."},
+                {
+                    "code": "avatar_missing",
+                    "detail": "Файл аватара не предоставлен. Используйте поле 'avatar' в multipart/form-data.",
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Validate using centralized validators
         try:
+            # Convert HEIC/HEIF from iOS to JPEG for cross-platform support
+            if is_heic_file(avatar_file):
+                logger.info(
+                    "Converting HEIC avatar for user %s (name=%s, type=%s)",
+                    request.user.id,
+                    avatar_file.name,
+                    getattr(avatar_file, 'content_type', 'unknown'),
+                )
+                avatar_file = convert_heic_to_jpeg(avatar_file)
+
             # Validate MIME type first (from uploaded file)
             validate_avatar_mime_type(avatar_file)
 
@@ -577,7 +592,10 @@ class UploadAvatarView(APIView):
         except DjangoValidationError as e:
             # Return validation error message
             return Response(
-                {"error": str(e.message) if hasattr(e, 'message') else str(e)},
+                {
+                    "code": getattr(e, 'code', 'invalid_avatar'),
+                    "detail": str(e.message) if hasattr(e, 'message') else str(e),
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -598,7 +616,7 @@ class UploadAvatarView(APIView):
         except Exception as e:
             logger.error(f"Failed to upload avatar for user {user.id}: {str(e)}")
             return Response(
-                {"error": "Не удалось загрузить аватар. Попробуйте позже."},
+                {"code": "avatar_upload_failed", "detail": "Не удалось загрузить аватар. Попробуйте позже."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

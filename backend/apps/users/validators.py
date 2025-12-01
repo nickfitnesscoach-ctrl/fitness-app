@@ -4,11 +4,15 @@ Validates email domains and prevents disposable email addresses.
 Also includes avatar file validation.
 """
 
-import os
 import logging
+import os
+from io import BytesIO
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.core.validators import EmailValidator
 from django.utils.translation import gettext_lazy as _
+from PIL import Image
+from pillow_heif import register_heif_opener
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +181,13 @@ AVATAR_MAX_SIZE_MB = 5
 AVATAR_MAX_SIZE_BYTES = AVATAR_MAX_SIZE_MB * 1024 * 1024
 AVATAR_ALLOWED_TYPES = ('image/jpeg', 'image/png', 'image/webp')
 AVATAR_ALLOWED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp')
+HEIC_MIME_TYPES = (
+    'image/heic',
+    'image/heif',
+    'image/heic-sequence',
+    'image/heif-sequence',
+)
+HEIC_EXTENSIONS = ('.heic', '.heif')
 
 
 def validate_avatar_file_extension(value):
@@ -239,4 +250,47 @@ def validate_avatar_mime_type(file):
         raise ValidationError(
             _(f'Неверный формат файла. Разрешены только: JPEG, PNG, WebP'),
             code='invalid_mime_type'
+        )
+
+
+def is_heic_file(file) -> bool:
+    """Check whether uploaded file is in HEIC/HEIF format."""
+    if not file:
+        return False
+
+    content_type = getattr(file, 'content_type', '') or ''
+    ext = os.path.splitext(file.name)[1].lower()
+    return content_type in HEIC_MIME_TYPES or ext in HEIC_EXTENSIONS
+
+
+def convert_heic_to_jpeg(file):
+    """Convert HEIC/HEIF images to a JPEG InMemoryUploadedFile."""
+    if not file:
+        raise ValidationError(_('Файл не найден'), code='file_missing')
+
+    try:
+        register_heif_opener()
+        file.seek(0)
+        image = Image.open(file)
+        rgb_image = image.convert('RGB')
+        output = BytesIO()
+        rgb_image.save(output, format='JPEG')
+        output.seek(0)
+
+        filename_base, _ = os.path.splitext(file.name)
+        jpeg_name = f"{filename_base}.jpg"
+
+        return InMemoryUploadedFile(
+            output,
+            field_name=getattr(file, 'field_name', 'avatar'),
+            name=jpeg_name,
+            content_type='image/jpeg',
+            size=output.getbuffer().nbytes,
+            charset=None,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception('Failed to convert HEIC to JPEG: %s', exc)
+        raise ValidationError(
+            _('Не удалось обработать HEIC-файл. Пожалуйста, сохраните фото как JPEG/PNG.'),
+            code='heic_conversion_failed',
         )
