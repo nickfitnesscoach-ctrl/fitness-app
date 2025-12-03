@@ -653,6 +653,24 @@ export const api = {
         }
     },
 
+    async deleteFoodItem(mealId: number, itemId: number): Promise<void> {
+        try {
+            const response = await fetchWithTimeout(`${URLS.meals}${mealId}/items/${itemId}/`, {
+                method: 'DELETE',
+                headers: getHeaders(),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const errorMessage = errorData.detail || errorData.error || `HTTP ${response.status}`;
+                throw new Error(`Failed to delete food item: ${errorMessage}`);
+            }
+        } catch (error) {
+            console.error('Error deleting food item:', error);
+            throw error;
+        }
+    },
+
     // ========================================================
     // Nutrition - Goals
     // ========================================================

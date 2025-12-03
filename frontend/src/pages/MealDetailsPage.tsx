@@ -13,6 +13,11 @@ const MealDetailsPage: React.FC = () => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
+    // Food item deletion state
+    const [itemToDelete, setItemToDelete] = useState<number | null>(null);
+    const [showDeleteItemConfirm, setShowDeleteItemConfirm] = useState(false);
+    const [deletingItem, setDeletingItem] = useState(false);
+
     useEffect(() => {
         const loadData = async () => {
             if (!id) return;
@@ -45,6 +50,36 @@ const MealDetailsPage: React.FC = () => {
             setError(errorMessage);
             setShowDeleteConfirm(false);
             setDeleting(false);
+        }
+    };
+
+    const handleDeleteItem = async () => {
+        if (!id || !itemToDelete) return;
+
+        try {
+            setDeletingItem(true);
+            await api.deleteFoodItem(parseInt(id), itemToDelete);
+
+            // Reload meal data to reflect the changes
+            const result = await api.getMealAnalysis(parseInt(id));
+            setData(result);
+
+            // If no items left, navigate to home
+            if (result.recognized_items.length === 0) {
+                navigate('/', { replace: true });
+                return;
+            }
+
+            setShowDeleteItemConfirm(false);
+            setItemToDelete(null);
+        } catch (err) {
+            console.error('Failed to delete food item:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Не удалось удалить блюдо';
+            setError(errorMessage);
+            setShowDeleteItemConfirm(false);
+            setItemToDelete(null);
+        } finally {
+            setDeletingItem(false);
         }
     };
 
@@ -108,9 +143,9 @@ const MealDetailsPage: React.FC = () => {
 
                     <div className="space-y-3">
                         {data.recognized_items.map((item) => (
-                            <div key={item.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                            <div key={item.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group relative">
                                 <div className="flex justify-between items-start mb-3">
-                                    <div>
+                                    <div className="flex-1">
                                         <h3 className="font-bold text-gray-900 text-lg leading-tight">
                                             {item.name}
                                         </h3>
@@ -118,11 +153,23 @@ const MealDetailsPage: React.FC = () => {
                                             {item.amount_grams} г
                                         </p>
                                     </div>
-                                    <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-xl">
-                                        <Flame size={16} className="text-orange-500" />
-                                        <span className="font-bold text-orange-700">
-                                            {Math.round(item.calories)}
-                                        </span>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-xl">
+                                            <Flame size={16} className="text-orange-500" />
+                                            <span className="font-bold text-orange-700">
+                                                {Math.round(item.calories)}
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                setItemToDelete(item.id);
+                                                setShowDeleteItemConfirm(true);
+                                            }}
+                                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            aria-label="Удалить блюдо"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
                                     </div>
                                 </div>
 
@@ -167,7 +214,7 @@ const MealDetailsPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Delete Confirmation Modal */}
+            {/* Delete Meal Confirmation Modal */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
@@ -194,6 +241,45 @@ const MealDetailsPage: React.FC = () => {
                             <button
                                 onClick={() => setShowDeleteConfirm(false)}
                                 disabled={deleting}
+                                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Food Item Confirmation Modal */}
+            {showDeleteItemConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
+                        <div className="text-center mb-4">
+                            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                <Trash2 className="text-red-600" size={32} />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                Удалить блюдо?
+                            </h3>
+                            <p className="text-gray-600">
+                                Это действие нельзя будет отменить. Блюдо будет удалено из приёма пищи.
+                            </p>
+                        </div>
+
+                        <div className="space-y-3">
+                            <button
+                                onClick={handleDeleteItem}
+                                disabled={deletingItem}
+                                className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {deletingItem ? 'Удаление...' : 'Да, удалить'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowDeleteItemConfirm(false);
+                                    setItemToDelete(null);
+                                }}
+                                disabled={deletingItem}
                                 className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Отмена
