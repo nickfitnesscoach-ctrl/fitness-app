@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, MealAnalysis } from '../services/api';
 import PageHeader from '../components/PageHeader';
-import { Flame, Drumstick, Droplets, Wheat, Trash2 } from 'lucide-react';
+import { Flame, Drumstick, Droplets, Wheat, Trash2, Edit2 } from 'lucide-react';
 
 const MealDetailsPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -17,6 +17,14 @@ const MealDetailsPage: React.FC = () => {
     const [itemToDelete, setItemToDelete] = useState<number | null>(null);
     const [showDeleteItemConfirm, setShowDeleteItemConfirm] = useState(false);
     const [deletingItem, setDeletingItem] = useState(false);
+
+    // Food item edit state
+    const [itemToEdit, setItemToEdit] = useState<{ id: number; name: string; grams: number } | null>(null);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editing, setEditing] = useState(false);
+    const [editName, setEditName] = useState('');
+    const [editGrams, setEditGrams] = useState('');
+
 
     useEffect(() => {
         const loadData = async () => {
@@ -80,6 +88,51 @@ const MealDetailsPage: React.FC = () => {
             setItemToDelete(null);
         } finally {
             setDeletingItem(false);
+        }
+    };
+
+    const handleEditClick = (item: any) => {
+        setItemToEdit({ id: item.id, name: item.name, grams: item.amount_grams });
+        setEditName(item.name);
+        setEditGrams(item.amount_grams.toString());
+        setShowEditModal(true);
+    };
+
+    const handleUpdateItem = async () => {
+        if (!id || !itemToEdit) return;
+
+        const newGrams = parseInt(editGrams);
+        if (isNaN(newGrams) || newGrams <= 0) {
+            setError('Введите корректное количество граммов');
+            return;
+        }
+
+        if (!editName.trim()) {
+            setError('Введите название блюда');
+            return;
+        }
+
+        try {
+            setEditing(true);
+            await api.updateFoodItem(parseInt(id), itemToEdit.id, {
+                name: editName.trim(),
+                amount_grams: newGrams
+            });
+
+            // Reload meal data
+            const result = await api.getMealAnalysis(parseInt(id));
+            setData(result);
+
+            setShowEditModal(false);
+            setItemToEdit(null);
+            setEditName('');
+            setEditGrams('');
+        } catch (err) {
+            console.error('Failed to update food item:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Не удалось обновить блюдо';
+            setError(errorMessage);
+        } finally {
+            setEditing(false);
         }
     };
 
@@ -160,6 +213,13 @@ const MealDetailsPage: React.FC = () => {
                                                 {Math.round(item.calories)}
                                             </span>
                                         </div>
+                                        <button
+                                            onClick={() => handleEditClick(item)}
+                                            className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            aria-label="Редактировать блюдо"
+                                        >
+                                            <Edit2 size={16} />
+                                        </button>
                                         <button
                                             onClick={() => {
                                                 setItemToDelete(item.id);
@@ -280,6 +340,72 @@ const MealDetailsPage: React.FC = () => {
                                     setItemToDelete(null);
                                 }}
                                 disabled={deletingItem}
+                                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Food Item Modal */}
+            {showEditModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
+                        <div className="mb-4">
+                            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                <Edit2 className="text-blue-600" size={32} />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
+                                Редактировать блюдо
+                            </h3>
+                        </div>
+
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Название
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    placeholder="Название блюда"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Вес (граммы)
+                                </label>
+                                <input
+                                    type="number"
+                                    value={editGrams}
+                                    onChange={(e) => setEditGrams(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    placeholder="Вес в граммах"
+                                    min="1"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <button
+                                onClick={handleUpdateItem}
+                                disabled={editing}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {editing ? 'Сохранение...' : 'Сохранить'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowEditModal(false);
+                                    setItemToEdit(null);
+                                    setEditName('');
+                                    setEditGrams('');
+                                }}
+                                disabled={editing}
                                 className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Отмена

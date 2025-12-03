@@ -671,6 +671,30 @@ export const api = {
         }
     },
 
+    async updateFoodItem(mealId: number, itemId: number, data: { name?: string; amount_grams?: number }): Promise<any> {
+        try {
+            const response = await fetchWithTimeout(`${URLS.meals}${mealId}/items/${itemId}/`, {
+                method: 'PATCH',
+                headers: {
+                    ...getHeaders(),
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const errorMessage = errorData.detail || errorData.error || `HTTP ${response.status}`;
+                throw new Error(`Failed to update food item: ${errorMessage}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Error updating food item:', error);
+            throw error;
+        }
+    },
+
     // ========================================================
     // Nutrition - Goals
     // ========================================================
