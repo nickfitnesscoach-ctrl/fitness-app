@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Flame, Drumstick, Droplets, Wheat, Plus, ChevronRight, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
@@ -39,16 +39,33 @@ const ClientDashboard: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
     const { isReady, isTelegramWebApp: webAppDetected } = useTelegramWebApp();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [loading, setLoading] = useState(true);
     const [goals, setGoals] = useState<DailyGoal | null>(null);
     const [consumed, setConsumed] = useState<TotalConsumed>({ calories: 0, protein: 0, fat: 0, carbohydrates: 0 });
     const [meals, setMeals] = useState<Meal[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const [selectedDate, setSelectedDate] = useState(new Date());
+
+    // Get date from URL params or use today
+    const getInitialDate = () => {
+        const dateParam = searchParams.get('date');
+        if (dateParam) {
+            return new Date(dateParam);
+        }
+        return new Date();
+    };
+    const [selectedDate, setSelectedDate] = useState(getInitialDate());
+
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [mealToDelete, setMealToDelete] = useState<number | null>(null);
     const [deleting, setDeleting] = useState(false);
+
+    // Update URL when date changes
+    useEffect(() => {
+        const dateStr = selectedDate.toISOString().split('T')[0];
+        setSearchParams({ date: dateStr }, { replace: true });
+    }, [selectedDate]);
 
     useEffect(() => {
         if (isReady && webAppDetected) {
