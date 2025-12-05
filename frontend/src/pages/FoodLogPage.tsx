@@ -25,9 +25,17 @@ const FoodLogPage: React.FC = () => {
         comment: string;
     }
     const [selectedFiles, setSelectedFiles] = useState<FileWithComment[]>([]);
+    const [mealType, setMealType] = useState<string>('BREAKFAST');
 
     const [error, setError] = useState<string | null>(null);
     const [showLimitModal, setShowLimitModal] = useState(false);
+
+    const mealTypeOptions = [
+        { value: 'BREAKFAST', label: 'Завтрак' },
+        { value: 'LUNCH', label: 'Обед' },
+        { value: 'DINNER', label: 'Ужин' },
+        { value: 'SNACK', label: 'Перекус' },
+    ];
 
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
@@ -105,8 +113,8 @@ const FoodLogPage: React.FC = () => {
                 setBatchProgress({ current: i + 1, total: filesWithComments.length });
 
                 try {
-                    // Recognize with INDIVIDUAL comment per photo
-                    const result = await api.recognizeFood(file, comment) as AnalysisResult;
+                    // Recognize with INDIVIDUAL comment per photo and selected meal type
+                    const result = await api.recognizeFood(file, comment, mealType) as AnalysisResult;
 
                     if (result.recognized_items && result.recognized_items.length > 0) {
                         results.push({
@@ -278,6 +286,26 @@ const FoodLogPage: React.FC = () => {
                         )}
                     </div>
                 )}
+
+                {/* Meal Type Selector */}
+                <div className="bg-white rounded-3xl shadow-sm p-4 mb-6">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Тип приёма пищи</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                        {mealTypeOptions.map((option) => (
+                            <button
+                                key={option.value}
+                                onClick={() => setMealType(option.value)}
+                                className={`py-3 px-4 rounded-xl font-bold transition-all ${
+                                    mealType === option.value
+                                        ? 'bg-gradient-to-br from-blue-500 to-purple-500 text-white shadow-lg scale-105'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
 
                 {/* Main Content Area */}
                 {isBatchProcessing ? (

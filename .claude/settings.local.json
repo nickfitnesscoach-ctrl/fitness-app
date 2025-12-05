@@ -77,7 +77,9 @@
       "Bash(powershell.exe -Command \"docker rm -f eatfit24-test\")",
       "Bash(powershell.exe -Command \"docker logs eatfit24-test | tail -20\")",
       "Bash(python3:*)",
-      "Bash(powershell.exe -Command \"scp -r ''d:\\NICOLAS\\1_PROJECTS\\_IT_Projects\\Fitness-app\\frontend\\dist\\*'' root@85.198.81.133:/opt/foodmind/frontend/dist/\")"
+      "Bash(powershell.exe -Command \"scp -r ''d:\\NICOLAS\\1_PROJECTS\\_IT_Projects\\Fitness-app\\frontend\\dist\\*'' root@85.198.81.133:/opt/foodmind/frontend/dist/\")",
+      "Bash(mkdir:*)",
+      "Bash(powershell.exe -Command \"scp -r frontend/dist/* root@85.198.81.133:/opt/foodmind/frontend/dist/\")"
     ],
     "deny": [],
     "ask": []

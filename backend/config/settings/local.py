@@ -28,14 +28,21 @@ CORS_ALLOW_CREDENTIALS = True
 
 # Development database
 # PostgreSQL для разработки (через Docker)
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": os.getenv("POSTGRES_DB", "foodmind"),  # noqa: F405
+#         "USER": os.getenv("POSTGRES_USER", "foodmind"),  # noqa: F405
+#         "PASSWORD": os.getenv("POSTGRES_PASSWORD", "foodmind"),  # noqa: F405
+#         "HOST": os.getenv("POSTGRES_HOST", "localhost"),  # noqa: F405
+#         "PORT": os.getenv("POSTGRES_PORT", "5432"),  # noqa: F405
+#     }
+# }
+
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB", "foodmind"),  # noqa: F405
-        "USER": os.getenv("POSTGRES_USER", "foodmind"),  # noqa: F405
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "foodmind"),  # noqa: F405
-        "HOST": os.getenv("POSTGRES_HOST", "localhost"),  # noqa: F405
-        "PORT": os.getenv("POSTGRES_PORT", "5432"),  # noqa: F405
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
