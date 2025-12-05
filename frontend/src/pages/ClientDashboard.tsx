@@ -325,7 +325,7 @@ const ClientDashboard: React.FC = () => {
                 </div>
 
                 <button
-                    onClick={() => navigate('/log')}
+                    onClick={() => navigate('/log', { state: { selectedDate: selectedDate.toISOString().split('T')[0] } })}
                     className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg active:scale-95 transition-transform"
                 >
                     <Plus size={24} />

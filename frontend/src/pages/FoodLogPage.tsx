@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Camera, CreditCard, AlertCircle, Check, X, Send } from 'lucide-react';
 import { api } from '../services/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useBilling } from '../contexts/BillingContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { BatchResultsModal, BatchResult, AnalysisResult } from '../components/BatchResultsModal';
 
 const FoodLogPage: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const billing = useBilling();
     const { isReady, isTelegramWebApp: webAppDetected } = useTelegramWebApp();
 
@@ -25,7 +26,16 @@ const FoodLogPage: React.FC = () => {
     }
     const [selectedFiles, setSelectedFiles] = useState<FileWithComment[]>([]);
     const [mealType, setMealType] = useState<string>('BREAKFAST');
-    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+
+    // Get initial date from location state or use today
+    const getInitialDate = () => {
+        const dateFromState = (location.state as any)?.selectedDate;
+        if (dateFromState) {
+            return new Date(dateFromState);
+        }
+        return new Date();
+    };
+    const [selectedDate, setSelectedDate] = useState<Date>(getInitialDate());
 
     const [error, setError] = useState<string | null>(null);
     const [showLimitModal, setShowLimitModal] = useState(false);
@@ -185,7 +195,9 @@ const FoodLogPage: React.FC = () => {
 
     const handleCloseResults = () => {
         setShowBatchResults(false);
-        navigate('/');
+        // Navigate back to dashboard with the selected date
+        const dateStr = selectedDate.toISOString().split('T')[0];
+        navigate(`/?date=${dateStr}`);
     };
 
     // While WebApp is initializing
