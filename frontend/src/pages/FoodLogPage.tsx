@@ -25,6 +25,7 @@ const FoodLogPage: React.FC = () => {
     }
     const [selectedFiles, setSelectedFiles] = useState<FileWithComment[]>([]);
     const [mealType, setMealType] = useState<string>('BREAKFAST');
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
     const [error, setError] = useState<string | null>(null);
     const [showLimitModal, setShowLimitModal] = useState(false);
@@ -112,8 +113,9 @@ const FoodLogPage: React.FC = () => {
                 setBatchProgress({ current: i + 1, total: filesWithComments.length });
 
                 try {
-                    // Recognize with INDIVIDUAL comment per photo and selected meal type
-                    const result = await api.recognizeFood(file, comment, mealType) as AnalysisResult;
+                    // Recognize with INDIVIDUAL comment per photo, selected meal type, and date
+                    const dateStr = selectedDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+                    const result = await api.recognizeFood(file, comment, mealType, dateStr) as AnalysisResult;
 
                     if (result.recognized_items && result.recognized_items.length > 0) {
                         results.push({
@@ -286,8 +288,16 @@ const FoodLogPage: React.FC = () => {
                     </div>
                 )}
 
-                {/* Meal Type Selector */}
+                {/* Date and Meal Type Selector */}
                 <div className="bg-white rounded-3xl shadow-sm p-4 mb-6">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Дата приёма пищи</h3>
+                    <input
+                        type="date"
+                        value={selectedDate.toISOString().split('T')[0]}
+                        onChange={(e) => setSelectedDate(new Date(e.target.value))}
+                        className="w-full p-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all mb-4"
+                    />
+
                     <h3 className="text-sm font-semibold text-gray-700 mb-3">Тип приёма пищи</h3>
                     <div className="grid grid-cols-2 gap-3">
                         {mealTypeOptions.map((option) => (

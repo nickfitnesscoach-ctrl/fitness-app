@@ -1259,7 +1259,7 @@ export const api = {
     // AI Recognition
     // ========================================================
 
-    async recognizeFood(imageFile: File, description?: string, mealType?: string) {
+    async recognizeFood(imageFile: File, description?: string, mealType?: string, date?: string) {
         log(`Calling AI recognize endpoint with file: ${imageFile.name} `);
         try {
             const formData = new FormData();
@@ -1269,6 +1269,9 @@ export const api = {
             }
             if (mealType) {
                 formData.append('meal_type', mealType);
+            }
+            if (date) {
+                formData.append('date', date);
             }
 
             // Debug: Verify FormData
