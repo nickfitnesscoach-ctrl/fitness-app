@@ -50,8 +50,8 @@ const MealDetailsPage: React.FC = () => {
         try {
             setDeleting(true);
             await api.deleteMeal(parseInt(id));
-            // Success - navigate back to home
-            navigate('/', { replace: true });
+            // Success - navigate back (preserves the date in ClientDashboard)
+            navigate(-1);
         } catch (err) {
             console.error('Failed to delete meal:', err);
             const errorMessage = err instanceof Error ? err.message : 'Не удалось удалить приём пищи';
@@ -72,9 +72,9 @@ const MealDetailsPage: React.FC = () => {
             const result = await api.getMealAnalysis(parseInt(id));
             setData(result);
 
-            // If no items left, navigate to home
+            // If no items left, navigate back (preserves the date in ClientDashboard)
             if (result.recognized_items.length === 0) {
-                navigate('/', { replace: true });
+                navigate(-1);
                 return;
             }
 
