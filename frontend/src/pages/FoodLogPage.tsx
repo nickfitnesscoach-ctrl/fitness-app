@@ -150,11 +150,14 @@ const FoodLogPage: React.FC = () => {
                 if (taskStatus.state === 'SUCCESS') {
                     const result = taskStatus.result;
                     
-                    console.log(`[Polling] SUCCESS result:`, {
+                    console.log(`[Polling] SUCCESS result FULL:`, JSON.stringify(result, null, 2));
+                    console.log(`[Polling] SUCCESS result parsed:`, {
                         success: result?.success,
                         meal_id: result?.meal_id,
                         recognized_items_count: result?.recognized_items?.length || 0,
-                        has_totals: !!result?.totals
+                        recognized_items_first: result?.recognized_items?.[0],
+                        has_totals: !!result?.totals,
+                        totals: result?.totals
                     });
 
                     // Extract data from task result FIRST
