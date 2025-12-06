@@ -7,7 +7,9 @@ import logging
 import time
 from datetime import date
 
-from drf_spectacular.utils import extend_schema, OpenApiResponse
+from django.conf import settings
+from django.core.files.base import ContentFile
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -23,7 +25,7 @@ from apps.ai_proxy.exceptions import AIProxyError, AIProxyValidationError, AIPro
 from .throttles import AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle
 from apps.billing.services import get_effective_plan_for_user
 from apps.billing.usage import DailyUsage
-from django.core.files.base import ContentFile
+from apps.nutrition.models import Meal
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +202,23 @@ class AIRecognitionView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS
             )
 
+        # Check if async mode is enabled
+        async_enabled = getattr(settings, 'AI_ASYNC_ENABLED', False)
+        
+        if async_enabled:
+            # ASYNC MODE: Create meal, send task to Celery, return immediately
+            return self._handle_async_recognition(
+                request=request,
+                image_file=image_file,
+                image_data_url=image_data_url,
+                meal_type=meal_type,
+                meal_date=meal_date,
+                description=description,
+                comment=comment,
+                view_start_time=view_start_time
+            )
+        
+        # SYNC MODE: Process immediately (existing behavior)
         try:
             # Call service to create meal, recognize and save food items
             service_result = recognize_and_save_meal(
@@ -304,6 +323,153 @@ class AIRecognitionView(APIView):
                 {
                     "error": "AI_SERVICE_ERROR",
                     "detail": "Сервис распознавания временно недоступен. Попробуйте позже"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _handle_async_recognition(
+        self,
+        request,
+        image_file,
+        image_data_url,
+        meal_type,
+        meal_date,
+        description,
+        comment,
+        view_start_time
+    ):
+        """
+        Handle async recognition: create meal, dispatch Celery task, return immediately.
+        """
+        from .tasks import recognize_food_async
+        
+        try:
+            # 1. Create Meal with photo (without food items yet)
+            if image_file:
+                image_file.seek(0)
+            
+            meal = Meal.objects.create(
+                user=request.user,
+                meal_type=meal_type,
+                date=meal_date,
+                photo=image_file
+            )
+            
+            logger.info(f"Created Meal id={meal.id} for async processing, user={request.user.username}")
+            
+            # 2. Dispatch Celery task
+            task = recognize_food_async.delay(
+                meal_id=str(meal.id),
+                image_data_url=image_data_url,
+                user_id=request.user.id,
+                description=description,
+                comment=comment
+            )
+            
+            view_total = time.time() - view_start_time
+            logger.info(
+                f"Async AI recognition task dispatched for user {request.user.username}, "
+                f"meal_id={meal.id}, task_id={task.id}, dispatch_time={view_total:.3f}s"
+            )
+            
+            # 3. Return immediately with 202 Accepted
+            return Response(
+                {
+                    "meal_id": str(meal.id),
+                    "task_id": task.id,
+                    "status": "processing",
+                    "message": "Изображение отправлено на распознавание"
+                },
+                status=status.HTTP_202_ACCEPTED
+            )
+            
+        except Exception as e:
+            view_total = time.time() - view_start_time
+            logger.error(
+                f"Failed to dispatch async recognition for user {request.user.username}: {e}, "
+                f"total_view_time={view_total:.2f}s",
+                exc_info=True
+            )
+            return Response(
+                {
+                    "error": "AI_SERVICE_ERROR",
+                    "detail": "Не удалось запустить распознавание. Попробуйте позже."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+@extend_schema(tags=['AI Recognition'])
+class TaskStatusView(APIView):
+    """
+    GET /api/v1/ai/task/<task_id>/ - Проверить статус задачи распознавания
+    
+    Возвращает текущий статус Celery задачи и результат при завершении.
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Проверить статус задачи распознавания",
+        description="""
+Возвращает состояние асинхронной задачи распознавания.
+
+**Возможные состояния (state):**
+- `PENDING` - Задача в очереди, ожидает выполнения
+- `STARTED` - Задача начала выполняться
+- `RETRY` - Задача перезапускается после ошибки
+- `SUCCESS` - Задача успешно завершена (результат в поле result)
+- `FAILURE` - Задача завершилась с ошибкой
+
+**При SUCCESS возвращается result с:**
+- meal_id, recognized_items[], totals{}
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='task_id',
+                type=str,
+                location=OpenApiParameter.PATH,
+                description='ID задачи Celery'
+            )
+        ],
+        responses={
+            200: OpenApiResponse(description="Статус задачи"),
+            404: OpenApiResponse(description="Задача не найдена"),
+        }
+    )
+    def get(self, request, task_id):
+        """Get task status by task_id."""
+        from celery.result import AsyncResult
+        
+        try:
+            task_result = AsyncResult(task_id)
+            
+            response_data = {
+                "task_id": task_id,
+                "state": task_result.state,
+            }
+            
+            if task_result.state == 'SUCCESS':
+                response_data["result"] = task_result.result
+            elif task_result.state == 'FAILURE':
+                response_data["error"] = str(task_result.result) if task_result.result else "Unknown error"
+            elif task_result.state == 'PENDING':
+                response_data["message"] = "Задача ожидает выполнения"
+            elif task_result.state == 'STARTED':
+                response_data["message"] = "Задача выполняется"
+            elif task_result.state == 'RETRY':
+                response_data["message"] = "Задача перезапускается"
+            
+            logger.debug(f"Task {task_id} status: {task_result.state}")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
+            return Response(
+                {
+                    "error": "TASK_ERROR",
+                    "detail": "Не удалось получить статус задачи"
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
