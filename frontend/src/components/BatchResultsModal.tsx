@@ -16,7 +16,7 @@ export interface AnalysisResult {
     total_protein: number;
     total_fat: number;
     total_carbohydrates: number;
-    meal_id?: number;
+    meal_id?: number | string;
     photo_url?: string | null;
 }
 

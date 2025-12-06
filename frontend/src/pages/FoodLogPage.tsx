@@ -46,7 +46,7 @@ const FoodLogPage: React.FC = () => {
 
     const [error, setError] = useState<string | null>(null);
     const [showLimitModal, setShowLimitModal] = useState(false);
-    
+
     // For async polling cancellation
     const pollingAbortRef = useRef<AbortController | null>(null);
 
@@ -149,19 +149,19 @@ const FoodLogPage: React.FC = () => {
 
                 if (taskStatus.state === 'SUCCESS') {
                     const result = taskStatus.result;
-                    
+
                     // Backend may return success: false with error message
                     if (result && result.success === false) {
                         const emptyError = new Error(result.error || 'AI не смог распознать еду на фото');
                         (emptyError as any).errorType = 'AI_EMPTY_RESULT';
                         throw emptyError;
                     }
-                    
+
                     // Extract data from task result
                     let recognizedItems = result?.recognized_items || [];
                     const totals = result?.totals;
-                    const mealId = result?.meal_id ? Number(result.meal_id) : undefined;
-                    
+                    const mealId = result?.meal_id;
+
                     // FALLBACK: If recognized_items is empty but meal_id exists,
                     // fetch meal directly from API (items may have been saved but not returned)
                     if (recognizedItems.length === 0 && mealId) {
@@ -186,7 +186,7 @@ const FoodLogPage: React.FC = () => {
                             // Continue with empty items - will show error below
                         }
                     }
-                    
+
                     // Calculate totals from items if not provided
                     const finalTotals = totals || {
                         calories: recognizedItems.reduce((sum, i) => sum + (i.calories || 0), 0),
@@ -194,7 +194,7 @@ const FoodLogPage: React.FC = () => {
                         fat: recognizedItems.reduce((sum, i) => sum + (i.fat || 0), 0),
                         carbohydrates: recognizedItems.reduce((sum, i) => sum + (i.carbohydrates || 0), 0)
                     };
-                    
+
                     return {
                         recognized_items: recognizedItems,
                         total_calories: finalTotals.calories || 0,
@@ -220,12 +220,12 @@ const FoodLogPage: React.FC = () => {
                 if (abortController.signal.aborted) {
                     return null;
                 }
-                
+
                 // If it's our custom error, re-throw it
                 if (err.errorType) {
                     throw err;
                 }
-                
+
                 // Network error - retry a few times
                 if (attempt < 3) {
                     console.warn(`[Polling] Network error, retry ${attempt + 1}/3:`, err.message);
@@ -233,7 +233,7 @@ const FoodLogPage: React.FC = () => {
                     attempt++;
                     continue;
                 }
-                
+
                 const networkError = new Error('Ошибка сети при получении результата');
                 (networkError as any).errorType = 'NETWORK_ERROR';
                 throw networkError;
@@ -249,7 +249,7 @@ const FoodLogPage: React.FC = () => {
         setBatchResults([]);
         setError(null);
         setCancelRequested(false);
-        
+
         // Create abort controller for this batch
         const abortController = new AbortController();
         pollingAbortRef.current = abortController;
@@ -272,14 +272,14 @@ const FoodLogPage: React.FC = () => {
                     // Recognize with INDIVIDUAL comment per photo, selected meal type, and date
                     const dateStr = selectedDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
                     const recognizeResult = await api.recognizeFood(file, comment, mealType, dateStr);
-                    
+
                     let result: AnalysisResult;
-                    
+
                     // Check if async mode (HTTP 202)
                     if ((recognizeResult as any).isAsync && (recognizeResult as any).task_id) {
                         console.log(`[Batch] Async mode detected, polling task ${(recognizeResult as any).task_id}`);
                         const polledResult = await pollTaskStatus((recognizeResult as any).task_id, abortController);
-                        
+
                         if (!polledResult) {
                             // Polling was cancelled
                             break;
@@ -288,6 +288,34 @@ const FoodLogPage: React.FC = () => {
                     } else {
                         // Sync mode - result already contains recognized_items
                         result = recognizeResult as AnalysisResult;
+
+                        // FALLBACK FOR SYNC MODE: If items empty but meal_id exists
+                        if ((!result.recognized_items || result.recognized_items.length === 0) && result.meal_id) {
+                            console.log(`[Batch] Sync mode: Empty items but meal_id=${result.meal_id}, trying fallback...`);
+                            try {
+                                const mealData = await api.getMealAnalysis(result.meal_id);
+                                if (mealData.recognized_items && mealData.recognized_items.length > 0) {
+                                    // Map from MealAnalysis format to AnalysisResult format
+                                    result.recognized_items = mealData.recognized_items.map(item => ({
+                                        id: String(item.id),
+                                        name: item.name,
+                                        grams: item.amount_grams,
+                                        calories: item.calories,
+                                        protein: item.protein,
+                                        fat: item.fat,
+                                        carbohydrates: item.carbs
+                                    }));
+
+                                    // Recalculate totals
+                                    result.total_calories = result.recognized_items.reduce((sum, i) => sum + (i.calories || 0), 0);
+                                    result.total_protein = result.recognized_items.reduce((sum, i) => sum + (i.protein || 0), 0);
+                                    result.total_fat = result.recognized_items.reduce((sum, i) => sum + (i.fat || 0), 0);
+                                    result.total_carbohydrates = result.recognized_items.reduce((sum, i) => sum + (i.carbohydrates || 0), 0);
+                                }
+                            } catch (fallbackErr) {
+                                console.warn(`[Batch] Sync fallback failed:`, fallbackErr);
+                            }
+                        }
                     }
 
                     if (result.recognized_items && result.recognized_items.length > 0) {
@@ -297,11 +325,12 @@ const FoodLogPage: React.FC = () => {
                             data: result
                         });
                     } else {
-                        // AI returned success but no items - rare case, treat as empty result
+                        // AI returned success but no items - AND fallback failed
+                        // This implies the model really didn't find anything
                         results.push({
                             file,
                             status: 'error',
-                            error: 'Еда не распознана. Попробуйте другое фото.'
+                            error: 'Еда не распознана. Попробуйте сфотографировать блюдо ближе или при лучшем освещении.'
                         });
                     }
                 } catch (err: any) {
@@ -321,7 +350,7 @@ const FoodLogPage: React.FC = () => {
 
                     // Determine error message using centralized localization
                     let errorMessage: string;
-                    
+
                     // Custom error types from pollTaskStatus
                     if (err.errorType === 'AI_EMPTY_RESULT') {
                         errorMessage = getErrorMessage('No food items recognized');
@@ -606,7 +635,7 @@ const FoodLogPage: React.FC = () => {
                                             Вы используете десктоп-версию
                                         </p>
                                         <p className="text-yellow-700 text-sm mt-1">
-                                            Для съёмки еды рекомендуем открыть приложение на телефоне. 
+                                            Для съёмки еды рекомендуем открыть приложение на телефоне.
                                             На десктопе можно загрузить готовые фото.
                                         </p>
                                     </div>
@@ -633,7 +662,7 @@ const FoodLogPage: React.FC = () => {
 
                         <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
                             <p className="text-blue-800 text-sm text-center">
-                                {isDesktop 
+                                {isDesktop
                                     ? '💡 Загрузите фото еды с хорошим освещением для точного распознавания'
                                     : '💡 Для лучшего результата сфотографируйте еду сверху при хорошем освещении'
                                 }

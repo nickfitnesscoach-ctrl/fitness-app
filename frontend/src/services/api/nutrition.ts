@@ -4,9 +4,9 @@
  * Handles meals, food items, and daily goals.
  */
 
-import { 
-    fetchWithTimeout, 
-    fetchWithRetry, 
+import {
+    fetchWithTimeout,
+    fetchWithRetry,
     getHeaders,
     log,
     resolveImageUrl
@@ -74,7 +74,7 @@ export const deleteMeal = async (id: number): Promise<void> => {
     }
 };
 
-export const getMealAnalysis = async (id: number): Promise<MealAnalysis> => {
+export const getMealAnalysis = async (id: number | string): Promise<MealAnalysis> => {
     try {
         const response = await fetchWithTimeout(`${URLS.meals}${id}/`, {
             headers: getHeaders(),
@@ -152,8 +152,8 @@ export const deleteFoodItem = async (mealId: number, itemId: number): Promise<vo
 };
 
 export const updateFoodItem = async (
-    mealId: number, 
-    itemId: number, 
+    mealId: number,
+    itemId: number,
     data: { name?: string; amount_grams?: number }
 ): Promise<FoodItem> => {
     try {

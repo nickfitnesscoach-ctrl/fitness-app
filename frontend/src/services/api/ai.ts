@@ -4,8 +4,8 @@
  * Handles food photo recognition with sync/async modes.
  */
 
-import { 
-    fetchWithTimeout, 
+import {
+    fetchWithTimeout,
     getHeaders,
     getHeadersWithoutContentType,
     log,
@@ -30,7 +30,7 @@ export interface RecognizeResult {
     total_protein: number;
     total_fat: number;
     total_carbohydrates: number;
-    meal_id?: number;
+    meal_id?: number | string;
     photo_url?: string;
     isAsync: false;
 }
@@ -50,13 +50,13 @@ export type RecognizeFoodResult = RecognizeResult | RecognizeAsyncResult;
  * Supports both sync (HTTP 200) and async (HTTP 202) backend modes
  */
 export const recognizeFood = async (
-    imageFile: File, 
-    description?: string, 
-    mealType?: string, 
+    imageFile: File,
+    description?: string,
+    mealType?: string,
     date?: string
 ): Promise<RecognizeFoodResult> => {
     log(`Calling AI recognize endpoint with file: ${imageFile.name}`);
-    
+
     try {
         const formData = new FormData();
         formData.append('image', imageFile);
@@ -83,7 +83,7 @@ export const recognizeFood = async (
             const asyncResult = await response.json();
             console.log('RECOGNIZE ASYNC MODE', response.status, asyncResult);
             log(`AI recognition async: task_id=${asyncResult.task_id}, meal_id=${asyncResult.meal_id}`);
-            
+
             return {
                 task_id: asyncResult.task_id,
                 meal_id: asyncResult.meal_id,
@@ -146,7 +146,7 @@ export interface TaskTotals {
 
 export interface TaskResult {
     success: boolean;
-    meal_id: string;
+    meal_id: string | number;
     recognized_items: Array<{
         id: string;
         name: string;
