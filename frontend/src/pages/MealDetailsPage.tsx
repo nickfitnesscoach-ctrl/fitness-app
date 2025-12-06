@@ -220,7 +220,7 @@ const MealDetailsPage: React.FC = () => {
                                             {item.name}
                                         </h3>
                                         <p className="text-gray-500 text-sm mt-1">
-                                            {item.amount_grams} г
+                                            {item.grams} г
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -271,7 +271,7 @@ const MealDetailsPage: React.FC = () => {
                                             <Wheat size={12} />
                                             <span>Угл.</span>
                                         </div>
-                                        <span className="font-bold text-gray-900">{item.carbs}</span>
+                                        <span className="font-bold text-gray-900">{item.carbohydrates}</span>
                                     </div>
                                 </div>
                             </div>

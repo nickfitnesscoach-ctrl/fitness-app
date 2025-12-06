@@ -165,21 +165,28 @@ const FoodLogPage: React.FC = () => {
                     // FALLBACK: If recognized_items is empty but meal_id exists,
                     // fetch meal directly from API (items may have been saved but not returned)
                     if (recognizedItems.length === 0 && mealId) {
-                        console.log(`[Polling] Empty recognized_items but meal_id=${mealId} exists, fetching meal...`);
+                        console.log(`[Polling] Empty recognized_items but meal_id=${mealId} exists. Waiting 1s before fallback fetch...`);
+
+                        // Add 1s delay to allow DB commit/propagation
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+
                         try {
                             const mealData = await api.getMealAnalysis(mealId);
                             if (mealData.recognized_items && mealData.recognized_items.length > 0) {
                                 console.log(`[Polling] Fallback successful: found ${mealData.recognized_items.length} items in meal`);
                                 // Map from MealAnalysis format to AnalysisResult format
+                                // Backend returns: id, name, grams, calories, protein, fat, carbohydrates
                                 recognizedItems = mealData.recognized_items.map(item => ({
                                     id: String(item.id),
                                     name: item.name,
-                                    grams: item.amount_grams,
+                                    grams: item.grams,
                                     calories: item.calories,
                                     protein: item.protein,
                                     fat: item.fat,
-                                    carbohydrates: item.carbs
+                                    carbohydrates: item.carbohydrates
                                 }));
+                            } else {
+                                console.warn('[Polling] Fallback fetch returned 0 items');
                             }
                         } catch (fallbackErr) {
                             console.warn(`[Polling] Fallback fetch failed:`, fallbackErr);
@@ -288,33 +295,40 @@ const FoodLogPage: React.FC = () => {
                     } else {
                         // Sync mode - result already contains recognized_items
                         result = recognizeResult as AnalysisResult;
+                    }
 
-                        // FALLBACK FOR SYNC MODE: If items empty but meal_id exists
-                        if ((!result.recognized_items || result.recognized_items.length === 0) && result.meal_id) {
-                            console.log(`[Batch] Sync mode: Empty items but meal_id=${result.meal_id}, trying fallback...`);
-                            try {
-                                const mealData = await api.getMealAnalysis(result.meal_id);
-                                if (mealData.recognized_items && mealData.recognized_items.length > 0) {
-                                    // Map from MealAnalysis format to AnalysisResult format
-                                    result.recognized_items = mealData.recognized_items.map(item => ({
-                                        id: String(item.id),
-                                        name: item.name,
-                                        grams: item.amount_grams,
-                                        calories: item.calories,
-                                        protein: item.protein,
-                                        fat: item.fat,
-                                        carbohydrates: item.carbs
-                                    }));
+                    // UNIVERSAL FALLBACK: If items empty but meal_id exists
+                    // This handles BOTH Sync mode empty results AND Async results where pollTaskStatus fallback might have failed or not run
+                    // We try one more time with a robust check here in `processBatch` loop
+                    if ((!result.recognized_items || result.recognized_items.length === 0) && result.meal_id) {
+                        console.log(`[Batch] Empty items but meal_id=${result.meal_id}, trying universal fallback...`);
 
-                                    // Recalculate totals
-                                    result.total_calories = result.recognized_items.reduce((sum, i) => sum + (i.calories || 0), 0);
-                                    result.total_protein = result.recognized_items.reduce((sum, i) => sum + (i.protein || 0), 0);
-                                    result.total_fat = result.recognized_items.reduce((sum, i) => sum + (i.fat || 0), 0);
-                                    result.total_carbohydrates = result.recognized_items.reduce((sum, i) => sum + (i.carbohydrates || 0), 0);
-                                }
-                            } catch (fallbackErr) {
-                                console.warn(`[Batch] Sync fallback failed:`, fallbackErr);
+                        // Add 1s delay for consistency
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+
+                        try {
+                            const mealData = await api.getMealAnalysis(result.meal_id);
+                            if (mealData.recognized_items && mealData.recognized_items.length > 0) {
+                                // Map from MealAnalysis format to AnalysisResult format
+                                // Backend returns: id, name, grams, calories, protein, fat, carbohydrates
+                                result.recognized_items = mealData.recognized_items.map(item => ({
+                                    id: String(item.id),
+                                    name: item.name,
+                                    grams: item.grams,
+                                    calories: item.calories,
+                                    protein: item.protein,
+                                    fat: item.fat,
+                                    carbohydrates: item.carbohydrates
+                                }));
+
+                                // Recalculate totals
+                                result.total_calories = result.recognized_items.reduce((sum: number, i) => sum + (i.calories || 0), 0);
+                                result.total_protein = result.recognized_items.reduce((sum: number, i) => sum + (i.protein || 0), 0);
+                                result.total_fat = result.recognized_items.reduce((sum: number, i) => sum + (i.fat || 0), 0);
+                                result.total_carbohydrates = result.recognized_items.reduce((sum: number, i) => sum + (i.carbohydrates || 0), 0);
                             }
+                        } catch (fallbackErr) {
+                            console.warn(`[Batch] Universal fallback failed:`, fallbackErr);
                         }
                     }
 
@@ -326,7 +340,8 @@ const FoodLogPage: React.FC = () => {
                         });
                     } else {
                         // AI returned success but no items - AND fallback failed
-                        // This implies the model really didn't find anything
+                        // This implies the model really didn't find anything OR fallback fetch failed
+                        console.warn(`[Batch] Final result empty for meal_id=${result.meal_id}. Status: ERROR`);
                         results.push({
                             file,
                             status: 'error',

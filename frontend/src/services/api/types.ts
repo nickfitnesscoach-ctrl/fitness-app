@@ -55,15 +55,18 @@ export interface CreateFoodItemRequest {
 // Meal Analysis Types
 // ============================================================
 
+/**
+ * Item from GET /meals/{id}/ response (backend MealSerializer)
+ * Backend field names: id, name, grams, calories, protein, fat, carbohydrates
+ */
 export interface RecognizedItemAnalysis {
     id: number;
     name: string;
-    amount_grams: number;
+    grams: number;
     calories: number;
     protein: number;
     fat: number;
     carbohydrates: number;
-    carbs: number;
 }
 
 export interface MealAnalysis {

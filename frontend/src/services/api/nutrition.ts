@@ -74,6 +74,17 @@ export const deleteMeal = async (id: number): Promise<void> => {
     }
 };
 
+/**
+ * Get meal details for analysis view
+ * 
+ * Backend returns (MealSerializer):
+ * {
+ *   id: number,
+ *   items: [{ id, name, grams, calories, protein, fat, carbohydrates }],
+ *   photo_url: string | null,
+ *   meal_type_display: string
+ * }
+ */
 export const getMealAnalysis = async (id: number | string): Promise<MealAnalysis> => {
     try {
         const response = await fetchWithTimeout(`${URLS.meals}${id}/`, {
@@ -84,18 +95,20 @@ export const getMealAnalysis = async (id: number | string): Promise<MealAnalysis
         const data = await response.json();
         const mainPhoto = data.photo_url || data.items?.find((item: FoodItem) => item.photo)?.photo || null;
 
+        // Map backend fields directly - no transformation needed
+        // Backend uses: id, name, grams, calories, protein, fat, carbohydrates
         return {
             id: data.id,
             photo_url: resolveImageUrl(mainPhoto),
             label: data.meal_type_display,
-            recognized_items: data.items.map((item: FoodItem) => ({
+            recognized_items: (data.items || []).map((item: FoodItem) => ({
                 id: item.id,
                 name: item.name,
-                amount_grams: item.grams,
+                grams: item.grams,
                 calories: item.calories,
                 protein: item.protein,
                 fat: item.fat,
-                carbs: item.carbohydrates
+                carbohydrates: item.carbohydrates
             }))
         };
     } catch (error) {
