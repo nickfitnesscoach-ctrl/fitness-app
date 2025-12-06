@@ -6,6 +6,7 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend.yml'
+      - 'docker-compose.yml'
   pull_request:
     branches: [ main ]
     paths:
@@ -30,6 +31,16 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd="pg_isready -U foodmind -d foodmind"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -64,6 +75,8 @@ jobs:
           POSTGRES_PASSWORD: supersecret
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
         run: |
           python manage.py check
 
@@ -75,6 +88,8 @@ jobs:
           POSTGRES_PASSWORD: supersecret
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
         run: |
           python manage.py migrate --noinput
 
@@ -86,6 +101,8 @@ jobs:
           POSTGRES_PASSWORD: supersecret
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
         run: |
           python manage.py test --noinput
 
@@ -132,8 +149,11 @@ jobs:
           script: |
             cd /opt/foodmind
             git pull origin main
-            docker compose up -d --build backend
-            echo "✅ Backend deployment completed"
+            
+            # Deploy Redis, Backend, and Celery Worker
+            docker compose up -d --build redis backend celery-worker
+            
+            echo "✅ Backend + Redis + Celery deployment completed"
 
       - name: Check deployment status
         uses: appleboy/ssh-action@v1.0.0
@@ -145,19 +165,35 @@ jobs:
           script: |
             cd /opt/foodmind
 
-            # Check container is running
+            # Check Redis is running
+            if ! docker ps | grep -q fm-redis; then
+              echo "❌ Redis container not running!"
+              docker logs fm-redis --tail 50
+              exit 1
+            fi
+            echo "✅ Redis is running"
+
+            # Check Backend container is running
             if ! docker ps | grep -q fm-backend; then
               echo "❌ Backend container not running!"
               docker logs fm-backend --tail 50
               exit 1
             fi
-            echo "✅ Container is running"
+            echo "✅ Backend is running"
 
-            # Wait for service to be ready
-            echo "⏳ Waiting for backend to be healthy..."
-            sleep 5
+            # Check Celery Worker is running
+            if ! docker ps | grep -q fm-celery-worker; then
+              echo "❌ Celery Worker container not running!"
+              docker logs fm-celery-worker --tail 50
+              exit 1
+            fi
+            echo "✅ Celery Worker is running"
 
-            # Health check
+            # Wait for services to be ready
+            echo "⏳ Waiting for services to be healthy..."
+            sleep 10
+
+            # Backend health check
             HEALTH_URL="https://eatfit24.ru/api/v1/health/"
             if curl -f -s "$HEALTH_URL" | grep -q '"status":"ok"'; then
               echo "✅ Backend health check passed"
@@ -166,3 +202,23 @@ jobs:
               docker logs fm-backend --tail 50
               exit 1
             fi
+
+            # Redis health check
+            if docker exec fm-redis redis-cli ping | grep -q PONG; then
+              echo "✅ Redis health check passed"
+            else
+              echo "❌ Redis health check failed!"
+              exit 1
+            fi
+
+            # Celery Worker health check
+            if docker exec fm-celery-worker celery -A config inspect ping 2>/dev/null | grep -q "pong"; then
+              echo "✅ Celery Worker health check passed"
+            else
+              echo "⚠️  Celery Worker health check failed (may still be starting)"
+              docker logs fm-celery-worker --tail 30
+            fi
+
+            echo ""
+            echo "=== Deployment Summary ==="
+            docker ps --filter "name=fm-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"

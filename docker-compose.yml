@@ -1,14 +1,13 @@
 # FoodMind - Unified Docker Compose for all services
-# Production-ready configuration for Backend, Bot, and Frontend
+# Production-ready configuration with Redis + Celery async processing
 #
 # IMPORTANT: Create a .env file in the project root with all required variables
-# All services read environment variables from the root .env file (no separate env files needed)
+# All services read environment variables from the root .env file
 
 version: "3.9"
 
 services:
   # PostgreSQL Database (shared by backend and bot)
-  # IMPORTANT: Set POSTGRES_PASSWORD in .env file (no default for security)
   db:
     image: postgres:15
     container_name: fm-db
@@ -19,12 +18,30 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - db-data:/var/lib/postgresql/data
-    networks:
-      - backend-net
     ports:
       - "127.0.0.1:5432:5432"
+    networks:
+      - backend-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-foodmind} -d ${POSTGRES_DB:-foodmind}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for Celery broker and result backend)
+  redis:
+    image: redis:7-alpine
+    container_name: fm-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - backend-net
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,7 +52,6 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fm-backend
-    # entrypoint.sh handles: DB wait, migrations, collectstatic, gunicorn start
     ports:
       - "8000:8000"
     volumes:
@@ -51,7 +67,7 @@ services:
       - POSTGRES_PORT=5432
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-False}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}${ALLOWED_HOSTS}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - BOT_ADMIN_ID=${BOT_ADMIN_ID}
@@ -67,14 +83,66 @@ services:
       - YOOKASSA_RETURN_URL=${YOOKASSA_RETURN_URL}
       - AI_PROXY_URL=${AI_PROXY_URL}
       - AI_PROXY_SECRET=${AI_PROXY_SECRET}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - AI_ASYNC_ENABLED=${AI_ASYNC_ENABLED:-True}
+      - REDIS_URL=redis://redis:6379/1
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - backend-net
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Celery Worker (async AI processing)
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fm-celery-worker
+    entrypoint: []
+    command: 
+      - /bin/sh
+      - -c
+      - |
+        python manage.py migrate --noinput
+        celery -A config worker -l info -Q ai,billing,default --concurrency=4
+    volumes:
+      - ./backend/logs:/app/logs
+      - ./backend/media:/app/media
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - POSTGRES_DB=${POSTGRES_DB:-foodmind}
+      - POSTGRES_USER=${POSTGRES_USER:-foodmind}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - SECRET_KEY=${SECRET_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - AI_PROXY_URL=${AI_PROXY_URL}
+      - AI_PROXY_SECRET=${AI_PROXY_SECRET}
+      - AI_ASYNC_ENABLED=${AI_ASYNC_ENABLED:-True}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -137,3 +205,4 @@ networks:
 
 volumes:
   db-data:
+  redis-data:
