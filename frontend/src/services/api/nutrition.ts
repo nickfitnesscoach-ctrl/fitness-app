@@ -90,7 +90,9 @@ export const getMealAnalysis = async (id: number | string): Promise<MealAnalysis
         const response = await fetchWithTimeout(`${URLS.meals}${id}/`, {
             headers: getHeaders(),
         });
-        if (!response.ok) throw new Error('Failed to fetch meal analysis');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch meal analysis (${response.status})`);
+        }
 
         const data = await response.json();
         const mainPhoto = data.photo_url || data.items?.find((item: FoodItem) => item.photo)?.photo || null;

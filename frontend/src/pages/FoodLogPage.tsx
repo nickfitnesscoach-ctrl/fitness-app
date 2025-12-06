@@ -204,9 +204,10 @@ const FoodLogPage: React.FC = () => {
                                     console.log(`[Polling] Fallback attempt ${attempt}: meal exists but 0 items`);
                                 }
                             } catch (fallbackErr) {
+                                const errMsg = (fallbackErr as Error)?.message || '';
                                 // If 404, meal was deleted - stop retrying
-                                if ((fallbackErr as Error)?.message?.includes('404')) {
-                                    console.warn(`[Polling] Meal ${mealId} not found (404), stopping fallback`);
+                                if (errMsg.includes('404') || errMsg.includes('not found')) {
+                                    console.warn(`[Polling] Meal ${mealId} not found (deleted), stopping fallback`);
                                     break;
                                 }
                                 console.warn(`[Polling] Fallback attempt ${attempt} failed:`, fallbackErr);
@@ -357,9 +358,10 @@ const FoodLogPage: React.FC = () => {
                                     console.log(`[Batch] Fallback attempt ${fallbackAttempt}: meal exists but 0 items yet`);
                                 }
                             } catch (fallbackErr) {
+                                const errMsg = (fallbackErr as Error)?.message || '';
                                 console.warn(`[Batch] Fallback attempt ${fallbackAttempt} failed:`, fallbackErr);
                                 // If meal not found (404), stop retrying - it was deleted
-                                if ((fallbackErr as any)?.message?.includes('404')) {
+                                if (errMsg.includes('404') || errMsg.includes('not found')) {
                                     console.warn(`[Batch] Meal ${result.meal_id} not found (deleted by backend), stopping retries`);
                                     break;
                                 }
