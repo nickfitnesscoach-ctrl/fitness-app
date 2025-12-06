@@ -2,23 +2,21 @@
  * Типы для Billing API
  */
 
-export type BillingPlanCode = 'FREE' | 'MONTHLY' | 'YEARLY';
+export type BillingPlanCode = 'FREE' | 'MONTHLY' | 'YEARLY' | 'PRO_MONTHLY' | 'PRO_YEARLY';
 
+/**
+ * GET /api/v1/billing/me/
+ * Основная информация о статусе подписки и лимитах
+ */
 export interface BillingMe {
     plan_code: BillingPlanCode;
     plan_name: string;
     expires_at: string | null;
     is_active: boolean;
     daily_photo_limit: number | null;   // null = безлимит
-    used_today: number;                // >= 0
-    remaining_today: number | null;    // null = не считается (безлимит)
-    auto_renew: boolean;
-    payment_method: {
-        type: string; // 'bank_card' etc
-        last4?: string;
-        brand?: string; // 'visa', 'mastercard'
-    } | null;
-    test_live_payment_available?: boolean;
+    used_today: number;                 // >= 0
+    remaining_today: number | null;     // null = безлимит
+    test_live_payment_available?: boolean;  // Только для админов в prod режиме
 }
 
 export interface BillingState {
@@ -27,14 +25,24 @@ export interface BillingState {
     error: string | null;
 }
 
+/**
+ * GET /api/v1/billing/plans/
+ * Публичный список тарифных планов
+ */
 export interface SubscriptionPlan {
     code: string;
     display_name: string;
     price: number;
     duration_days: number;
+    daily_photo_limit: number | null;  // null = безлимит
+    history_days: number;              // -1 = безлимит
+    ai_recognition: boolean;
+    advanced_stats: boolean;
+    priority_support: boolean;
+    // Frontend-only fields for UI
     features?: string[];
-    is_popular?: boolean; // Optional flag if backend supports it
-    old_price?: number;   // Optional for display
+    is_popular?: boolean;
+    old_price?: number;
 }
 
 export interface CreatePaymentRequest {
