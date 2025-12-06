@@ -18,6 +18,7 @@ export interface AnalysisResult {
     total_carbohydrates: number;
     meal_id?: number | string;
     photo_url?: string | null;
+    _neutralMessage?: string; // UI hotfix: нейтральное сообщение вместо "Еда не найдена"
 }
 
 export interface BatchResult {
@@ -86,92 +87,105 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
 
                         {result.status === 'success' && result.data ? (
                             <div className="p-6 space-y-4">
-                                {/* Summary */}
-                                <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl p-4 text-white">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <Flame size={20} />
-                                        <span className="font-bold text-lg">Итого</span>
+                                {/* Neutral message for empty items but successful processing */}
+                                {result.data._neutralMessage ? (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 text-center">
+                                        <Check className="text-blue-500 mx-auto mb-3" size={48} />
+                                        <h3 className="text-xl font-bold text-blue-600 mb-2">Анализ завершён</h3>
+                                        <p className="text-blue-500">
+                                            {result.data._neutralMessage}
+                                        </p>
                                     </div>
-                                    <div className="text-3xl font-bold mb-3">
-                                        {Math.round(result.data.total_calories)} ккал
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2 text-sm">
-                                        <div className="bg-white/20 rounded-lg p-2 text-center">
-                                            <div className="font-medium">Б</div>
-                                            <div className="text-lg font-bold">{Math.round(result.data.total_protein)}г</div>
-                                        </div>
-                                        <div className="bg-white/20 rounded-lg p-2 text-center">
-                                            <div className="font-medium">Ж</div>
-                                            <div className="text-lg font-bold">{Math.round(result.data.total_fat)}г</div>
-                                        </div>
-                                        <div className="bg-white/20 rounded-lg p-2 text-center">
-                                            <div className="font-medium">У</div>
-                                            <div className="text-lg font-bold">{Math.round(result.data.total_carbohydrates)}г</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Recognized Items */}
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-900 mb-3">
-                                        Распознанные блюда ({result.data.recognized_items.length})
-                                    </h3>
-                                    <div className="space-y-3">
-                                        {result.data.recognized_items.map((item, idx) => (
-                                            <div key={idx} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <div>
-                                                        <h4 className="font-bold text-gray-900 text-lg leading-tight">
-                                                            {item.name}
-                                                        </h4>
-                                                        <p className="text-gray-500 text-sm mt-1">
-                                                            {item.grams} г
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-xl">
-                                                        <Flame size={16} className="text-orange-500" />
-                                                        <span className="font-bold text-orange-700">
-                                                            {Math.round(item.calories)}
-                                                        </span>
-                                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Summary */}
+                                        <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl p-4 text-white">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Flame size={20} />
+                                                <span className="font-bold text-lg">Итого</span>
+                                            </div>
+                                            <div className="text-3xl font-bold mb-3">
+                                                {Math.round(result.data.total_calories)} ккал
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-2 text-sm">
+                                                <div className="bg-white/20 rounded-lg p-2 text-center">
+                                                    <div className="font-medium">Б</div>
+                                                    <div className="text-lg font-bold">{Math.round(result.data.total_protein)}г</div>
                                                 </div>
-
-                                                {/* Macros */}
-                                                <div className="grid grid-cols-3 gap-2">
-                                                    <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
-                                                        <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
-                                                            <Drumstick size={12} />
-                                                            <span>Белки</span>
-                                                        </div>
-                                                        <span className="font-bold text-gray-900">{item.protein}г</span>
-                                                    </div>
-                                                    <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
-                                                        <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
-                                                            <Droplets size={12} />
-                                                            <span>Жиры</span>
-                                                        </div>
-                                                        <span className="font-bold text-gray-900">{item.fat}г</span>
-                                                    </div>
-                                                    <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
-                                                        <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
-                                                            <Wheat size={12} />
-                                                            <span>Угл.</span>
-                                                        </div>
-                                                        <span className="font-bold text-gray-900">{item.carbohydrates}г</span>
-                                                    </div>
+                                                <div className="bg-white/20 rounded-lg p-2 text-center">
+                                                    <div className="font-medium">Ж</div>
+                                                    <div className="text-lg font-bold">{Math.round(result.data.total_fat)}г</div>
+                                                </div>
+                                                <div className="bg-white/20 rounded-lg p-2 text-center">
+                                                    <div className="font-medium">У</div>
+                                                    <div className="text-lg font-bold">{Math.round(result.data.total_carbohydrates)}г</div>
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                        </div>
+
+                                        {/* Recognized Items */}
+                                        <div>
+                                            <h3 className="text-lg font-bold text-gray-900 mb-3">
+                                                Распознанные блюда ({result.data.recognized_items.length})
+                                            </h3>
+                                            <div className="space-y-3">
+                                                {result.data.recognized_items.map((item, idx) => (
+                                                    <div key={idx} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <h4 className="font-bold text-gray-900 text-lg leading-tight">
+                                                                    {item.name}
+                                                                </h4>
+                                                                <p className="text-gray-500 text-sm mt-1">
+                                                                    {item.grams} г
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-xl">
+                                                                <Flame size={16} className="text-orange-500" />
+                                                                <span className="font-bold text-orange-700">
+                                                                    {Math.round(item.calories)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Macros */}
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
+                                                                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+                                                                    <Drumstick size={12} />
+                                                                    <span>Белки</span>
+                                                                </div>
+                                                                <span className="font-bold text-gray-900">{item.protein}г</span>
+                                                            </div>
+                                                            <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
+                                                                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+                                                                    <Droplets size={12} />
+                                                                    <span>Жиры</span>
+                                                                </div>
+                                                                <span className="font-bold text-gray-900">{item.fat}г</span>
+                                                            </div>
+                                                            <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
+                                                                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+                                                                    <Wheat size={12} />
+                                                                    <span>Угл.</span>
+                                                                </div>
+                                                                <span className="font-bold text-gray-900">{item.carbohydrates}г</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         ) : (
                             <div className="p-6">
-                                <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
-                                    <AlertCircle className="text-red-500 mx-auto mb-3" size={48} />
-                                    <h3 className="text-xl font-bold text-red-600 mb-2">Не распознано</h3>
-                                    <p className="text-red-500">
-                                        {result.error || 'Попробуйте ещё раз с другим фото'}
+                                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 text-center">
+                                    <AlertCircle className="text-gray-500 mx-auto mb-3" size={48} />
+                                    <h3 className="text-xl font-bold text-gray-600 mb-2">Ошибка загрузки</h3>
+                                    <p className="text-gray-500">
+                                        {result.error || 'Попробуйте ещё раз'}
                                     </p>
                                 </div>
                             </div>
@@ -224,7 +238,10 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                     alt="Preview"
                                     className="w-full h-full object-cover"
                                 />
-                                <div className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center ${result.status === 'success' ? 'bg-green-500' : 'bg-red-500'
+                                <div className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center ${
+                                    result.status === 'success' 
+                                        ? (result.data?._neutralMessage ? 'bg-blue-500' : 'bg-green-500')
+                                        : 'bg-gray-500'
                                     }`}>
                                     {result.status === 'success' ? (
                                         <Check size={14} className="text-white" />
@@ -237,35 +254,53 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                             {/* Content */}
                             <div className="flex-1 min-w-0 flex flex-col justify-center">
                                 {result.status === 'success' && result.data ? (
-                                    <>
-                                        <h3 className="font-bold text-gray-900 truncate">
-                                            {result.data.recognized_items.map(i => i.name).join(', ') || 'Еда'}
-                                        </h3>
-                                        <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
-                                            <span className="font-medium text-orange-600">
-                                                {Math.round(result.data.total_calories)} ккал
-                                            </span>
-                                            <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
-                                                Б {Math.round(result.data.total_protein)}
-                                            </span>
-                                            <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
-                                                Ж {Math.round(result.data.total_fat)}
-                                            </span>
-                                            <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
-                                                У {Math.round(result.data.total_carbohydrates)}
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={() => handleViewDetails(index)}
-                                            className="mt-2 text-sm text-blue-600 font-medium hover:underline text-left"
-                                        >
-                                            Подробнее
-                                        </button>
-                                    </>
+                                    result.data._neutralMessage ? (
+                                        // Neutral message for empty items but successful processing
+                                        <>
+                                            <h3 className="font-bold text-blue-600">Анализ завершён</h3>
+                                            <p className="text-sm text-blue-500 mt-1">
+                                                {result.data._neutralMessage}
+                                            </p>
+                                            <button
+                                                onClick={() => handleViewDetails(index)}
+                                                className="mt-2 text-sm text-blue-600 font-medium hover:underline text-left"
+                                            >
+                                                Подробнее
+                                            </button>
+                                        </>
+                                    ) : (
+                                        // Normal success with recognized items
+                                        <>
+                                            <h3 className="font-bold text-gray-900 truncate">
+                                                {result.data.recognized_items.map(i => i.name).join(', ') || 'Еда'}
+                                            </h3>
+                                            <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                                                <span className="font-medium text-orange-600">
+                                                    {Math.round(result.data.total_calories)} ккал
+                                                </span>
+                                                <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
+                                                    Б {Math.round(result.data.total_protein)}
+                                                </span>
+                                                <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
+                                                    Ж {Math.round(result.data.total_fat)}
+                                                </span>
+                                                <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
+                                                    У {Math.round(result.data.total_carbohydrates)}
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={() => handleViewDetails(index)}
+                                                className="mt-2 text-sm text-blue-600 font-medium hover:underline text-left"
+                                            >
+                                                Подробнее
+                                            </button>
+                                        </>
+                                    )
                                 ) : (
+                                    // Real error (network/server failure)
                                     <>
-                                        <h3 className="font-bold text-red-600">Не распознано</h3>
-                                        <p className="text-sm text-red-500 mt-1">
+                                        <h3 className="font-bold text-gray-600">Ошибка загрузки</h3>
+                                        <p className="text-sm text-gray-500 mt-1">
                                             {result.error || 'Попробуйте ещё раз'}
                                         </p>
                                     </>

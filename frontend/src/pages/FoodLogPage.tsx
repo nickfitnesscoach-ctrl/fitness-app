@@ -365,20 +365,28 @@ const FoodLogPage: React.FC = () => {
                         }
                     }
 
-                    if (result.recognized_items && result.recognized_items.length > 0) {
+                    // UI HOTFIX: Если запрос завершился без явной ошибки - считаем успехом
+                    // Бэкенд создаёт meal и items, поэтому показываем нейтральный статус
+                    // даже если recognized_items пустой (пользователь увидит приём пищи в дневнике)
+                    if (result.meal_id || (result.recognized_items && result.recognized_items.length > 0)) {
                         results.push({
                             file,
                             status: 'success',
-                            data: result
+                            data: {
+                                ...result,
+                                // Если items пустые, но есть meal_id - ставим нейтральное сообщение
+                                _neutralMessage: (!result.recognized_items || result.recognized_items.length === 0) 
+                                    ? 'Анализ завершён, проверьте дневник' 
+                                    : undefined
+                            }
                         });
                     } else {
-                        // AI returned success but no items - AND all fallback attempts failed
-                        // This means either: 1) backend deleted the meal (nothing recognized), or 2) genuine failure
-                        console.warn(`[Batch] Final result empty for meal_id=${result.meal_id}. Status: ERROR`);
+                        // Только если нет ни meal_id, ни items - это реальная ошибка
+                        console.warn(`[Batch] No meal_id and no items - treating as error`);
                         results.push({
                             file,
                             status: 'error',
-                            error: 'Еда не распознана. Попробуйте сфотографировать блюдо ближе или при лучшем освещении.'
+                            error: 'Ошибка обработки. Попробуйте ещё раз.'
                         });
                     }
                 } catch (err: any) {
