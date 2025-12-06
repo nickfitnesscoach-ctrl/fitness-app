@@ -24,6 +24,7 @@ from .serializers import (
     DailyStatsSerializer,
     CalculateGoalsSerializer,
 )
+from .services import get_daily_stats, get_weekly_stats, create_auto_goal
 
 logger = logging.getLogger(__name__)
 
@@ -95,49 +96,14 @@ class MealListCreateView(generics.ListCreateAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Get active daily goal (optional)
-            try:
-                daily_goal = DailyGoal.objects.get(user=request.user, is_active=True)
-            except DailyGoal.DoesNotExist:
-                daily_goal = None
-
-            # Get all meals for the date
-            meals = Meal.objects.filter(user=request.user, date=target_date).prefetch_related('items')
-
-            # Calculate total consumed
-            total_calories = sum(meal.total_calories for meal in meals)
-            total_protein = sum(meal.total_protein for meal in meals)
-            total_fat = sum(meal.total_fat for meal in meals)
-            total_carbs = sum(meal.total_carbohydrates for meal in meals)
-
-            # Calculate progress percentage (only if daily goal exists)
-            if daily_goal:
-                progress = {
-                    'calories': round((total_calories / daily_goal.calories * 100), 1) if daily_goal.calories else 0,
-                    'protein': round((float(total_protein) / float(daily_goal.protein) * 100), 1) if daily_goal.protein else 0,
-                    'fat': round((float(total_fat) / float(daily_goal.fat) * 100), 1) if daily_goal.fat else 0,
-                    'carbohydrates': round((float(total_carbs) / float(daily_goal.carbohydrates) * 100), 1) if daily_goal.carbohydrates else 0,
-                }
-            else:
-                # No goal set - progress is null
-                progress = {
-                    'calories': 0,
-                    'protein': 0,
-                    'fat': 0,
-                    'carbohydrates': 0,
-                }
+            stats = get_daily_stats(request.user, target_date)
 
             data = {
-                'date': target_date,
-                'daily_goal': DailyGoalSerializer(daily_goal).data if daily_goal else None,
-                'total_consumed': {
-                    'calories': float(total_calories),
-                    'protein': float(total_protein),
-                    'fat': float(total_fat),
-                    'carbohydrates': float(total_carbs),
-                },
-                'progress': progress,
-                'meals': MealSerializer(meals, many=True).data,
+                'date': stats['date'],
+                'daily_goal': DailyGoalSerializer(stats['daily_goal']).data if stats['daily_goal'] else None,
+                'total_consumed': stats['total_consumed'],
+                'progress': stats['progress'],
+                'meals': MealSerializer(stats['meals'], many=True).data,
             }
 
             return Response(data)
@@ -485,19 +451,7 @@ class SetAutoGoalView(views.APIView):
     )
     def post(self, request):
         try:
-            goals = DailyGoal.calculate_goals(request.user)
-
-            # Create new daily goal with calculated values
-            daily_goal = DailyGoal.objects.create(
-                user=request.user,
-                calories=goals['calories'],
-                protein=goals['protein'],
-                fat=goals['fat'],
-                carbohydrates=goals['carbohydrates'],
-                source='AUTO',
-                is_active=True
-            )
-
+            daily_goal = create_auto_goal(request.user)
             serializer = DailyGoalSerializer(daily_goal)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -584,56 +538,5 @@ class WeeklyStatsView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Calculate end date (start + 6 days = 7 days total)
-        end_date = start_date + timedelta(days=6)
-
-        # Get all meals for the week
-        meals = Meal.objects.filter(
-            user=request.user,
-            date__gte=start_date,
-            date__lte=end_date
-        ).prefetch_related('items')
-
-        # Collect daily data
-        daily_data = {}
-        for i in range(7):
-            current_date = start_date + timedelta(days=i)
-            daily_data[current_date.isoformat()] = {
-                'date': current_date.isoformat(),
-                'calories': 0,
-                'protein': 0,
-                'fat': 0,
-                'carbs': 0,
-            }
-
-        # Sum up nutrition for each day
-        for meal in meals:
-            date_key = meal.date.isoformat()
-            if date_key in daily_data:
-                for item in meal.items.all():
-                    daily_data[date_key]['calories'] += item.calories
-                    daily_data[date_key]['protein'] += item.protein
-                    daily_data[date_key]['fat'] += item.fat
-                    daily_data[date_key]['carbs'] += item.carbohydrates
-
-        # Calculate averages
-        total_calories = sum(day['calories'] for day in daily_data.values())
-        total_protein = sum(day['protein'] for day in daily_data.values())
-        total_fat = sum(day['fat'] for day in daily_data.values())
-        total_carbs = sum(day['carbs'] for day in daily_data.values())
-
-        days_count = 7
-
-        result = {
-            'start_date': start_date.isoformat(),
-            'end_date': end_date.isoformat(),
-            'daily_data': list(daily_data.values()),
-            'averages': {
-                'calories': round(total_calories / days_count, 1),
-                'protein': round(total_protein / days_count, 1),
-                'fat': round(total_fat / days_count, 1),
-                'carbs': round(total_carbs / days_count, 1),
-            }
-        }
-
+        result = get_weekly_stats(request.user, start_date)
         return Response(result)

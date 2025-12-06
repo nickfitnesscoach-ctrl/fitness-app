@@ -41,7 +41,7 @@ class Command(BaseCommand):
             end_date__gte=today,
             yookassa_payment_method_id__isnull=False,
         ).exclude(
-            plan__name='FREE'
+            plan__code='FREE'
         )
 
         total_count = subscriptions_to_renew.count()
@@ -85,7 +85,7 @@ class Command(BaseCommand):
                     metadata={
                         'subscription_id': str(subscription.id),
                         'user_id': str(subscription.user.id),
-                        'plan_name': plan.name,
+                        'plan_code': plan.code,
                         'recurring': True,
                     }
                 )

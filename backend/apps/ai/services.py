@@ -4,11 +4,17 @@ AI Recognition Service using OpenRouter.
 
 import json
 import logging
-from typing import Dict, Optional
+import time
+from datetime import date
+from typing import Dict, Optional, Any
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from openai import OpenAI, AuthenticationError
+
+from apps.nutrition.models import Meal, FoodItem
+from apps.billing.usage import DailyUsage
+from apps.ai_proxy.service import AIProxyRecognitionService
 
 logger = logging.getLogger(__name__)
 
@@ -311,3 +317,86 @@ Focus on accuracy and realistic portion sizes.
                 return False
 
         return True
+
+
+def recognize_and_save_meal(
+    user,
+    image_file,
+    image_data_url: str,
+    meal_type: str,
+    meal_date: date,
+    description: str = "",
+    comment: str = ""
+) -> Dict[str, Any]:
+    """
+    Recognize food from image and create Meal with FoodItems.
+    
+    Args:
+        user: Django User instance
+        image_file: Uploaded image file (ContentFile or UploadedFile)
+        image_data_url: Base64 data URL of the image
+        meal_type: Type of meal (BREAKFAST, LUNCH, DINNER, SNACK)
+        meal_date: Date of the meal
+        description: Optional user description
+        comment: Optional user comment
+        
+    Returns:
+        Dict with meal_id, recognized_items, recognition_time
+        
+    Raises:
+        AIProxyTimeoutError: If AI service times out
+        Exception: If AI service fails
+    """
+    # 1. Create Meal and save photo
+    if image_file:
+        image_file.seek(0)
+    
+    meal = Meal.objects.create(
+        user=user,
+        meal_type=meal_type,
+        date=meal_date,
+        photo=image_file
+    )
+    logger.info(f"Created Meal id={meal.id} with photo for user {user.username}")
+
+    # 2. Initialize AI Proxy service and recognize
+    ai_service = AIProxyRecognitionService()
+    
+    recognition_start = time.time()
+    logger.info(f"Starting AI Proxy recognition for user {user.username}")
+    
+    result = ai_service.recognize_food(
+        image_data_url,
+        user_description=description,
+        user_comment=comment
+    )
+    recognition_elapsed = time.time() - recognition_start
+
+    logger.info(
+        f"AI recognition successful for user {user.username}. "
+        f"Found {len(result.get('recognized_items', []))} items, "
+        f"recognition_time={recognition_elapsed:.2f}s"
+    )
+
+    # 3. Save recognized items to Meal
+    recognized_items = result.get('recognized_items', [])
+    for item in recognized_items:
+        FoodItem.objects.create(
+            meal=meal,
+            name=item.get('name', 'Unknown'),
+            grams=item.get('estimated_weight', 100),
+            calories=item.get('calories', 0),
+            protein=item.get('protein', 0),
+            fat=item.get('fat', 0),
+            carbohydrates=item.get('carbohydrates', 0)
+        )
+
+    # 4. Increment photo usage counter
+    DailyUsage.objects.increment_photo_requests(user)
+    logger.info(f"Incremented photo counter for user {user.username}")
+
+    return {
+        'meal': meal,
+        'recognized_items': recognized_items,
+        'recognition_time': recognition_elapsed,
+    }

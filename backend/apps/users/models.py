@@ -211,54 +211,9 @@ class Profile(models.Model):
         help_text='Полный JSON с рекомендациями от AI: анализ, цели, изменения, тренировки, питание'
     )
 
-    # Рекомендованные КБЖУ диапазоны от AI
-    recommended_calories_min = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Калории минимум (ккал/день)'
-    )
-
-    recommended_calories_max = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Калории максимум (ккал/день)'
-    )
-
-    recommended_protein_min = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Белок минимум (г)'
-    )
-
-    recommended_protein_max = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Белок максимум (г)'
-    )
-
-    recommended_fat_min = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Жиры минимум (г)'
-    )
-
-    recommended_fat_max = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Жиры максимум (г)'
-    )
-
-    recommended_carbs_min = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Углеводы минимум (г)'
-    )
-
-    recommended_carbs_max = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name='Углеводы максимум (г)'
-    )
+    # NOTE: КБЖУ рекомендации хранятся в:
+    # - TelegramUser.recommended_* (результаты AI-теста)
+    # - DailyGoal (активные цели пользователя)
 
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -274,6 +229,10 @@ class Profile(models.Model):
         verbose_name = 'Профиль пользователя'
         verbose_name_plural = 'Профили пользователей'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['telegram_id']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
         return f"Profile of {self.user.username}"

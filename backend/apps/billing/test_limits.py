@@ -111,7 +111,7 @@ class GetEffectivePlanTestCase(TestCase):
     def test_returns_free_when_no_subscription(self):
         """Тест возврата FREE плана при отсутствии подписки."""
         plan = get_effective_plan_for_user(self.user)
-        self.assertEqual(plan.name, 'FREE')
+        self.assertEqual(plan.code, 'FREE')
 
     def test_returns_active_subscription_plan(self):
         """Тест возврата плана активной подписки."""
@@ -124,7 +124,7 @@ class GetEffectivePlanTestCase(TestCase):
         )
 
         plan = get_effective_plan_for_user(self.user)
-        self.assertEqual(plan.name, 'MONTHLY')
+        self.assertEqual(plan.code, 'MONTHLY')
 
     def test_returns_free_when_subscription_expired(self):
         """Тест возврата FREE плана при истекшей подписке."""
@@ -137,7 +137,7 @@ class GetEffectivePlanTestCase(TestCase):
         )
 
         plan = get_effective_plan_for_user(self.user)
-        self.assertEqual(plan.name, 'FREE')
+        self.assertEqual(plan.code, 'FREE')
 
 
 class PhotoLimitEnforcementTestCase(TestCase):

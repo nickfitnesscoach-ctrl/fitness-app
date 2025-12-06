@@ -151,9 +151,9 @@ def subscribe(request):
             current_subscription = Subscription.objects.select_for_update().get(user=request.user)
 
             # Проверяем, что у пользователя нет активного платного плана
-            if current_subscription.plan.name in ['MONTHLY', 'YEARLY'] and current_subscription.is_active:
+            if current_subscription.plan.code in ['MONTHLY', 'YEARLY', 'PRO_MONTHLY', 'PRO_YEARLY'] and current_subscription.is_active:
                 # Разрешаем докупить время к текущему плану
-                if current_subscription.plan.name != plan_name:
+                if current_subscription.plan.code != plan_name:
                     return Response(
                         {
                             'error': {
@@ -250,7 +250,7 @@ def toggle_auto_renew(request):
         subscription = request.user.subscription
 
         # Проверяем, что это не бесплатный план
-        if subscription.plan.name == 'FREE':
+        if subscription.plan.code == 'FREE':
             return Response(
                 {
                     'error': {
@@ -308,7 +308,7 @@ def get_payment_history(request):
     GET /api/v1/billing/payments
     Получение истории платежей пользователя.
     """
-    payments = Payment.objects.filter(user=request.user).order_by('-created_at')
+    payments = Payment.objects.filter(user=request.user).select_related('plan').order_by('-created_at')
 
     # Пагинация
     paginator = PageNumberPagination()
@@ -775,7 +775,7 @@ def get_subscription_status(request):
     try:
         subscription = request.user.subscription
         is_active = subscription.is_active and not subscription.is_expired()
-        expires_at = subscription.end_date.isoformat() if subscription.plan.name != 'FREE' else None
+        expires_at = subscription.end_date.isoformat() if subscription.plan.code != 'FREE' else None
     except Subscription.DoesNotExist:
         is_active = True  # FREE план всегда активен
         expires_at = None
@@ -803,7 +803,7 @@ def get_subscription_status(request):
         )
 
     response_data = {
-        'plan_code': plan.name,
+        'plan_code': plan.code,
         'plan_name': plan.display_name,
         'expires_at': expires_at,
         'is_active': is_active,
@@ -863,7 +863,7 @@ def get_subscription_details(request):
         })
 
     # Определяем plan (free или pro)
-    plan_code = subscription.plan.name
+    plan_code = subscription.plan.code
     if plan_code == 'FREE':
         plan = 'free'
         plan_display = 'Free'
@@ -872,7 +872,7 @@ def get_subscription_details(request):
         plan_display = 'PRO'
 
     # Определяем expires_at
-    if subscription.plan.name == 'FREE':
+    if subscription.plan.code == 'FREE':
         expires_at = None
     else:
         expires_at = subscription.end_date.date() if subscription.end_date else None
@@ -931,7 +931,7 @@ def set_auto_renew(request):
         subscription = request.user.subscription
 
         # Проверяем, что это не бесплатный план
-        if subscription.plan.name == 'FREE':
+        if subscription.plan.code == 'FREE':
             return Response(
                 {
                     'error': {

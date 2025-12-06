@@ -136,3 +136,40 @@ class DailyGoalTestCase(TestCase):
         response = self.client.put(self.goals_url, data, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_only_one_active_goal_per_user(self):
+        """Test that creating a new active goal deactivates old ones"""
+        # Create first active goal
+        goal1 = DailyGoal.objects.create(
+            user=self.user,
+            calories=1800,
+            protein=120,
+            fat=60,
+            carbohydrates=200,
+            source='AUTO',
+            is_active=True
+        )
+        self.assertTrue(goal1.is_active)
+
+        # Create second active goal
+        goal2 = DailyGoal.objects.create(
+            user=self.user,
+            calories=2000,
+            protein=150,
+            fat=70,
+            carbohydrates=250,
+            source='MANUAL',
+            is_active=True
+        )
+
+        # Refresh goal1 from database
+        goal1.refresh_from_db()
+
+        # goal1 should be deactivated, goal2 should be active
+        self.assertFalse(goal1.is_active)
+        self.assertTrue(goal2.is_active)
+
+        # Only one active goal should exist
+        active_goals = DailyGoal.objects.filter(user=self.user, is_active=True)
+        self.assertEqual(active_goals.count(), 1)
+        self.assertEqual(active_goals.first().id, goal2.id)

@@ -1,20 +1,15 @@
 """
-Webhook handlers для обработки уведомлений от YooKassa.
-
-DEPRECATED: This file is kept for backward compatibility.
-Use billing.webhooks module instead.
+YooKassa webhook handlers module.
 """
 
-# Re-export from new module for backward compatibility
-from .webhooks import (
-    yookassa_webhook,
+from .views import yookassa_webhook
+from .handlers import (
     handle_payment_waiting_for_capture,
     handle_payment_succeeded,
     handle_payment_canceled,
     handle_refund_succeeded,
-    is_ip_allowed,
-    YOOKASSA_IP_RANGES,
 )
+from .utils import is_ip_allowed, get_client_ip, YOOKASSA_IP_RANGES
 
 __all__ = [
     'yookassa_webhook',
@@ -23,5 +18,6 @@ __all__ = [
     'handle_payment_canceled',
     'handle_refund_succeeded',
     'is_ip_allowed',
+    'get_client_ip',
     'YOOKASSA_IP_RANGES',
 ]

@@ -59,6 +59,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "apps.core",
     "apps.users",
     "apps.nutrition",
     "apps.billing",
@@ -566,6 +567,7 @@ BILLING_PLUS_DURATION_DAYS = 30
 # ============================================================
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "EatFit24_bot")
 
 # Дополнительный админ из окружения (совместимость с ботом)
 BOT_ADMIN_ID = os.environ.get("BOT_ADMIN_ID")
@@ -588,3 +590,26 @@ FREE_SUBSCRIPTION_END_DATE = datetime(2099, 12, 31, 23, 59, 59, tzinfo=dt_timezo
 # File upload limits
 MAX_UPLOAD_SIZE_MB = 10  # Maximum file size for photo uploads
 MAX_IMAGE_DIMENSION = 4096  # Maximum width/height for images (4K)
+
+
+# ============================================================
+# Celery Configuration
+# ============================================================
+
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 300  # 5 minutes max per task
+
+# Task routes - separate queues for different task types
+CELERY_TASK_ROUTES = {
+    "apps.ai.tasks.*": {"queue": "ai"},
+    "apps.billing.tasks.*": {"queue": "billing"},
+}
+
+# Enable async AI processing (set to False to use sync mode)
+AI_ASYNC_ENABLED = os.environ.get("AI_ASYNC_ENABLED", "False") == "True"

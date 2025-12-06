@@ -240,15 +240,16 @@ class DailyGoal(models.Model):
 
     def save(self, *args, **kwargs):
         """Ensure only one active goal per user."""
-        if self.is_active:
-            from django.db import transaction
-            # Use select_for_update to prevent race conditions
-            with transaction.atomic():
+        from django.db import transaction
+        
+        with transaction.atomic():
+            if self.is_active:
+                # Use select_for_update to prevent race conditions
                 DailyGoal.objects.select_for_update().filter(
                     user=self.user,
                     is_active=True
                 ).exclude(pk=self.pk).update(is_active=False)
-        super().save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
     @classmethod
     def calculate_goals(cls, user):

@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
 import logging
-import time
 from functools import wraps
 from typing import Dict, Optional
-from urllib.parse import parse_qsl
 
 from django.conf import settings
 from django.http import HttpResponseForbidden
 from django.utils.deprecation import MiddlewareMixin
+
+from .services.webapp_auth import get_webapp_auth_service
 
 try:
     from rest_framework.permissions import BasePermission
@@ -32,101 +29,20 @@ def _forbidden_response():
     return HttpResponseForbidden("Нет доступа")
 
 
-def validate_init_data(
-    raw_init_data: str,
-    bot_token: str,
-    *,
-    max_age_seconds: int = 86400,
-) -> Optional[Dict[str, str]]:
-    """
-    Validate Telegram WebApp initData signature according to official docs.
-
-    Args:
-        raw_init_data: Raw query-string formatted initData from Telegram.WebApp.initData
-        bot_token: Bot token stored in settings.TELEGRAM_BOT_TOKEN
-
-    Returns:
-        Parsed initData dict without the ``hash`` key if signature is valid, else ``None``.
-    """
-    
-    logger.debug("[validate_init_data] Starting validation")
-    logger.debug("[validate_init_data] raw_init_data length: %d", len(raw_init_data) if raw_init_data else 0)
-    logger.debug("[validate_init_data] bot_token present: %s", bool(bot_token))
-
-    if not raw_init_data or not bot_token:
-        logger.warning("[validate_init_data] Missing raw_init_data or bot_token")
-        return None
-
-    parsed_data = dict(parse_qsl(raw_init_data, keep_blank_values=True))
-    logger.debug("[validate_init_data] Parsed data keys: %s", list(parsed_data.keys()))
-
-    received_hash = parsed_data.pop("hash", None)
-    if not received_hash:
-        logger.warning("[validate_init_data] No hash in initData")
-        return None
-    
-    logger.debug("[validate_init_data] Received hash: %s...", received_hash[:10])
-
-    if max_age_seconds:
-        try:
-            auth_date = int(parsed_data.get("auth_date", "0"))
-            current_time = time.time()
-            age = current_time - auth_date
-            logger.debug("[validate_init_data] auth_date: %d, age: %.2f seconds", auth_date, age)
-            
-            if auth_date and age > max_age_seconds:
-                logger.warning("[validate_init_data] initData expired (age: %.2f seconds, max: %d)", age, max_age_seconds)
-                return None
-        except (TypeError, ValueError) as e:
-            logger.error("[validate_init_data] Invalid auth_date: %s", e)
-            return None
-
-    data_check_string = "\n".join(
-        f"{key}={value}" for key, value in sorted(parsed_data.items(), key=lambda item: item[0])
-    )
-    logger.debug("[validate_init_data] data_check_string length: %d", len(data_check_string))
-
-    # Generate secret_key using HMAC (correct formula per Telegram docs)
-    secret_key = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
-    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    
-    logger.debug("[validate_init_data] Calculated hash: %s...", calculated_hash[:10])
-
-    if not hmac.compare_digest(calculated_hash, received_hash):
-        logger.warning("[validate_init_data] Hash mismatch")
-        logger.debug("[validate_init_data] Expected: %s", calculated_hash)
-        logger.debug("[validate_init_data] Received: %s", received_hash)
-        return None
-
-    logger.info("[validate_init_data] Validation successful")
-    return parsed_data
-
-
-def get_user_id_from_init_data(data: Dict[str, str]) -> Optional[int]:
-    """Extract Telegram user id from parsed initData dict."""
-
-    user_json = data.get("user")
-    if not user_json:
-        return None
-
-    try:
-        user_data = json.loads(user_json)
-        return int(user_data.get("id"))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return None
-
-
 def _get_raw_init_data(request) -> Optional[str]:
     return request.META.get("HTTP_X_TG_INIT_DATA") or request.headers.get("X-TG-INIT-DATA")
 
 
 def _is_telegram_admin(request) -> bool:
     raw_init_data = _get_raw_init_data(request)
-    parsed_data = validate_init_data(raw_init_data, settings.TELEGRAM_BOT_TOKEN)
+    
+    # Use unified auth service
+    auth_service = get_webapp_auth_service()
+    parsed_data = auth_service.validate_init_data(raw_init_data)
     if not parsed_data:
         return False
 
-    user_id = get_user_id_from_init_data(parsed_data)
+    user_id = auth_service.get_user_id_from_init_data(parsed_data)
     raw_admins = getattr(settings, "TELEGRAM_ADMINS", set()) or set()
     if isinstance(raw_admins, (list, tuple, set)):
         admins = {int(admin) for admin in raw_admins}

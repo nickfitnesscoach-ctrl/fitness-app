@@ -3,7 +3,8 @@ URL конфигурация для billing app.
 """
 
 from django.urls import path
-from . import views, webhooks
+from . import views
+from .webhooks import yookassa_webhook
 
 app_name = 'billing'
 
@@ -29,5 +30,5 @@ urlpatterns = [
     path('payments/', views.get_payments_history, name='payments-history'),
 
     # Webhooks
-    path('webhooks/yookassa', webhooks.yookassa_webhook, name='yookassa-webhook'),
+    path('webhooks/yookassa', yookassa_webhook, name='yookassa-webhook'),
 ]

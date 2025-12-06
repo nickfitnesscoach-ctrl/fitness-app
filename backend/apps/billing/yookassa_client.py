@@ -105,7 +105,7 @@ class YooKassaClient:
             },
             "metadata": {
                 "user_id": str(user.id),
-                "plan_code": plan.name,
+                "plan_code": plan.code,
                 "username": user.username
             }
         }

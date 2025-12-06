@@ -49,7 +49,10 @@ raw_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
 CORS_ALLOWED_ORIGINS = [o.strip() for o in raw_origins if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
-# Production logging
+# Structured logging configuration
+# Enable JSON logging via environment variable (default: True for production)
+USE_JSON_LOGGING = os.environ.get("USE_JSON_LOGGING", "True") == "True"
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -57,6 +60,9 @@ LOGGING = {
         "verbose": {
             "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
             "style": "{",
+        },
+        "json": {
+            "()": "apps.common.logging.JSONFormatter",
         },
     },
     "handlers": {
@@ -66,12 +72,12 @@ LOGGING = {
             "filename": BASE_DIR / "logs" / "django.log",  # noqa: F405
             "maxBytes": 1024 * 1024 * 10,  # 10 MB
             "backupCount": 10,
-            "formatter": "verbose",
+            "formatter": "json" if USE_JSON_LOGGING else "verbose",
         },
         "console": {
             "level": "INFO",
             "class": "logging.StreamHandler",
-            "formatter": "verbose",
+            "formatter": "json" if USE_JSON_LOGGING else "verbose",
         },
     },
     "root": {
@@ -84,9 +90,19 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "apps.billing": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
         "apps.telegram": {
             "handlers": ["console", "file"],
-            "level": "DEBUG",  # Detailed logging for Telegram auth debugging
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "apps.ai": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
             "propagate": False,
         },
     },

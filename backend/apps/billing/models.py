@@ -160,6 +160,9 @@ class Subscription(models.Model):
         verbose_name = 'Подписка'
         verbose_name_plural = 'Подписки'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['is_active', 'end_date']),
+        ]
 
     def __str__(self):
         return f"{self.user.email} - {self.plan.display_name}"
@@ -167,7 +170,7 @@ class Subscription(models.Model):
     @property
     def days_remaining(self):
         """Вычисляет оставшиеся дни подписки."""
-        if self.plan.name == 'FREE':
+        if self.plan.code == 'FREE':
             return None
 
         if not self.is_active:
@@ -182,7 +185,7 @@ class Subscription(models.Model):
 
     def is_expired(self):
         """Проверяет, истекла ли подписка."""
-        if self.plan.name == 'FREE':
+        if self.plan.code == 'FREE':
             return False
         return timezone.now() >= self.end_date
 
@@ -298,6 +301,12 @@ class Payment(models.Model):
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Обновлён', auto_now=True)
     paid_at = models.DateTimeField('Дата оплаты', null=True, blank=True)
+    webhook_processed_at = models.DateTimeField(
+        'Webhook обработан',
+        null=True,
+        blank=True,
+        help_text='Время обработки webhook (для idempotency)'
+    )
 
     class Meta:
         db_table = 'payments'
@@ -396,6 +405,68 @@ class Refund(models.Model):
 
     def __str__(self):
         return f"Возврат {self.amount}₽ для платежа {self.payment.id}"
+
+
+class WebhookLog(models.Model):
+    """
+    Лог обработки webhook уведомлений.
+    Используется для отладки и retry логики.
+    """
+    STATUS_CHOICES = [
+        ('RECEIVED', 'Получен'),
+        ('PROCESSING', 'Обработка'),
+        ('SUCCESS', 'Успешно'),
+        ('FAILED', 'Ошибка'),
+        ('DUPLICATE', 'Дубликат'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Event info
+    event_type = models.CharField('Тип события', max_length=100)
+    event_id = models.CharField(
+        'ID события YooKassa',
+        max_length=255,
+        db_index=True
+    )
+    payment_id = models.CharField(
+        'ID платежа YooKassa',
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True
+    )
+    
+    # Processing info
+    status = models.CharField(
+        'Статус обработки',
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='RECEIVED'
+    )
+    attempts = models.PositiveIntegerField('Попытки обработки', default=0)
+    error_message = models.TextField('Сообщение об ошибке', blank=True)
+    
+    # Request data
+    raw_payload = models.JSONField('Сырые данные webhook', default=dict)
+    client_ip = models.GenericIPAddressField('IP клиента', null=True, blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField('Получен', auto_now_add=True)
+    processed_at = models.DateTimeField('Обработан', null=True, blank=True)
+
+    class Meta:
+        db_table = 'webhook_logs'
+        verbose_name = 'Лог webhook'
+        verbose_name_plural = 'Логи webhook'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['status']),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} ({self.status}) - {self.created_at}"
 
 
 # Signals

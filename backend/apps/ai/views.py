@@ -18,12 +18,11 @@ from .serializers import (
     AIRecognitionResponseSerializer,
     RecognizedItemSerializer
 )
-from apps.ai_proxy.service import AIProxyRecognitionService
+from .services import recognize_and_save_meal
 from apps.ai_proxy.exceptions import AIProxyError, AIProxyValidationError, AIProxyTimeoutError
 from .throttles import AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle
 from apps.billing.services import get_effective_plan_for_user
 from apps.billing.usage import DailyUsage
-from apps.nutrition.models import Meal, FoodItem
 from django.core.files.base import ContentFile
 
 logger = logging.getLogger(__name__)
@@ -202,69 +201,27 @@ class AIRecognitionView(APIView):
             )
 
         try:
-            # 1. Create Meal and save photo
-            if image_file:
-                image_file.seek(0)
-            
-            meal = Meal.objects.create(
+            # Call service to create meal, recognize and save food items
+            service_result = recognize_and_save_meal(
                 user=request.user,
+                image_file=image_file,
+                image_data_url=image_data_url,
                 meal_type=meal_type,
-                date=meal_date,
-                photo=image_file
-            )
-            logger.info(f"Created Meal id={meal.id} with photo for user {request.user.username}")
-
-            # 2. Initialize AI Proxy service
-            ai_service = AIProxyRecognitionService()
-
-            # 3. Recognize food items
-            recognition_start = time.time()
-            logger.info(f"Starting AI Proxy recognition for user {request.user.username}")
-            
-            # Use the data URL for AI service (as it expects it)
-            # Alternatively, we could read from meal.photo if service supported it
-            result = ai_service.recognize_food(
-                image_data_url,
-                user_description=description,
-                user_comment=comment
-            )
-            recognition_elapsed = time.time() - recognition_start
-
-            logger.info(
-                f"AI recognition successful for user {request.user.username}. "
-                f"Found {len(result.get('recognized_items', []))} items, "
-                f"recognition_time={recognition_elapsed:.2f}s"
+                meal_date=meal_date,
+                description=description,
+                comment=comment
             )
 
-            # 4. Save recognized items to Meal
-            recognized_items = result.get('recognized_items', [])
-            for item in recognized_items:
-                FoodItem.objects.create(
-                    meal=meal,
-                    name=item.get('name', 'Unknown'),
-                    grams=item.get('estimated_weight', 100),
-                    calories=item.get('calories', 0),
-                    protein=item.get('protein', 0),
-                    fat=item.get('fat', 0),
-                    carbohydrates=item.get('carbohydrates', 0)
-                )
+            meal = service_result['meal']
+            recognized_items = service_result['recognized_items']
 
-            # Increment photo usage counter after successful recognition
-            DailyUsage.objects.increment_photo_requests(request.user)
-            logger.info(
-                f"Incremented photo counter for user {request.user.username}. "
-                f"Total today: {usage.photo_ai_requests + 1}"
-            )
+            # Build response
+            result = {
+                'meal_id': meal.id,
+                'recognized_items': recognized_items,
+                'photo_url': request.build_absolute_uri(meal.photo.url) if meal.photo else None
+            }
 
-            # Add meal_id and photo_url to result for serializer
-            result['meal_id'] = meal.id
-            # Get absolute URL for photo if possible, or relative
-            if meal.photo:
-                result['photo_url'] = request.build_absolute_uri(meal.photo.url)
-            else:
-                result['photo_url'] = None
-
-            # Use serializer to add summary/totals
             response_serializer = AIRecognitionResponseSerializer(result)
 
             view_total = time.time() - view_start_time

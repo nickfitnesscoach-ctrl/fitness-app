@@ -460,6 +460,9 @@ def activate_or_extend_subscription(user, plan_code: str, duration_days: int):
             f"Plan: {plan_code}, Expires: {subscription.end_date}"
         )
 
+        # Invalidate plan cache after subscription change
+        invalidate_user_plan_cache(user.id)
+
         return subscription
 
 
@@ -470,6 +473,10 @@ def get_effective_plan_for_user(user):
     Логика:
     - Если есть активная подписка с неистекшим expires_at → возвращаем её план
     - Иначе возвращаем бесплатный план (FREE)
+    
+    Кэширование:
+    - Результат кэшируется на 5 минут для оптимизации
+    - Кэш инвалидируется при изменении подписки через invalidate_user_plan_cache()
 
     Args:
         user: Объект пользователя
@@ -477,34 +484,57 @@ def get_effective_plan_for_user(user):
     Returns:
         SubscriptionPlan: Действующий план пользователя
     """
+    from django.core.cache import cache
     from .models import SubscriptionPlan, Subscription
-    from django.utils import timezone
+
+    # Try cache first
+    cache_key = f"user_plan:{user.id}"
+    cached_plan_id = cache.get(cache_key)
+    
+    if cached_plan_id is not None:
+        try:
+            return SubscriptionPlan.objects.get(id=cached_plan_id)
+        except SubscriptionPlan.DoesNotExist:
+            cache.delete(cache_key)
+
+    # Cache miss - fetch from DB
+    plan = _get_effective_plan_uncached(user)
+    
+    # Cache for 5 minutes
+    cache.set(cache_key, plan.id, timeout=300)
+    
+    return plan
+
+
+def _get_effective_plan_uncached(user):
+    """
+    Internal function to get effective plan without caching.
+    """
+    from .models import SubscriptionPlan, Subscription
 
     try:
-        # Пытаемся получить подписку пользователя
         subscription = Subscription.objects.select_related('plan').get(user=user)
-
-        # Проверяем, активна ли подписка
         if subscription.is_active and not subscription.is_expired():
             return subscription.plan
-
     except Subscription.DoesNotExist:
         pass
 
-    # Если нет активной подписки или подписка истекла - возвращаем FREE
+    # Return FREE plan
+    return _get_free_plan()
+
+
+def _get_free_plan():
+    """Get or create FREE plan."""
+    from .models import SubscriptionPlan
+    
     try:
-        # Пытаемся найти по code
-        free_plan = SubscriptionPlan.objects.get(code='FREE', is_active=True)
-        return free_plan
+        return SubscriptionPlan.objects.get(code='FREE', is_active=True)
     except SubscriptionPlan.DoesNotExist:
-        # Fallback: пытаемся найти по name
         try:
-            free_plan = SubscriptionPlan.objects.get(name='FREE', is_active=True)
-            return free_plan
+            return SubscriptionPlan.objects.get(name='FREE', is_active=True)
         except SubscriptionPlan.DoesNotExist:
-            # В крайнем случае, если FREE план не найден, создаем его на лету
             logger.warning("FREE plan not found, creating default")
-            free_plan = SubscriptionPlan.objects.create(
+            return SubscriptionPlan.objects.create(
                 code='FREE',
                 name='FREE',
                 display_name='Бесплатный',
@@ -513,4 +543,17 @@ def get_effective_plan_for_user(user):
                 daily_photo_limit=3,
                 is_active=True
             )
-            return free_plan
+
+
+def invalidate_user_plan_cache(user_id: int):
+    """
+    Invalidate cached plan for a user.
+    Call this when subscription is changed.
+    
+    Args:
+        user_id: User ID to invalidate cache for
+    """
+    from django.core.cache import cache
+    cache_key = f"user_plan:{user_id}"
+    cache.delete(cache_key)
+    logger.debug(f"Invalidated plan cache for user {user_id}")

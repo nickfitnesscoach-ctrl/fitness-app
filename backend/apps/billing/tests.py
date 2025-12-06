@@ -43,7 +43,7 @@ class SubscriptionPlanTestCase(TestCase):
     def test_plan_creation(self):
         """Тест создания планов."""
         self.assertEqual(SubscriptionPlan.objects.count(), 2)
-        self.assertEqual(self.free_plan.name, 'FREE')
+        self.assertEqual(self.free_plan.code, 'FREE')
         self.assertEqual(self.monthly_plan.price, Decimal('199.00'))
 
 
@@ -822,4 +822,297 @@ class PaymentsHistoryTestCase(TestCase):
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         self.assertEqual(len(response.data['results']), 1)
         self.assertEqual(response.data['results'][0]['description'], 'My payment')
+
+
+# ============================================================
+# Phase 3.5: Integration tests for payment flow
+# ============================================================
+
+class WebhookIdempotencyTestCase(TestCase):
+    """Тесты для idempotency webhook обработки."""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        self.client = APIClient()
+
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+
+        self.free_plan = SubscriptionPlan.objects.create(
+            name='FREE',
+            code='FREE',
+            display_name='Бесплатный',
+            price=Decimal('0.00'),
+            duration_days=0,
+            is_active=True
+        )
+
+        self.monthly_plan = SubscriptionPlan.objects.create(
+            name='MONTHLY',
+            code='MONTHLY',
+            display_name='Pro Месячный',
+            price=Decimal('299.00'),
+            duration_days=30,
+            is_active=True
+        )
+
+        self.subscription = Subscription.objects.create(
+            user=self.user,
+            plan=self.free_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=365),
+            is_active=True
+        )
+
+        self.payment = Payment.objects.create(
+            user=self.user,
+            subscription=self.subscription,
+            plan=self.monthly_plan,
+            amount=Decimal('299.00'),
+            currency='RUB',
+            status='PENDING',
+            yookassa_payment_id='idempotency-test-payment',
+            provider='YOOKASSA'
+        )
+
+    def test_webhook_idempotency_prevents_duplicate_processing(self):
+        """Тест что повторный webhook не обрабатывается дважды."""
+        from apps.billing.webhooks.handlers import handle_payment_succeeded
+        from unittest.mock import MagicMock
+
+        # Первый вызов - создаем mock payment_object
+        payment_object = MagicMock()
+        payment_object.id = 'idempotency-test-payment'
+        payment_object.payment_method = None
+
+        # Первый вызов webhook
+        handle_payment_succeeded(payment_object)
+
+        # Проверяем что платеж обработан
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, 'SUCCEEDED')
+        self.assertIsNotNone(self.payment.webhook_processed_at)
+        first_processed_at = self.payment.webhook_processed_at
+
+        # Проверяем что подписка обновлена
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.plan, self.monthly_plan)
+        original_end_date = self.subscription.end_date
+
+        # Второй вызов того же webhook (дубликат)
+        handle_payment_succeeded(payment_object)
+
+        # Проверяем что дата обработки не изменилась
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.webhook_processed_at, first_processed_at)
+
+        # Проверяем что подписка не продлена дважды
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, original_end_date)
+
+
+class WebhookLogTestCase(TestCase):
+    """Тесты для логирования webhook событий."""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        from apps.billing.models import WebhookLog
+        self.WebhookLog = WebhookLog
+
+    def test_webhook_log_creation(self):
+        """Тест создания записи в WebhookLog."""
+        log = self.WebhookLog.objects.create(
+            event_type='payment.succeeded',
+            event_id='test-event-123',
+            payment_id='test-payment-123',
+            status='RECEIVED',
+            raw_payload={'test': 'data'},
+            client_ip='127.0.0.1'
+        )
+
+        self.assertIsNotNone(log.id)
+        self.assertEqual(log.event_type, 'payment.succeeded')
+        self.assertEqual(log.status, 'RECEIVED')
+        self.assertEqual(log.attempts, 0)
+
+    def test_webhook_log_status_transitions(self):
+        """Тест переходов статусов WebhookLog."""
+        log = self.WebhookLog.objects.create(
+            event_type='payment.succeeded',
+            event_id='test-event-456',
+            status='RECEIVED'
+        )
+
+        # Переход в PROCESSING
+        log.status = 'PROCESSING'
+        log.attempts = 1
+        log.save()
+
+        log.refresh_from_db()
+        self.assertEqual(log.status, 'PROCESSING')
+        self.assertEqual(log.attempts, 1)
+
+        # Переход в SUCCESS
+        log.status = 'SUCCESS'
+        log.processed_at = timezone.now()
+        log.save()
+
+        log.refresh_from_db()
+        self.assertEqual(log.status, 'SUCCESS')
+        self.assertIsNotNone(log.processed_at)
+
+
+class PaymentFlowIntegrationTestCase(TestCase):
+    """E2E тесты для полного платежного flow."""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        self.client = APIClient()
+
+        self.user = User.objects.create_user(
+            username='flowuser',
+            email='flow@example.com',
+            password='testpass123'
+        )
+
+        self.free_plan = SubscriptionPlan.objects.create(
+            name='FREE',
+            code='FREE',
+            display_name='Бесплатный',
+            price=Decimal('0.00'),
+            duration_days=0,
+            is_active=True
+        )
+
+        self.monthly_plan = SubscriptionPlan.objects.create(
+            name='MONTHLY',
+            code='MONTHLY',
+            display_name='Pro Месячный',
+            price=Decimal('299.00'),
+            duration_days=30,
+            is_active=True
+        )
+
+        # Создаем FREE подписку
+        self.subscription = Subscription.objects.create(
+            user=self.user,
+            plan=self.free_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=365),
+            is_active=True
+        )
+
+    @patch('apps.billing.yookassa_client.YooKassaClient.create_payment')
+    def test_full_payment_flow(self, mock_create_payment):
+        """Тест полного flow: создание платежа -> webhook -> активация подписки."""
+        from apps.billing.webhooks.handlers import handle_payment_succeeded
+
+        # 1. Создаем платеж через API
+        mock_create_payment.return_value = {
+            'id': 'flow-test-payment-id',
+            'status': 'pending',
+            'amount': {'value': '299.00', 'currency': 'RUB'},
+            'confirmation': {
+                'type': 'redirect',
+                'confirmation_url': 'https://yookassa.ru/pay/flow-test'
+            },
+            'metadata': {}
+        }
+
+        self.client.force_authenticate(user=self.user)
+        url = reverse('billing:create-plus-payment')
+        response = self.client.post(url, {}, format='json')
+
+        self.assertEqual(response.status_code, http_status.HTTP_201_CREATED)
+        payment_id = response.data['payment_id']
+
+        # 2. Проверяем что платеж создан
+        payment = Payment.objects.get(id=payment_id)
+        self.assertEqual(payment.status, 'PENDING')
+        self.assertEqual(payment.user, self.user)
+
+        # 3. Симулируем webhook от YooKassa
+        payment_object = MagicMock()
+        payment_object.id = 'flow-test-payment-id'
+        payment_object.payment_method = MagicMock()
+        payment_object.payment_method.id = 'pm_flow_test'
+        payment_object.payment_method.card = MagicMock()
+        payment_object.payment_method.card.last4 = '4242'
+        payment_object.payment_method.card.card_type = 'visa'
+
+        handle_payment_succeeded(payment_object)
+
+        # 4. Проверяем результаты
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'SUCCEEDED')
+        self.assertIsNotNone(payment.paid_at)
+        self.assertIsNotNone(payment.webhook_processed_at)
+
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.plan, self.monthly_plan)
+        self.assertTrue(self.subscription.is_active)
+        self.assertEqual(self.subscription.yookassa_payment_method_id, 'pm_flow_test')
+        self.assertEqual(self.subscription.card_mask, '•••• 4242')
+        self.assertEqual(self.subscription.card_brand, 'VISA')
+
+
+class CacheInvalidationTestCase(TestCase):
+    """Тесты для инвалидации кэша плана."""
+
+    def setUp(self):
+        """Настройка тестовых данных."""
+        self.user = User.objects.create_user(
+            username='cacheuser',
+            email='cache@example.com',
+            password='testpass123'
+        )
+
+        self.free_plan = SubscriptionPlan.objects.create(
+            name='FREE',
+            code='FREE',
+            display_name='Бесплатный',
+            price=Decimal('0.00'),
+            duration_days=0,
+            is_active=True
+        )
+
+        self.monthly_plan = SubscriptionPlan.objects.create(
+            name='MONTHLY',
+            code='MONTHLY',
+            display_name='Pro Месячный',
+            price=Decimal('299.00'),
+            duration_days=30,
+            is_active=True
+        )
+
+    def test_cache_invalidation_on_subscription_change(self):
+        """Тест что кэш инвалидируется при изменении подписки."""
+        from django.core.cache import cache
+
+        # Создаем FREE подписку
+        Subscription.objects.create(
+            user=self.user,
+            plan=self.free_plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=365),
+            is_active=True
+        )
+
+        # Первый вызов - кэшируется FREE план
+        plan1 = get_effective_plan_for_user(self.user)
+        self.assertEqual(plan1.code, 'FREE')
+
+        # Проверяем что кэш установлен
+        cache_key = f"user_plan:{self.user.id}"
+        self.assertIsNotNone(cache.get(cache_key))
+
+        # Активируем PRO подписку (это инвалидирует кэш)
+        activate_or_extend_subscription(self.user, 'MONTHLY', 30)
+
+        # После инвалидации должен вернуться MONTHLY
+        plan2 = get_effective_plan_for_user(self.user)
+        self.assertEqual(plan2.code, 'MONTHLY')
 
