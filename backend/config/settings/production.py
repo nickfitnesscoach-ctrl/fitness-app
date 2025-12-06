@@ -49,6 +49,16 @@ raw_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
 CORS_ALLOWED_ORIGINS = [o.strip() for o in raw_origins if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
+# Redis Cache Configuration for Production
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.environ.get("REDIS_URL", "redis://redis:6379/1"),
+        "KEY_PREFIX": "foodmind",
+        "TIMEOUT": 300,  # Default timeout: 5 minutes
+    }
+}
+
 # Structured logging configuration
 # Enable JSON logging via environment variable (default: True for production)
 USE_JSON_LOGGING = os.environ.get("USE_JSON_LOGGING", "True") == "True"
@@ -106,17 +116,4 @@ LOGGING = {
             "propagate": False,
         },
     },
-}
-
-# Redis Cache Configuration for Production
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": os.environ.get("REDIS_URL", "redis://redis:6379/1"),
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-        "KEY_PREFIX": "foodmind",
-        "TIMEOUT": 300,  # Default timeout: 5 minutes
-    }
 }

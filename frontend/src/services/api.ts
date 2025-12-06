@@ -1259,6 +1259,13 @@ export const api = {
     // AI Recognition
     // ========================================================
 
+    /**
+     * Recognize food from image
+     * Supports both sync (HTTP 200) and async (HTTP 202) backend modes
+     * 
+     * @returns For sync mode: { recognized_items, totals, meal_id, photo_url }
+     * @returns For async mode: { task_id, meal_id, status: 'processing', isAsync: true }
+     */
     async recognizeFood(imageFile: File, description?: string, mealType?: string, date?: string) {
         log(`Calling AI recognize endpoint with file: ${imageFile.name} `);
         try {
@@ -1287,6 +1294,21 @@ export const api = {
                 body: formData,
             });
 
+            // Handle async mode (HTTP 202 Accepted)
+            if (response.status === 202) {
+                const asyncResult = await response.json();
+                console.log('RECOGNIZE ASYNC MODE', response.status, asyncResult);
+                log(`AI recognition async: task_id=${asyncResult.task_id}, meal_id=${asyncResult.meal_id}`);
+                
+                return {
+                    task_id: asyncResult.task_id,
+                    meal_id: asyncResult.meal_id,
+                    status: asyncResult.status || 'processing',
+                    isAsync: true,
+                    message: asyncResult.message
+                };
+            }
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 console.log('RECOGNIZE ERROR RESPONSE', response.status, errorData);
@@ -1300,6 +1322,7 @@ export const api = {
                 throw error;
             }
 
+            // Sync mode (HTTP 200)
             const backendResult = await response.json();
             console.log('RECOGNIZE OK', response.status, backendResult);
             log(`RAW AI response: ${JSON.stringify(backendResult)} `);
@@ -1313,7 +1336,8 @@ export const api = {
                 total_fat: backendResult.total_fat || 0,
                 total_carbohydrates: backendResult.total_carbohydrates || 0,
                 meal_id: backendResult.meal_id,
-                photo_url: backendResult.photo_url
+                photo_url: backendResult.photo_url,
+                isAsync: false
             };
 
             log(`AI recognized ${mappedResult.recognized_items.length} items`);
@@ -1327,6 +1351,31 @@ export const api = {
                 error?.data
             );
             console.error('AI recognition error:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Get task status for async AI recognition
+     * Used when recognizeFood returns isAsync: true
+     */
+    async getTaskStatus(taskId: string) {
+        log(`Getting task status: ${taskId}`);
+        try {
+            const response = await fetchWithTimeout(`${API_BASE}/ai/task/${taskId}/`, {
+                method: 'GET',
+                headers: getHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to get task status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            log(`Task ${taskId} status: ${data.state}`);
+            return data;
+        } catch (error) {
+            console.error('Error getting task status:', error);
             throw error;
         }
     },

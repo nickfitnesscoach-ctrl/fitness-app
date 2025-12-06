@@ -114,7 +114,13 @@ const MealDetailsPage: React.FC = () => {
 
         const newGrams = parseInt(editGrams);
         if (isNaN(newGrams) || newGrams <= 0) {
-            setError('Введите корректное количество граммов');
+            setError('Введите корректное количество граммов (больше 0)');
+            return;
+        }
+
+        // Max 10kg (10000g) per single food item is reasonable
+        if (newGrams > 10000) {
+            setError('Максимальное количество - 10000 г (10 кг)');
             return;
         }
 
@@ -397,6 +403,7 @@ const MealDetailsPage: React.FC = () => {
                                     className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                     placeholder="Вес в граммах"
                                     min="1"
+                                    max="10000"
                                 />
                             </div>
                         </div>

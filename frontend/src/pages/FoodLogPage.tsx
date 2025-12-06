@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Camera, CreditCard, AlertCircle, Check, X, Send } from 'lucide-react';
 import { api } from '../services/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBilling } from '../contexts/BillingContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { BatchResultsModal, BatchResult, AnalysisResult } from '../components/BatchResultsModal';
+
+// Polling constants
+const POLLING_MAX_DURATION = 60000; // 60 seconds
+const POLLING_INITIAL_DELAY = 2000; // 2 seconds
+const POLLING_MAX_DELAY = 5000; // 5 seconds
+const POLLING_BACKOFF_MULTIPLIER = 1.5;
 
 const FoodLogPage: React.FC = () => {
     const navigate = useNavigate();
@@ -39,6 +45,9 @@ const FoodLogPage: React.FC = () => {
 
     const [error, setError] = useState<string | null>(null);
     const [showLimitModal, setShowLimitModal] = useState(false);
+    
+    // For async polling cancellation
+    const pollingAbortRef = useRef<AbortController | null>(null);
 
     const mealTypeOptions = [
         { value: 'BREAKFAST', label: 'Завтрак' },
@@ -101,12 +110,76 @@ const FoodLogPage: React.FC = () => {
 
 
 
+    /**
+     * Poll task status until completion or timeout
+     */
+    const pollTaskStatus = async (taskId: string, abortController: AbortController): Promise<AnalysisResult | null> => {
+        const startTime = Date.now();
+        let attempt = 0;
+
+        while (!abortController.signal.aborted) {
+            const elapsed = Date.now() - startTime;
+            if (elapsed >= POLLING_MAX_DURATION) {
+                throw new Error('Превышено время ожидания распознавания');
+            }
+
+            const delay = Math.min(
+                POLLING_INITIAL_DELAY * Math.pow(POLLING_BACKOFF_MULTIPLIER, attempt),
+                POLLING_MAX_DELAY
+            );
+
+            try {
+                const taskStatus = await api.getTaskStatus(taskId);
+                console.log(`[Polling] Task ${taskId} state: ${taskStatus.state}`, taskStatus);
+
+                if (taskStatus.state === 'SUCCESS' && taskStatus.result) {
+                    // Task completed - return result
+                    return {
+                        recognized_items: taskStatus.result.recognized_items || [],
+                        total_calories: taskStatus.result.total_calories || 0,
+                        total_protein: taskStatus.result.total_protein || 0,
+                        total_fat: taskStatus.result.total_fat || 0,
+                        total_carbohydrates: taskStatus.result.total_carbohydrates || 0,
+                        meal_id: taskStatus.result.meal_id,
+                        photo_url: taskStatus.result.photo_url
+                    };
+                }
+
+                if (taskStatus.state === 'FAILURE') {
+                    throw new Error(taskStatus.error || 'Ошибка распознавания');
+                }
+
+                // Task still processing - wait and retry
+                await new Promise(resolve => setTimeout(resolve, delay));
+                attempt++;
+
+            } catch (err: any) {
+                if (abortController.signal.aborted) {
+                    return null;
+                }
+                // Network error - retry a few times
+                if (attempt < 3) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    attempt++;
+                    continue;
+                }
+                throw err;
+            }
+        }
+
+        return null; // Aborted
+    };
+
     const processBatch = async (filesWithComments: FileWithComment[]) => {
         setIsBatchProcessing(true);
         setBatchProgress({ current: 0, total: filesWithComments.length });
         setBatchResults([]);
         setError(null);
         setCancelRequested(false);
+        
+        // Create abort controller for this batch
+        const abortController = new AbortController();
+        pollingAbortRef.current = abortController;
 
         const results: BatchResult[] = [];
 
@@ -114,7 +187,7 @@ const FoodLogPage: React.FC = () => {
             // Process files sequentially
             for (let i = 0; i < filesWithComments.length; i++) {
                 // Check if user requested cancellation
-                if (cancelRequested) {
+                if (cancelRequested || abortController.signal.aborted) {
                     console.log('[Batch] User cancelled processing');
                     break;
                 }
@@ -125,7 +198,24 @@ const FoodLogPage: React.FC = () => {
                 try {
                     // Recognize with INDIVIDUAL comment per photo, selected meal type, and date
                     const dateStr = selectedDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
-                    const result = await api.recognizeFood(file, comment, mealType, dateStr) as AnalysisResult;
+                    const recognizeResult = await api.recognizeFood(file, comment, mealType, dateStr);
+                    
+                    let result: AnalysisResult;
+                    
+                    // Check if async mode (HTTP 202)
+                    if ((recognizeResult as any).isAsync && (recognizeResult as any).task_id) {
+                        console.log(`[Batch] Async mode detected, polling task ${(recognizeResult as any).task_id}`);
+                        const polledResult = await pollTaskStatus((recognizeResult as any).task_id, abortController);
+                        
+                        if (!polledResult) {
+                            // Polling was cancelled
+                            break;
+                        }
+                        result = polledResult;
+                    } else {
+                        // Sync mode - result already contains recognized_items
+                        result = recognizeResult as AnalysisResult;
+                    }
 
                     if (result.recognized_items && result.recognized_items.length > 0) {
                         results.push({
@@ -159,7 +249,7 @@ const FoodLogPage: React.FC = () => {
                     if (err.message) {
                         if (err.message.includes('Failed to add food item')) {
                             errorMessage = 'Ошибка сохранения';
-                        } else if (err.message.includes('timeout')) {
+                        } else if (err.message.includes('timeout') || err.message.includes('Превышено время')) {
                             errorMessage = 'Превышено время ожидания';
                         } else if (err.message.includes('Network') || err.message.includes('fetch')) {
                             errorMessage = 'Ошибка сети';
@@ -190,6 +280,7 @@ const FoodLogPage: React.FC = () => {
             setError('Произошла ошибка при обработке фотографий.');
         } finally {
             setIsBatchProcessing(false);
+            pollingAbortRef.current = null;
         }
     };
 
@@ -296,6 +387,10 @@ const FoodLogPage: React.FC = () => {
                             <button
                                 onClick={() => {
                                     setCancelRequested(true);
+                                    // Abort any ongoing polling
+                                    if (pollingAbortRef.current) {
+                                        pollingAbortRef.current.abort();
+                                    }
                                     setIsBatchProcessing(false);
                                     setSelectedFiles([]);
                                 }}
