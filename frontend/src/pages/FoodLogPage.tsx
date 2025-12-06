@@ -149,49 +149,41 @@ const FoodLogPage: React.FC = () => {
 
                 if (taskStatus.state === 'SUCCESS') {
                     const result = taskStatus.result;
-                    
-                    console.log(`[Polling] SUCCESS result FULL:`, JSON.stringify(result, null, 2));
-                    console.log(`[Polling] SUCCESS result parsed:`, {
-                        success: result?.success,
-                        meal_id: result?.meal_id,
-                        recognized_items_count: result?.recognized_items?.length || 0,
-                        recognized_items_first: result?.recognized_items?.[0],
-                        has_totals: !!result?.totals,
-                        totals: result?.totals
-                    });
 
-                    // Extract data from task result FIRST
+                    console.log(`[Polling] SUCCESS result FULL:`, JSON.stringify(result, null, 2));
+
+                    // Extract data from task result
                     let recognizedItems = result?.recognized_items || [];
                     const totals = result?.totals;
                     const mealId = result?.meal_id;
-                    
-                    // If backend explicitly says success: false AND no meal_id, it's a real failure
-                    // But if there's a meal_id, we should try fallback first
-                    if (result && result.success === false && !mealId) {
+                    const resultSuccess = result?.success;
+
+                    // CASE 1: Backend says success=false explicitly
+                    // But if we have a meal_id, we should still try to see if anything was saved
+                    if (result && resultSuccess === false && !mealId) {
                         console.log(`[Polling] Backend returned success=false with no meal_id, throwing error`);
                         const emptyError = new Error(result.error || 'AI не смог распознать еду на фото');
                         (emptyError as any).errorType = 'AI_EMPTY_RESULT';
                         throw emptyError;
                     }
 
-                    // FALLBACK: If recognized_items is empty but meal_id exists,
-                    // fetch meal directly from API (items may have been saved but not returned)
-                    // This also handles success: false with meal_id - try to recover
-                    // Key insight: even if backend says success:false, if meal_id exists,
-                    // the meal might have been created with items before the error
+                    // CASE 2: Empty items but we have meal_id (Universal Fallback)
+                    // This covers both "success=true but empty items" AND "success=false but meal_id exists"
                     if (recognizedItems.length === 0 && mealId) {
-                        console.log(`[Polling] Empty items but meal_id=${mealId} exists, trying fallback (success=${result?.success})...`);
+                        console.log(`[Polling] Empty items but meal_id=${mealId} exists. Trying fallback...`);
 
                         // Try up to 3 times with increasing delays
-                        for (let attempt = 1; attempt <= 3; attempt++) {
-                            const delayMs = attempt * 1000;
-                            console.log(`[Polling] Fallback attempt ${attempt}/3, waiting ${delayMs}ms...`);
+                        for (let fAttempt = 1; fAttempt <= 3; fAttempt++) {
+                            const delayMs = fAttempt * 1000;
+                            // Don't wait on first attempt if we already waited long enough in polling, 
+                            // but usually safer to wait a bit for DB propagation
                             await new Promise(resolve => setTimeout(resolve, delayMs));
 
                             try {
                                 const mealData = await api.getMealAnalysis(mealId);
                                 if (mealData.recognized_items && mealData.recognized_items.length > 0) {
-                                    console.log(`[Polling] Fallback SUCCESS on attempt ${attempt}: found ${mealData.recognized_items.length} items`);
+                                    console.log(`[Polling] Fallback SUCCESS on attempt ${fAttempt}: found ${mealData.recognized_items.length} items`);
+
                                     // Map from MealAnalysis format to AnalysisResult format
                                     recognizedItems = mealData.recognized_items.map(item => ({
                                         id: String(item.id),
@@ -204,18 +196,22 @@ const FoodLogPage: React.FC = () => {
                                     }));
                                     break; // Success - exit retry loop
                                 } else {
-                                    console.log(`[Polling] Fallback attempt ${attempt}: meal exists but 0 items`);
+                                    console.log(`[Polling] Fallback attempt ${fAttempt}: meal exists but 0 items`);
                                 }
                             } catch (fallbackErr) {
+                                console.warn(`[Polling] Fallback attempt ${fAttempt} failed:`, fallbackErr);
                                 const errMsg = (fallbackErr as Error)?.message || '';
-                                // If 404, meal was deleted - stop retrying
-                                if (errMsg.includes('404') || errMsg.includes('not found')) {
-                                    console.warn(`[Polling] Meal ${mealId} not found (deleted), stopping fallback`);
-                                    break;
-                                }
-                                console.warn(`[Polling] Fallback attempt ${attempt} failed:`, fallbackErr);
+                                if (errMsg.includes('404')) break; // Meal deleted
                             }
                         }
+                    }
+
+                    // Check again after fallback
+                    if (recognizedItems.length === 0 && !mealId) {
+                        // Still empty and no meal_id -> genuine failure
+                        const emptyError = new Error('Еда не распознана');
+                        (emptyError as any).errorType = 'AI_EMPTY_RESULT';
+                        throw emptyError;
                     }
 
                     // Calculate totals from items if not provided
@@ -248,18 +244,13 @@ const FoodLogPage: React.FC = () => {
                 attempt++;
 
             } catch (err: any) {
-                if (abortController.signal.aborted) {
-                    return null;
-                }
+                if (abortController.signal.aborted) return null;
 
-                // If it's our custom error, re-throw it
-                if (err.errorType) {
-                    throw err;
-                }
+                // Stop if we threw a specific error
+                if (err.errorType) throw err;
 
                 // Network error - retry a few times
                 if (attempt < 3) {
-                    console.warn(`[Polling] Network error, retry ${attempt + 1}/3:`, err.message);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     attempt++;
                     continue;
@@ -354,7 +345,7 @@ const FoodLogPage: React.FC = () => {
                                     result.total_protein = result.recognized_items.reduce((sum: number, i) => sum + (i.protein || 0), 0);
                                     result.total_fat = result.recognized_items.reduce((sum: number, i) => sum + (i.fat || 0), 0);
                                     result.total_carbohydrates = result.recognized_items.reduce((sum: number, i) => sum + (i.carbohydrates || 0), 0);
-                                    
+
                                     // Success - break out of retry loop
                                     break;
                                 } else {
