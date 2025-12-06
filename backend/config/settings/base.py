@@ -258,6 +258,7 @@ REST_FRAMEWORK = {
         "ai_per_day": "100/day",  # AI recognition rate limit
         "webhook": "100/hour",  # Webhook rate limit (YooKassa)
         "payment_creation": "20/hour",  # Payment creation rate limit
+        "task_status": "60/minute",  # B-004 FIX: Task status polling rate limit
     },
 
     # Error handling

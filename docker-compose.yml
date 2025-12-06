@@ -39,7 +39,10 @@ services:
       - backend-net
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # D-002 FIX: Changed from allkeys-lru to volatile-lru
+    # allkeys-lru could delete Celery task results before they're read
+    # volatile-lru only evicts keys with TTL set, preserving task results
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy volatile-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -114,7 +117,7 @@ services:
       - -c
       - |
         python manage.py migrate --noinput
-        celery -A config worker -l info -Q ai,billing,default --concurrency=4
+        celery -A config worker -l info -Q ai,billing,default --concurrency=4 --soft-time-limit=120 --time-limit=150
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/media:/app/media

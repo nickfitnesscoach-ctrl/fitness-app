@@ -97,7 +97,7 @@ export function mockTelegramEnv() {
                     callback(null, true);
                 },
                 getItems: (_keys: string[], callback: Function) => callback(null, []),
-                removeItem: (key: string, callback: Function) => callback(null, true),
+                removeItem: (_key: string, callback: Function) => callback(null, true),
                 removeItems: (_keys: string[], callback: Function) => callback(null, true),
                 getKeys: (callback: Function) => callback(null, [])
             }

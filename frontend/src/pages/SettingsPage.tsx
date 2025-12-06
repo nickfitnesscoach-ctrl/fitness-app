@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { ChevronRight, CreditCard, Bell, Globe, Clock } from 'lucide-react';
+import { ChevronRight, CreditCard, Bell, Globe, Clock, Sun, Moon, Monitor } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import PageHeader from '../components/PageHeader';
+// F-020: Theme support
+import { useTheme } from '../contexts/ThemeContext';
 
 const SettingsPage: React.FC = () => {
     const navigate = useNavigate();
+    const { theme, setTheme, effectiveTheme } = useTheme();
 
     // Mock settings state
     const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -67,6 +70,51 @@ const SettingsPage: React.FC = () => {
                                 <span className="text-gray-900">Язык</span>
                             </div>
                             <span className="text-gray-500 text-sm">Русский</span>
+                        </div>
+
+                        {/* F-020: Theme Selector */}
+                        <div className="p-4 border-b border-gray-100">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className={`p-2 rounded-lg ${effectiveTheme === 'dark' ? 'bg-gray-700 text-yellow-400' : 'bg-yellow-50 text-yellow-500'}`}>
+                                    {effectiveTheme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+                                </div>
+                                <span className="text-gray-900 dark:text-gray-100">Тема оформления</span>
+                            </div>
+                            <div className="flex gap-2 ml-11">
+                                <button
+                                    onClick={() => setTheme('light')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                        theme === 'light' 
+                                            ? 'bg-blue-500 text-white' 
+                                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                                    }`}
+                                >
+                                    <Sun size={14} />
+                                    Светлая
+                                </button>
+                                <button
+                                    onClick={() => setTheme('dark')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                        theme === 'dark' 
+                                            ? 'bg-blue-500 text-white' 
+                                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                                    }`}
+                                >
+                                    <Moon size={14} />
+                                    Тёмная
+                                </button>
+                                <button
+                                    onClick={() => setTheme('system')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                        theme === 'system' 
+                                            ? 'bg-blue-500 text-white' 
+                                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                                    }`}
+                                >
+                                    <Monitor size={14} />
+                                    Авто
+                                </button>
+                            </div>
                         </div>
 
                         {/* Timezone */}

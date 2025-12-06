@@ -22,7 +22,7 @@ from .serializers import (
 )
 from .services import recognize_and_save_meal
 from apps.ai_proxy.exceptions import AIProxyError, AIProxyValidationError, AIProxyTimeoutError
-from .throttles import AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle
+from .throttles import AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle, TaskStatusThrottle
 from apps.billing.services import get_effective_plan_for_user
 from apps.billing.usage import DailyUsage
 from apps.nutrition.models import Meal
@@ -408,6 +408,8 @@ class TaskStatusView(APIView):
     """
     
     permission_classes = [IsAuthenticated]
+    # B-004 FIX: Rate limit polling to prevent Redis overload
+    throttle_classes = [TaskStatusThrottle]
     
     @extend_schema(
         summary="Проверить статус задачи распознавания",

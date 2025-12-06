@@ -169,7 +169,8 @@ export const deleteFoodItem = async (mealId: number, itemId: number): Promise<vo
 export const updateFoodItem = async (
     mealId: number,
     itemId: number,
-    data: { name?: string; amount_grams?: number }
+    // F-006 FIX: Backend expects 'grams', not 'amount_grams'
+    data: { name?: string; grams?: number }
 ): Promise<FoodItem> => {
     try {
         const response = await fetchWithTimeout(`${URLS.meals}${mealId}/items/${itemId}/`, {

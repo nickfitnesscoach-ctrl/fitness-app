@@ -43,3 +43,24 @@ class AIRecognitionPerDayThrottle(SimpleRateThrottle):
             'scope': self.scope,
             'ident': ident
         }
+
+
+class TaskStatusThrottle(SimpleRateThrottle):
+    """
+    B-004 FIX: Throttle task status polling requests.
+    Limit: 60 requests per minute per user (1 request per second average)
+    Prevents excessive polling that could overload Redis.
+    """
+    scope = 'task_status'
+
+    def get_cache_key(self, request, view):
+        """Use user ID as cache key."""
+        if request.user.is_authenticated:
+            ident = request.user.pk
+        else:
+            ident = self.get_ident(request)
+
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': ident
+        }

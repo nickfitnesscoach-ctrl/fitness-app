@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ClientsProvider } from './contexts/ClientsContext';
 import { BillingProvider } from './contexts/BillingContext';
+import { ToastProvider } from './contexts/ToastContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { initTelegramWebApp } from './lib/telegram';
 import { Dashboard } from './components/Dashboard';
 import ApplicationsPage from './pages/ApplicationsPage';
@@ -42,9 +44,13 @@ function App() {
 
   return (
     <ErrorBoundary>
+      {/* F-020: Theme provider for dark mode */}
+      <ThemeProvider>
       <AuthProvider>
         <BillingProvider>
           <ClientsProvider>
+            {/* F-029: Toast notifications provider */}
+            <ToastProvider>
             {/* Глобальный обработчик ошибок авторизации (401/403) */}
             <AuthErrorModal />
             <Router basename="/app">
@@ -71,9 +77,11 @@ function App() {
                 </Route>
               </Routes>
             </Router>
+            </ToastProvider>
           </ClientsProvider>
         </BillingProvider>
       </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Serializers for nutrition app - meals, food items, daily goals.
 """
@@ -34,13 +35,15 @@ class FoodItemSerializer(serializers.ModelSerializer):
     def validate_grams(self, value):
         """Validate that grams is positive."""
         if value <= 0:
-            raise serializers.ValidationError("5A 4>;65= 1KBL 1>;LH5 0")
+            # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
+            raise serializers.ValidationError("Вес должен быть больше 0")
         return value
 
     def validate_calories(self, value):
         """Validate that calories is non-negative."""
         if value < 0:
-            raise serializers.ValidationError("0;>@88 =5 <>3CB 1KBL >B@8F0B5;L=K<8")
+            # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
+            raise serializers.ValidationError("Калории не могут быть отрицательными")
         return value
 
 
@@ -90,7 +93,8 @@ class MealSerializer(serializers.ModelSerializer):
     def validate_date(self, value):
         """Validate that date is not in the future."""
         if value > date.today():
-            raise serializers.ValidationError("0B0 =5 <>65B 1KBL 2 1C4CI5<")
+            # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
+            raise serializers.ValidationError("Дата не может быть в будущем")
         return value
 
 
@@ -105,7 +109,8 @@ class MealCreateSerializer(serializers.ModelSerializer):
     def validate_date(self, value):
         """Validate that date is not in the future."""
         if value > date.today():
-            raise serializers.ValidationError("0B0 =5 <>65B 1KBL 2 1C4CI5<")
+            # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
+            raise serializers.ValidationError("Дата не может быть в будущем")
         return value
 
     def create(self, validated_data):
@@ -134,7 +139,8 @@ class FoodItemCreateSerializer(serializers.ModelSerializer):
         try:
             meal = Meal.objects.get(id=value, user=request.user)
         except Meal.DoesNotExist:
-            raise serializers.ValidationError("@8Q< ?8I8 =5 =0945=")
+            # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
+            raise serializers.ValidationError("Приём пищи не найден")
         return value
 
     def create(self, validated_data):
@@ -159,9 +165,11 @@ class DailyGoalSerializer(serializers.ModelSerializer):
     def validate_calories(self, value):
         """Validate that calories is reasonable."""
         if value < 500:
-            raise serializers.ValidationError("8=8<0;L=0O F5;L :0;>@89: 500 ::0;")
+            # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
+            raise serializers.ValidationError("Минимальная цель калорий: 500 ккал")
         if value > 10000:
-            raise serializers.ValidationError("0:A8<0;L=0O F5;L :0;>@89: 10000 ::0;")
+            # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
+            raise serializers.ValidationError("Максимальная цель калорий: 10000 ккал")
         return value
 
     def create(self, validated_data):

@@ -81,7 +81,7 @@ def recognize_food_async(
                     carbohydrates=item_data.get('carbohydrates', 0),
                 )
                 food_items_data.append({
-                    'id': str(food_item.id),
+                    'id': food_item.id,  # Keep as int for consistency with backend serializers
                     'name': food_item.name,
                     'grams': food_item.grams,
                     'calories': food_item.calories,
@@ -118,17 +118,27 @@ def recognize_food_async(
                 'recognition_time': round(recognition_time, 2),
             }
         else:
+            # B-001 FIX: НЕ удаляем meal - он уже создан с фото и может быть виден пользователю
+            # Пользователь увидит пустой приём пищи и сможет добавить items вручную
+            # Cleanup stale meals task уберёт старые пустые meals позже
             error_msg = result.get('error', 'No food items recognized')
-            logger.warning(f"[Task {task_id}] No items recognized for meal {meal_id}: {error_msg}")
+            logger.warning(f"[Task {task_id}] No items recognized for meal {meal_id}: {error_msg}. Meal kept for manual entry.")
             
-            # Delete empty meal
-            meal.delete()
+            # Increment usage counter even for empty results (user made an attempt)
+            DailyUsage.objects.increment_photo_requests(user)
             
             return {
-                'success': False,
+                'success': True,  # Changed to True - meal exists, just empty
                 'meal_id': str(meal_id),
-                'error': error_msg,
+                'recognized_items': [],
+                'totals': {
+                    'calories': 0,
+                    'protein': 0,
+                    'fat': 0,
+                    'carbohydrates': 0,
+                },
                 'recognition_time': round(recognition_time, 2),
+                'message': 'Не удалось распознать еду автоматически. Вы можете добавить блюда вручную.',
             }
             
     except Meal.DoesNotExist:

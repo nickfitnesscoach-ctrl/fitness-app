@@ -6,6 +6,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 import Calendar from '../components/Calendar';
+// F-019: Skeleton loaders for better loading UX
+import { SkeletonDashboard } from '../components/Skeleton';
+// F-033: Pull-to-refresh for mobile UX
+import PullToRefresh from '../components/PullToRefresh';
 
 interface DailyGoal {
     calories: number;
@@ -150,6 +154,11 @@ const ClientDashboard: React.FC = () => {
         }
     };
 
+    // F-033: Pull-to-refresh handler
+    const handleRefresh = async () => {
+        await loadDashboardData(selectedDate);
+    };
+
     const handleDeleteMealClick = (e: React.MouseEvent, mealId: number) => {
         e.stopPropagation(); // Предотвратить переход к деталям
         setMealToDelete(mealId);
@@ -221,16 +230,17 @@ const ClientDashboard: React.FC = () => {
         );
     }
 
-    // Loading dashboard data
+    // F-019: Show skeleton loader while loading dashboard data
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+                <SkeletonDashboard />
             </div>
         );
     }
 
     return (
+        <PullToRefresh onRefresh={handleRefresh} disabled={loading}>
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pb-24">
             <div className="max-w-lg mx-auto space-y-6">
                 <Calendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
@@ -447,6 +457,7 @@ const ClientDashboard: React.FC = () => {
                 </div>
             )}
         </div>
+        </PullToRefresh>
     );
 };
 

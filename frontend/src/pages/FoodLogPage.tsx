@@ -7,6 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { BatchResultsModal, BatchResult, AnalysisResult } from '../components/BatchResultsModal';
 import { POLLING, getErrorMessage, API_ERROR_CODES } from '../constants';
+// F-007 FIX: HEIC/HEIF support for iOS photos
+import { convertHeicToJpeg, isHeicFile } from '../utils/imageUtils';
 
 // Polling constants (from centralized config)
 const POLLING_MAX_DURATION = POLLING.MAX_DURATION_MS;
@@ -32,6 +34,7 @@ const FoodLogPage: React.FC = () => {
     interface FileWithComment {
         file: File;
         comment: string;
+        previewUrl?: string; // F-007: For HEIC preview support
     }
     const [selectedFiles, setSelectedFiles] = useState<FileWithComment[]>([]);
     const [mealType, setMealType] = useState<string>('BREAKFAST');
@@ -59,7 +62,8 @@ const FoodLogPage: React.FC = () => {
         { value: 'SNACK', label: 'Перекус' },
     ];
 
-    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // F-007: Made async for HEIC conversion
+    const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (files && files.length > 0) {
             let fileList = Array.from(files);
@@ -85,10 +89,24 @@ const FoodLogPage: React.FC = () => {
             }
 
             // Convert to FileWithComment objects with empty comments
-            const filesWithComments: FileWithComment[] = validFiles.map(file => ({
-                file,
-                comment: ''
-            }));
+            // F-007: Create preview URLs (handles HEIC conversion for preview)
+            const filesWithComments: FileWithComment[] = await Promise.all(
+                validFiles.map(async (file) => {
+                    let previewUrl: string;
+                    if (isHeicFile(file)) {
+                        // Convert HEIC to JPEG for preview
+                        try {
+                            const converted = await convertHeicToJpeg(file);
+                            previewUrl = URL.createObjectURL(converted);
+                        } catch {
+                            previewUrl = ''; // Will show placeholder
+                        }
+                    } else {
+                        previewUrl = URL.createObjectURL(file);
+                    }
+                    return { file, comment: '', previewUrl };
+                })
+            );
             setSelectedFiles(filesWithComments);
             setError(null);
         }
@@ -295,9 +313,12 @@ const FoodLogPage: React.FC = () => {
                 setBatchProgress({ current: i + 1, total: filesWithComments.length });
 
                 try {
+                    // F-007 FIX: Convert HEIC/HEIF to JPEG before upload (iOS photos)
+                    const processedFile = await convertHeicToJpeg(file);
+                    
                     // Recognize with INDIVIDUAL comment per photo, selected meal type, and date
                     const dateStr = selectedDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
-                    const recognizeResult = await api.recognizeFood(file, comment, mealType, dateStr);
+                    const recognizeResult = await api.recognizeFood(processedFile, comment, mealType, dateStr);
 
                     let result: AnalysisResult;
 
@@ -589,13 +610,13 @@ const FoodLogPage: React.FC = () => {
 
                             {/* Vertical list of photos with individual comment fields */}
                             <div className="space-y-4">
-                                {selectedFiles.map(({ file, comment }, index) => (
+                                {selectedFiles.map(({ file, comment, previewUrl }, index) => (
                                     <div key={index} className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
                                         <div className="flex gap-4">
-                                            {/* Photo Preview */}
+                                            {/* Photo Preview - F-007: Use previewUrl for HEIC support */}
                                             <div className="relative shrink-0 w-24 h-24 rounded-xl overflow-hidden group">
                                                 <img
-                                                    src={URL.createObjectURL(file)}
+                                                    src={previewUrl || URL.createObjectURL(file)}
                                                     alt={`Preview ${index + 1}`}
                                                     className="w-full h-full object-cover"
                                                 />

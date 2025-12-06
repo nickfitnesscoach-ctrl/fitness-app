@@ -3,11 +3,16 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api, MealAnalysis } from '../services/api';
 import PageHeader from '../components/PageHeader';
 import { Flame, Drumstick, Droplets, Wheat, Trash2, Edit2 } from 'lucide-react';
+// F-019: Skeleton loaders for better loading UX
+import { SkeletonMealDetails } from '../components/Skeleton';
+// F-029: Toast notifications
+import { useToast } from '../contexts/ToastContext';
 
 const MealDetailsPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const location = useLocation();
+    const toast = useToast();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<MealAnalysis | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -103,9 +108,10 @@ const MealDetailsPage: React.FC = () => {
     };
 
     const handleEditClick = (item: any) => {
-        setItemToEdit({ id: item.id, name: item.name, grams: item.amount_grams });
+        // F-005 FIX: Backend returns item.grams, not item.amount_grams
+        setItemToEdit({ id: item.id, name: item.name, grams: item.grams });
         setEditName(item.name);
-        setEditGrams(item.amount_grams.toString());
+        setEditGrams(item.grams.toString());
         setShowEditModal(true);
     };
 
@@ -131,9 +137,10 @@ const MealDetailsPage: React.FC = () => {
 
         try {
             setEditing(true);
+            // F-006 FIX: Backend expects 'grams', not 'amount_grams'
             await api.updateFoodItem(parseInt(id), itemToEdit.id, {
                 name: editName.trim(),
-                amount_grams: newGrams
+                grams: newGrams
             });
 
             // Reload meal data
@@ -144,19 +151,24 @@ const MealDetailsPage: React.FC = () => {
             setItemToEdit(null);
             setEditName('');
             setEditGrams('');
+            // F-029: Show success toast
+            toast.success('Блюдо обновлено');
         } catch (err) {
             console.error('Failed to update food item:', err);
             const errorMessage = err instanceof Error ? err.message : 'Не удалось обновить блюдо';
             setError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setEditing(false);
         }
     };
 
+    // F-019: Show skeleton loader while loading
     if (loading) {
         return (
-            <div className="min-h-screen bg-white flex items-center justify-center">
-                <div className="animate-spin w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+            <div className="min-h-screen bg-gray-50">
+                <PageHeader title="Детали блюда" />
+                <SkeletonMealDetails />
             </div>
         );
     }
