@@ -16,6 +16,7 @@ fitness-app/
 │   │   ├── telegram/    # Telegram integration
 │   │   └── ai/          # AI services
 │   ├── config/          # Django settings
+│   ├── docs/            # Backend documentation
 │   ├── Dockerfile
 │   └── requirements.txt
 │
@@ -29,14 +30,24 @@ fitness-app/
 │   ├── Dockerfile
 │   └── requirements.txt
 │
-├── frontend/            # React Frontend
+├── frontend/            # React Frontend (Vite + TypeScript)
 │   ├── src/
 │   │   ├── components/ # React components
 │   │   ├── pages/      # Page components
 │   │   ├── services/   # API services
 │   │   └── contexts/   # React contexts
+│   ├── docs/           # Frontend documentation
 │   ├── Dockerfile
 │   └── package.json
+│
+├── docs/                # Project-wide documentation
+│   ├── infra/          # Infrastructure & debug docs
+│   ├── API_DOCS.md     # API documentation
+│   └── project_overview.md
+│
+├── deploy/              # Deployment configs
+│   ├── scripts/        # Deploy scripts
+│   └── nginx-eatfit24.ru.conf
 │
 ├── .github/
 │   └── workflows/       # CI/CD pipelines
@@ -47,6 +58,16 @@ fitness-app/
 ├── docker-compose.yml   # Unified compose for all services
 └── .editorconfig        # Code style configuration
 ```
+
+### Documentation Structure
+
+| Path | Description |
+|------|-------------|
+| `docs/` | Project-wide documentation |
+| `docs/infra/` | Debug mode, deployment, bugfix reports |
+| `backend/docs/` | Backend-specific docs, cleanup changelog |
+| `frontend/docs/` | Frontend structure, archived docs |
+| `deploy/` | Nginx configs, deploy scripts |
 
 ---
 
