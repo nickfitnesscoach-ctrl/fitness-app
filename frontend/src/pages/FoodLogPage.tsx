@@ -315,7 +315,7 @@ const FoodLogPage: React.FC = () => {
                 try {
                     // F-007 FIX: Convert HEIC/HEIF to JPEG before upload (iOS photos)
                     const processedFile = await convertHeicToJpeg(file);
-                    
+
                     // Recognize with INDIVIDUAL comment per photo, selected meal type, and date
                     const dateStr = selectedDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
                     const recognizeResult = await api.recognizeFood(processedFile, comment, mealType, dateStr);
@@ -398,8 +398,8 @@ const FoodLogPage: React.FC = () => {
                             data: {
                                 ...result,
                                 // Если items пустые, но есть meal_id - ставим нейтральное сообщение
-                                _neutralMessage: (!result.recognized_items || result.recognized_items.length === 0) 
-                                    ? 'Анализ завершён, проверьте дневник' 
+                                _neutralMessage: (!result.recognized_items || result.recognized_items.length === 0)
+                                    ? 'Анализ завершён, проверьте дневник'
                                     : undefined
                             }
                         });
@@ -512,13 +512,13 @@ const FoodLogPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pb-24">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pb-24 safe-area-bottom">
             <div className="max-w-lg mx-auto">
                 <h1 className="text-2xl font-bold text-gray-900 mb-4 text-center">Дневник питания</h1>
 
                 {/* Date and Meal Type Selector */}
                 <div className="bg-white rounded-3xl shadow-sm p-4 mb-6">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <h3 className="text-sm font-semibold text-gray-700 mb-2">Дата</h3>
                             <input

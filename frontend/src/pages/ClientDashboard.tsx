@@ -69,8 +69,11 @@ const ClientDashboard: React.FC = () => {
     // Update URL when date changes
     useEffect(() => {
         const dateStr = selectedDate.toISOString().split('T')[0];
-        setSearchParams({ date: dateStr }, { replace: true });
-    }, [selectedDate]);
+        // Сохраняем существующие параметры (например, web_debug)
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('date', dateStr);
+        setSearchParams(newParams, { replace: true });
+    }, [selectedDate, searchParams, setSearchParams]);
 
     // Reload data when navigating back to dashboard (location.key changes on each navigation)
     useEffect(() => {

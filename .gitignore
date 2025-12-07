@@ -50,7 +50,6 @@ bot/.env
 frontend/.env
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo

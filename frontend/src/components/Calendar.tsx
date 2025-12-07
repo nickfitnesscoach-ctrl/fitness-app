@@ -115,7 +115,7 @@ const Calendar: React.FC<CalendarProps> = ({ selectedDate, onDateSelect }) => {
                     Сегодня
                 </button>
             </div>
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
                 {weekDays.map((date, index) => {
                     const isToday = isSameDate(date, new Date());
                     const isSelected = isSameDate(date, selectedDate);
@@ -202,13 +202,12 @@ const Calendar: React.FC<CalendarProps> = ({ selectedDate, onDateSelect }) => {
                                     <button
                                         key={day}
                                         onClick={() => handleDatePickerSelect(pickerYear, pickerMonth, day)}
-                                        className={`p-2 rounded-lg text-sm font-medium transition-colors ${
-                                            isSelected
+                                        className={`p-2 rounded-lg text-sm font-medium transition-colors ${isSelected
                                                 ? 'bg-gradient-to-br from-blue-500 to-purple-500 text-white'
                                                 : isToday
-                                                ? 'bg-blue-50 text-blue-600'
-                                                : 'hover:bg-gray-100 text-gray-700'
-                                        }`}
+                                                    ? 'bg-blue-50 text-blue-600'
+                                                    : 'hover:bg-gray-100 text-gray-700'
+                                            }`}
                                     >
                                         {day}
                                     </button>

@@ -77,7 +77,8 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                     {/* Detail View Content */}
                     <div className="overflow-y-auto flex-1">
                         {/* Large Photo */}
-                        <div className="w-full aspect-[4/3] bg-gray-200 relative">
+                        {/* Large Photo - F-009: 1:1 Aspect Ratio Fix */}
+                        <div className="w-full aspect-square bg-gray-200 relative">
                             <img
                                 src={URL.createObjectURL(result.file)}
                                 alt="Detail"
@@ -232,14 +233,14 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                     {results.map((result, index) => (
                         <div key={index} className="flex gap-4 p-3 bg-gray-50 rounded-2xl border border-gray-100 relative group">
                             {/* Thumbnail */}
-                            <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 relative">
+                            {/* Thumbnail - F-009: 1:1 Ratio */}
+                            <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 relative aspect-square">
                                 <img
                                     src={URL.createObjectURL(result.file)}
                                     alt="Preview"
                                     className="w-full h-full object-cover"
                                 />
-                                <div className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center ${
-                                    result.status === 'success' 
+                                <div className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center ${result.status === 'success'
                                         ? (result.data?._neutralMessage ? 'bg-blue-500' : 'bg-green-500')
                                         : 'bg-gray-500'
                                     }`}>
@@ -271,10 +272,10 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                     ) : (
                                         // Normal success with recognized items
                                         <>
-                                            <h3 className="font-bold text-gray-900 truncate">
+                                            <h3 className="font-bold text-gray-900 truncate pr-2">
                                                 {result.data.recognized_items.map(i => i.name).join(', ') || 'Еда'}
                                             </h3>
-                                            <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                                            <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-gray-600">
                                                 <span className="font-medium text-orange-600">
                                                     {Math.round(result.data.total_calories)} ккал
                                                 </span>
@@ -284,7 +285,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                                 <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
                                                     Ж {Math.round(result.data.total_fat)}
                                                 </span>
-                                                <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
+                                                <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded whitespace-nowrap">
                                                     У {Math.round(result.data.total_carbohydrates)}
                                                 </span>
                                             </div>
@@ -311,10 +312,11 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-gray-100 shrink-0 space-y-3 bg-white sm:rounded-b-3xl pb-8 sm:pb-4">
+                {/* Footer - F-003, F-010: Min height & Safe Area */}
+                <div className="p-4 border-t border-gray-100 shrink-0 space-y-3 bg-white sm:rounded-b-3xl pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pb-4">
                     <button
                         onClick={onClose}
-                        className="w-full bg-black text-white py-3.5 rounded-xl font-bold hover:bg-gray-800 transition-colors"
+                        className="w-full bg-black text-white py-3.5 rounded-xl font-bold hover:bg-gray-800 transition-colors min-h-[48px] flex items-center justify-center"
                     >
                         Готово
                     </button>
@@ -322,7 +324,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                     {onOpenDiary && (
                         <button
                             onClick={onOpenDiary}
-                            className="w-full bg-gray-100 text-gray-900 py-3.5 rounded-xl font-bold hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+                            className="w-full bg-gray-100 text-gray-900 py-3.5 rounded-xl font-bold hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 min-h-[48px]"
                         >
                             Открыть дневник
                             <ChevronRight size={18} />

@@ -12,8 +12,15 @@ RUN npm ci
 # Копируем исходный код
 COPY . .
 
-# Собираем production build
-RUN npm run build
+# Копируем .env.production (игнорируется в .gitignore, но нужен для сборки)
+COPY .env.production .
+
+# Debug: проверяем содержимое .env.production и список файлов
+RUN ls -la .env* && cat .env.production && echo "==== Checking VITE env ====" && grep VITE .env.production || echo "No VITE vars found"
+
+# Собираем production build (Vite использует .env.production)
+# Устанавливаем VITE_WEB_DEBUG_ENABLED явно для гарантии
+RUN VITE_WEB_DEBUG_ENABLED=true npm run build
 
 # Этап 2: Production образ с nginx
 FROM nginx:alpine
