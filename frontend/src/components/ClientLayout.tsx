@@ -1,41 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import React from 'react';
+import { Outlet, NavLink } from 'react-router-dom';
 import { Home, Camera, CreditCard, User } from 'lucide-react';
 import { DebugBanner } from '../features/debug';
 
+/**
+ * ClientLayout - Persistent layout wrapper
+ * 
+ * This component:
+ * - Mounts ONCE and stays mounted throughout the app session
+ * - Contains DebugBanner (fixed position, no layout reflow)
+ * - Contains bottom navigation
+ * - Renders page content via <Outlet />
+ * 
+ * NO artificial delays, overlays or transitions that mask loading states.
+ */
 const ClientLayout: React.FC = () => {
-    const location = useLocation();
-    const [isNavigating, setIsNavigating] = useState(false);
-
-    useEffect(() => {
-        // Show transition overlay on navigation
-        setIsNavigating(true);
-        const timer = setTimeout(() => {
-            setIsNavigating(false);
-        }, 150); // Short delay to prevent flash
-
-        return () => clearTimeout(timer);
-    }, [location.pathname]);
-
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
-            {/* Debug Mode Banner - only visible when IS_DEBUG is true */}
+            {/* Debug Mode Banner - fixed position, no layout reflow */}
             <DebugBanner />
-
-            {/* Navigation transition overlay */}
-            {isNavigating && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: '#f9fafb',
-                    zIndex: 9998,
-                    opacity: 1,
-                    transition: 'opacity 150ms ease-out'
-                }} />
-            )}
 
             <main className="flex-1 pb-24 md:pb-20">
                 <Outlet />

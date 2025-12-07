@@ -129,15 +129,30 @@ export const SkeletonText: React.FC<{ lines?: number; className?: string }> = ({
     </div>
 );
 
+// Meals list skeleton - only for the meals area (not full dashboard)
+export const SkeletonMealsList: React.FC = () => (
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+            <Skeleton height={20} width={100} />
+            <Skeleton height={16} width={80} />
+        </div>
+        <div className="space-y-3">
+            <SkeletonMealCard />
+            <SkeletonMealCard />
+            <SkeletonMealCard />
+        </div>
+    </div>
+);
+
 // Dashboard skeleton (full page)
 export const SkeletonDashboard: React.FC = () => (
     <div className="space-y-4 p-4">
         {/* Calendar placeholder */}
         <Skeleton height={60} rounded="2xl" />
-        
+
         {/* Progress card */}
         <SkeletonProgress />
-        
+
         {/* Meals */}
         <div className="space-y-3">
             <Skeleton height={20} width={100} className="mb-2" />
@@ -153,13 +168,13 @@ export const SkeletonMealDetails: React.FC = () => (
     <div className="space-y-4 p-4">
         {/* Photo */}
         <Skeleton height={200} rounded="2xl" />
-        
+
         {/* Title and stats */}
         <div className="flex justify-between items-center">
             <Skeleton height={24} width={120} />
             <Skeleton height={16} width={80} />
         </div>
-        
+
         {/* Nutrition summary */}
         <div className="grid grid-cols-4 gap-2">
             {[1, 2, 3, 4].map((i) => (
@@ -169,7 +184,7 @@ export const SkeletonMealDetails: React.FC = () => (
                 </div>
             ))}
         </div>
-        
+
         {/* Food items */}
         <div className="bg-white rounded-2xl p-4">
             <Skeleton height={18} width={150} className="mb-4" />

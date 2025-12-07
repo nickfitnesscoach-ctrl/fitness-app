@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { AppDataProvider } from './contexts/AppDataContext';
 import { ClientsProvider } from './contexts/ClientsContext';
 import { BillingProvider } from './contexts/BillingContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -81,43 +82,45 @@ function App() {
     <ErrorBoundary>
       {/* F-020: Theme provider for dark mode */}
       <ThemeProvider>
-      <AuthProvider>
-        <BillingProvider>
-          <ClientsProvider>
-            {/* F-029: Toast notifications provider */}
-            <ToastProvider>
-            {/* Глобальный обработчик ошибок авторизации (401/403) */}
-            <AuthErrorModal />
-            {/* F-013: Offline indicator */}
-            <OfflineIndicator />
-            <Router basename="/app">
-              <Routes>
-                {/* Client Routes - КБЖУ трекер на главной (для всех) */}
-                <Route path="/" element={<ClientLayout />}>
-                  <Route index element={<ClientDashboard />} />
-                  <Route path="log" element={<FoodLogPage />} />
-                  <Route path="meal/:id" element={<MealDetailsPage />} />
-                  <Route path="subscription" element={<SubscriptionPage />} />
-                  <Route path="profile" element={<ProfilePage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="settings/subscription" element={<SubscriptionDetailsPage />} />
-                  <Route path="settings/history" element={<PaymentHistoryPage />} />
-                </Route>
+        <AuthProvider>
+          <AppDataProvider>
+            <BillingProvider>
+              <ClientsProvider>
+                {/* F-029: Toast notifications provider */}
+                <ToastProvider>
+                  {/* Глобальный обработчик ошибок авторизации (401/403) */}
+                  <AuthErrorModal />
+                  {/* F-013: Offline indicator */}
+                  <OfflineIndicator />
+                  <Router basename="/app">
+                    <Routes>
+                      {/* Client Routes - КБЖУ трекер на главной (для всех) */}
+                      <Route path="/" element={<ClientLayout />}>
+                        <Route index element={<ClientDashboard />} />
+                        <Route path="log" element={<FoodLogPage />} />
+                        <Route path="meal/:id" element={<MealDetailsPage />} />
+                        <Route path="subscription" element={<SubscriptionPage />} />
+                        <Route path="profile" element={<ProfilePage />} />
+                        <Route path="settings" element={<SettingsPage />} />
+                        <Route path="settings/subscription" element={<SubscriptionDetailsPage />} />
+                        <Route path="settings/history" element={<PaymentHistoryPage />} />
+                      </Route>
 
-                {/* Trainer Panel Routes - панель тренера /panel */}
-                <Route path="/panel" element={<Layout />}>
-                  <Route index element={<Dashboard />} />
-                  <Route path="applications" element={<ApplicationsPage />} />
-                  <Route path="clients" element={<ClientsPage />} />
-                  <Route path="invite-client" element={<InviteClientPage />} />
-                  <Route path="subscribers" element={<SubscribersPage />} />
-                </Route>
-              </Routes>
-            </Router>
-            </ToastProvider>
-          </ClientsProvider>
-        </BillingProvider>
-      </AuthProvider>
+                      {/* Trainer Panel Routes - панель тренера /panel */}
+                      <Route path="/panel" element={<Layout />}>
+                        <Route index element={<Dashboard />} />
+                        <Route path="applications" element={<ApplicationsPage />} />
+                        <Route path="clients" element={<ClientsPage />} />
+                        <Route path="invite-client" element={<InviteClientPage />} />
+                        <Route path="subscribers" element={<SubscribersPage />} />
+                      </Route>
+                    </Routes>
+                  </Router>
+                </ToastProvider>
+              </ClientsProvider>
+            </BillingProvider>
+          </AppDataProvider>
+        </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

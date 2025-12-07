@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Target, TrendingUp, Settings, LogOut, Edit2, X, Camera, ChevronRight } from 'lucide-react';
+import { User, Target, TrendingUp, Settings, Edit2, X, Camera, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useAppData } from '../contexts/AppDataContext';
 import { api, UnauthorizedError, ForbiddenError } from '../services/api';
 import { Profile } from '../types/profile';
 import ProfileEditModal from '../components/ProfileEditModal';
 import { calculateMifflinTargets, hasRequiredProfileData, getMissingProfileFields } from '../utils/mifflin';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-
 interface UserGoals {
     calories: number;
     protein: number;
@@ -21,20 +21,24 @@ interface UserGoals {
 
 const ProfilePage: React.FC = () => {
     const { user, logout, isBrowserDebug } = useAuth();
+    // Use shared data from AppDataContext - loads instantly if already cached
+    const { profile: contextProfile, goals: contextGoals, refreshProfile, refreshGoals, isLoading: contextLoading } = useAppData();
     const navigate = useNavigate();
     const { isReady, isTelegramWebApp: webAppDetected, isBrowserDebug: webAppBrowserDebug } = useTelegramWebApp();
     const [isEditing, setIsEditing] = useState(false);
     const [isEditingGoals, setIsEditingGoals] = useState(false);
     const [isWeeklyStatsOpen, setIsWeeklyStatsOpen] = useState(false);
+
+    // Local goals state for editing (can differ from context until saved)
     const [goals, setGoals] = useState<UserGoals | null>(null);
     const [editedGoals, setEditedGoals] = useState<UserGoals | null>(null);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+    // Local profile state (for editing/avatar)
     const [profile, setProfile] = useState<Profile | null>(null);
 
     // Generate week days array
@@ -53,44 +57,33 @@ const ProfilePage: React.FC = () => {
         return days;
     };
 
-
-
+    // Initialize from context when available (instant, no API call)
     useEffect(() => {
-        loadGoals();
+        if (contextProfile) {
+            setProfile(contextProfile);
+            if (contextProfile.avatar_url) {
+                setAvatarPreview(contextProfile.avatar_url);
+            }
+        }
+    }, [contextProfile]);
+
+    // Initialize goals from context
+    useEffect(() => {
+        if (contextGoals) {
+            setGoals({
+                ...contextGoals,
+                avgCalories: 0,
+                avgProtein: 0,
+                avgFat: 0,
+                avgCarbs: 0
+            });
+        }
+    }, [contextGoals]);
+
+    // Load weekly stats once on mount (separate from main data)
+    useEffect(() => {
         loadWeeklyStats();
-        loadProfile();
     }, []);
-
-    const loadProfile = async () => {
-        try {
-            const data = await api.getProfile();
-            setProfile(data);
-            // Set avatar from server if exists
-            if (data.avatar_url) {
-                setAvatarPreview(data.avatar_url);
-            }
-        } catch (error) {
-            console.error('Failed to load profile:', error);
-        }
-    };
-
-    const loadGoals = async () => {
-        try {
-            const data = await api.getDailyGoals();
-            if (data) {
-                setGoals({
-                    calories: data.calories || 2000,
-                    protein: data.protein || 150,
-                    fat: data.fat || 70,
-                    carbohydrates: data.carbohydrates || 250
-                });
-            }
-        } catch (error) {
-            console.error('Failed to load goals:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleEditGoals = () => {
         setEditedGoals(goals || { calories: 2000, protein: 150, fat: 70, carbohydrates: 250 });
@@ -119,27 +112,24 @@ const ProfilePage: React.FC = () => {
     const handleSaveGoals = async () => {
         if (!editedGoals) return;
 
-        setLoading(true);
         setError(null);
 
         console.log('[ProfilePage] Saving goals:', editedGoals);
 
         try {
-            // Just make the request - backend will handle auth
             const result = await api.updateGoals(editedGoals);
             console.log('[ProfilePage] Goals saved successfully:', result);
 
             setGoals(editedGoals);
             setIsEditingGoals(false);
             setEditedGoals(null);
+
+            // Refresh context so other pages get updated goals
+            await refreshGoals();
         } catch (err: any) {
             console.error('[ProfilePage] Failed to save goals:', err);
-
-            // Display the error message from API (which now has status codes)
             const errorMsg = err.message || 'Ошибка при сохранении целей';
             setError(errorMsg);
-        } finally {
-            setLoading(false);
         }
     };
 
@@ -221,8 +211,8 @@ const ProfilePage: React.FC = () => {
 
     const handleProfileUpdate = (updatedProfile: Profile) => {
         setProfile(updatedProfile);
-        // Optionally reload goals if they depend on profile (e.g. weight change affects BMR)
-        loadGoals();
+        // Refresh context so other pages get updated profile
+        refreshProfile();
     };
 
     const handleLogout = () => {
@@ -445,7 +435,7 @@ const ProfilePage: React.FC = () => {
                         </div>
                     )}
 
-                    {loading ? (
+                    {contextLoading ? (
                         <div className="flex justify-center py-8">
                             <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
                         </div>
