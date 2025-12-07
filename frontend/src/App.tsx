@@ -22,6 +22,8 @@ import PaymentHistoryPage from './pages/PaymentHistoryPage';
 import SubscribersPage from './pages/SubscribersPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import AuthErrorModal from './components/AuthErrorModal';
+// F-013: Offline indicator
+import OfflineIndicator from './components/OfflineIndicator';
 
 import MealDetailsPage from './pages/MealDetailsPage';
 
@@ -53,6 +55,8 @@ function App() {
             <ToastProvider>
             {/* Глобальный обработчик ошибок авторизации (401/403) */}
             <AuthErrorModal />
+            {/* F-013: Offline indicator */}
+            <OfflineIndicator />
             <Router basename="/app">
               <Routes>
                 {/* Client Routes - КБЖУ трекер на главной (для всех) */}
