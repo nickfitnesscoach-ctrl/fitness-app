@@ -100,27 +100,23 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                 ) : (
                                     <>
                                         {/* Summary */}
-                                        <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl p-4 text-white">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <Flame size={20} />
-                                                <span className="font-bold text-lg">Итого</span>
+                                        {/* Matches Design Goal: No orange card, compact stats instead */}
+                                        <div className="grid grid-cols-4 gap-2 mb-4 p-3 bg-gray-50 rounded-2xl">
+                                            <div className="text-center border-r border-gray-200 last:border-0">
+                                                <div className="text-xs text-gray-500 font-medium">Ккал</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_calories)}</div>
                                             </div>
-                                            <div className="text-3xl font-bold mb-3">
-                                                {Math.round(result.data.total_calories)} ккал
+                                            <div className="text-center border-r border-gray-200 last:border-0">
+                                                <div className="text-xs text-gray-500 font-medium">Белки</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_protein)}</div>
                                             </div>
-                                            <div className="grid grid-cols-3 gap-2 text-sm">
-                                                <div className="bg-white/20 rounded-lg p-2 text-center">
-                                                    <div className="font-medium">Б</div>
-                                                    <div className="text-lg font-bold">{Math.round(result.data.total_protein)}г</div>
-                                                </div>
-                                                <div className="bg-white/20 rounded-lg p-2 text-center">
-                                                    <div className="font-medium">Ж</div>
-                                                    <div className="text-lg font-bold">{Math.round(result.data.total_fat)}г</div>
-                                                </div>
-                                                <div className="bg-white/20 rounded-lg p-2 text-center">
-                                                    <div className="font-medium">У</div>
-                                                    <div className="text-lg font-bold">{Math.round(result.data.total_carbohydrates)}г</div>
-                                                </div>
+                                            <div className="text-center border-r border-gray-200 last:border-0">
+                                                <div className="text-xs text-gray-500 font-medium">Жиры</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_fat)}</div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="text-xs text-gray-500 font-medium">Угл.</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_carbohydrates)}</div>
                                             </div>
                                         </div>
 
@@ -209,7 +205,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
 
     // Default: List View
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[60] animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[90vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
 
                 {/* Header */}
@@ -241,8 +237,8 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                     className="w-full h-full object-cover"
                                 />
                                 <div className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center ${result.status === 'success'
-                                        ? (result.data?._neutralMessage ? 'bg-blue-500' : 'bg-green-500')
-                                        : 'bg-gray-500'
+                                    ? (result.data?._neutralMessage ? 'bg-blue-500' : 'bg-green-500')
+                                    : 'bg-gray-500'
                                     }`}>
                                     {result.status === 'success' ? (
                                         <Check size={14} className="text-white" />

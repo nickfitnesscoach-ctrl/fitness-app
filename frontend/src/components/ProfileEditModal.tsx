@@ -110,9 +110,9 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
                     const fieldErrors = Object.entries(errorData)
                         .map(([field, messages]) => {
                             const fieldName = field === 'birth_date' ? 'Дата рождения' :
-                                            field === 'height' ? 'Рост' :
-                                            field === 'weight' ? 'Вес' :
-                                            field === 'gender' ? 'Пол' :
+                                field === 'height' ? 'Рост' :
+                                    field === 'weight' ? 'Вес' :
+                                        field === 'gender' ? 'Пол' :
                                             field;
                             return `${fieldName}: ${Array.isArray(messages) ? messages.join(', ') : messages}`;
                         })
@@ -135,9 +135,10 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
-                <div className="sticky top-0 bg-white z-10 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full sm:w-[480px] h-[90vh] sm:h-auto sm:max-h-[85vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300">
+                {/* Header - Fixed */}
+                <div className="flex-none px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white rounded-t-3xl">
                     <h2 className="text-xl font-bold text-gray-900">Редактировать профиль</h2>
                     <button
                         onClick={onClose}
@@ -147,136 +148,141 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                    {error && (
-                        <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm">
-                            {error}
-                        </div>
-                    )}
+                {/* Form - Main Container */}
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                    {/* Scrollable Content */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                        {error && (
+                            <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm">
+                                {error}
+                            </div>
+                        )}
 
-                    {/* Gender */}
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                            <User size={18} className="text-blue-500" />
-                            Пол
-                        </label>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button
-                                type="button"
-                                onClick={() => handleChange('gender', 'M')}
-                                className={`p-3 rounded-xl border-2 transition-all font-medium ${formData.gender === 'M'
+                        {/* Gender */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <User size={18} className="text-blue-500" />
+                                Пол
+                            </label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => handleChange('gender', 'M')}
+                                    className={`p-3 rounded-xl border-2 transition-all font-medium ${formData.gender === 'M'
                                         ? 'border-blue-500 bg-blue-50 text-blue-700'
                                         : 'border-gray-200 hover:border-blue-200 text-gray-600'
-                                    }`}
-                            >
-                                Мужской
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => handleChange('gender', 'F')}
-                                className={`p-3 rounded-xl border-2 transition-all font-medium ${formData.gender === 'F'
-                                        ? 'border-pink-500 bg-pink-50 text-pink-700'
-                                        : 'border-gray-200 hover:border-pink-200 text-gray-600'
-                                    }`}
-                            >
-                                Женский
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Date of Birth */}
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                            <Calendar size={18} className="text-purple-500" />
-                            Дата рождения
-                        </label>
-                        <input
-                            type="date"
-                            value={formData.birth_date}
-                            onChange={(e) => handleChange('birth_date', e.target.value)}
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        {/* Height */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                <Ruler size={18} className="text-indigo-500" />
-                                Рост (см)
-                            </label>
-                            <input
-                                type="number"
-                                value={formData.height}
-                                onChange={(e) => handleChange('height', e.target.value)}
-                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                                placeholder="175"
-                            />
-                        </div>
-
-                        {/* Weight */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                <Weight size={18} className="text-orange-500" />
-                                Вес (кг)
-                            </label>
-                            <input
-                                type="number"
-                                value={formData.weight}
-                                onChange={(e) => handleChange('weight', e.target.value)}
-                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-                                placeholder="70"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Activity Level */}
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                            <Activity size={18} className="text-green-500" />
-                            Уровень активности
-                        </label>
-                        <select
-                            value={formData.activity_level}
-                            onChange={(e) => handleChange('activity_level', e.target.value)}
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all appearance-none"
-                        >
-                            <option value="sedentary">Сидячий образ жизни</option>
-                            <option value="lightly_active">Легкая активность (1-3 раза/нед)</option>
-                            <option value="moderately_active">Средняя активность (3-5 раз/нед)</option>
-                            <option value="very_active">Высокая активность (6-7 раз/нед)</option>
-                            <option value="extra_active">Экстремальная активность</option>
-                        </select>
-                    </div>
-
-                    {/* Goal */}
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                            <Target size={18} className="text-red-500" />
-                            Цель
-                        </label>
-                        <div className="grid grid-cols-1 gap-2">
-                            {[
-                                { value: 'weight_loss', label: 'Похудение', color: 'text-green-600 bg-green-50 border-green-200' },
-                                { value: 'maintenance', label: 'Поддержание формы', color: 'text-blue-600 bg-blue-50 border-blue-200' },
-                                { value: 'weight_gain', label: 'Набор массы', color: 'text-orange-600 bg-orange-50 border-orange-200' }
-                            ].map((option) => (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    onClick={() => handleChange('goal_type', option.value)}
-                                    className={`p-3 rounded-xl border-2 text-left transition-all ${formData.goal_type === option.value
-                                            ? `${option.color} border-current`
-                                            : 'border-gray-100 hover:bg-gray-50 text-gray-600'
                                         }`}
                                 >
-                                    <span className="font-medium">{option.label}</span>
+                                    Мужской
                                 </button>
-                            ))}
+                                <button
+                                    type="button"
+                                    onClick={() => handleChange('gender', 'F')}
+                                    className={`p-3 rounded-xl border-2 transition-all font-medium ${formData.gender === 'F'
+                                        ? 'border-pink-500 bg-pink-50 text-pink-700'
+                                        : 'border-gray-200 hover:border-pink-200 text-gray-600'
+                                        }`}
+                                >
+                                    Женский
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Date of Birth */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <Calendar size={18} className="text-purple-500" />
+                                Дата рождения
+                            </label>
+                            <input
+                                type="date"
+                                value={formData.birth_date}
+                                onChange={(e) => handleChange('birth_date', e.target.value)}
+                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {/* Height */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                    <Ruler size={18} className="text-indigo-500" />
+                                    Рост (см)
+                                </label>
+                                <input
+                                    type="number"
+                                    value={formData.height}
+                                    onChange={(e) => handleChange('height', e.target.value)}
+                                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                    placeholder="175"
+                                />
+                            </div>
+
+                            {/* Weight */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                    <Weight size={18} className="text-orange-500" />
+                                    Вес (кг)
+                                </label>
+                                <input
+                                    type="number"
+                                    value={formData.weight}
+                                    onChange={(e) => handleChange('weight', e.target.value)}
+                                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                                    placeholder="70"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Activity Level */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <Activity size={18} className="text-green-500" />
+                                Уровень активности
+                            </label>
+                            <select
+                                value={formData.activity_level}
+                                onChange={(e) => handleChange('activity_level', e.target.value)}
+                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all appearance-none"
+                            >
+                                <option value="sedentary">Сидячий образ жизни</option>
+                                <option value="lightly_active">Легкая активность (1-3 раза/нед)</option>
+                                <option value="moderately_active">Средняя активность (3-5 раз/нед)</option>
+                                <option value="very_active">Высокая активность (6-7 раз/нед)</option>
+                                <option value="extra_active">Экстремальная активность</option>
+                            </select>
+                        </div>
+
+                        {/* Goal */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <Target size={18} className="text-red-500" />
+                                Цель
+                            </label>
+                            <div className="grid grid-cols-1 gap-2">
+                                {[
+                                    { value: 'weight_loss', label: 'Похудение', color: 'text-green-600 bg-green-50 border-green-200' },
+                                    { value: 'maintenance', label: 'Поддержание формы', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+                                    { value: 'weight_gain', label: 'Набор массы', color: 'text-orange-600 bg-orange-50 border-orange-200' }
+                                ].map((option) => (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        onClick={() => handleChange('goal_type', option.value)}
+                                        className={`p-3 rounded-xl border-2 text-left transition-all ${formData.goal_type === option.value
+                                            ? `${option.color} border-current`
+                                            : 'border-gray-100 hover:bg-gray-50 text-gray-600'
+                                            }`}
+                                    >
+                                        <span className="font-medium">{option.label}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
 
-                    <div className="pt-4">
+                    {/* Footer - Fixed */}
+                    <div className="flex-none p-4 border-t border-gray-100 bg-white safe-area-bottom rounded-b-3xl">
                         <button
                             type="submit"
                             disabled={isSaving}
