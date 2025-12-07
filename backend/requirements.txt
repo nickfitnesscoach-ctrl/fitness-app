@@ -17,3 +17,4 @@ psycopg2-binary>=2.9
 gunicorn>=21.2
 celery>=5.3
 redis>=5.0
+django-redis>=5.4

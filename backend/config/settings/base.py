@@ -205,6 +205,25 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 # ============================================================
+# 4.5: Cache Configuration (Redis for API response caching)
+# ============================================================
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/1")
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+        "KEY_PREFIX": "eatfit24",
+        "TIMEOUT": 300,  # 5 minutes default
+    }
+}
+
+
+# ============================================================
 # Django REST Framework Configuration
 # ============================================================
 
