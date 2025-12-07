@@ -1,18 +1,13 @@
 import React from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { Home, Camera, CreditCard, User } from 'lucide-react';
-import BrowserDebugBanner from './BrowserDebugBanner';
+import { DebugBanner } from '../features/debug';
 
 const ClientLayout: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
-            {/* Browser Debug Mode Banner */}
-            <BrowserDebugBanner />
-
-            {/* DEBUG: Version marker */}
-            <div className="bg-red-500 text-white text-center py-1 text-xs font-bold">
-                DEBUG_VERSION_42
-            </div>
+            {/* Debug Mode Banner - only visible when IS_DEBUG is true */}
+            <DebugBanner />
 
             <main className="flex-1 pb-24 md:pb-20">
                 <Outlet />

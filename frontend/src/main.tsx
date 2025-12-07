@@ -3,11 +3,13 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './App.css'
 import App from './App'
-import { mockTelegramEnv } from './mockTelegram'
+import { shouldInitMockTelegram } from './shared/config/debug'
+import { setupMockTelegram } from './shared/lib/mockTelegram'
 
-// Mock Telegram environment in development
-if (import.meta.env.DEV) {
-  mockTelegramEnv();
+// Initialize mock Telegram WebApp if needed
+// Only runs when: (DEV or ?debug=1) AND no real Telegram WebApp exists
+if (shouldInitMockTelegram()) {
+  setupMockTelegram();
 }
 
 createRoot(document.getElementById('root')!).render(

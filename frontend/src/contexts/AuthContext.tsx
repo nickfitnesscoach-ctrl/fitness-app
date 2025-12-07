@@ -9,9 +9,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../services/api';
 import {
     initTelegramWebApp,
-    isBrowserDebugMode,
     type TelegramUserInfo,
 } from '../lib/telegram';
+import { IS_DEBUG } from '../shared/config/debug';
 
 // ============================================================
 // Types
@@ -63,10 +63,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setLoading(true);
             setError(null);
 
-            // Проверяем Browser Debug Mode
-            const debugMode = isBrowserDebugMode();
-            if (debugMode) {
-                console.log('[Auth] Browser Debug Mode enabled');
+            // Check if debug mode is active
+            if (IS_DEBUG) {
+                console.log('[Auth] Debug Mode enabled');
                 setIsBrowserDebug(true);
             }
 
@@ -76,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (!authData) {
                 console.warn('[Auth] Telegram WebApp not available');
-                if (!debugMode) {
+                if (!IS_DEBUG) {
                     setError('Telegram WebApp не инициализирован. Откройте приложение через Telegram.');
                 }
                 setLoading(false);
@@ -106,10 +105,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             } catch (authError) {
                 // Backend auth failed, но Telegram init успешен
-                // В Browser Debug Mode это нормально - можем работать без backend
+                // В Debug Mode это нормально - можем работать без backend
                 console.error('[Auth] Backend auth failed:', authError);
-                if (debugMode) {
-                    console.log('[Auth] Browser Debug Mode: continuing without backend auth');
+                if (IS_DEBUG) {
+                    console.log('[Auth] Debug Mode: continuing without backend auth');
                 }
                 // Не устанавливаем error - пользователь может работать
             }

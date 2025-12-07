@@ -4,8 +4,10 @@
  * Этот модуль обеспечивает:
  * - Единую точку инициализации Telegram WebApp
  * - Формирование auth headers для API запросов
- * - DEV режим для локальной разработки
+ * - Debug режим через centralized configuration
  */
+
+import { IS_DEBUG, DEBUG_USER } from '../shared/config/debug';
 
 // ============================================================
 // Types
@@ -31,57 +33,36 @@ export interface TelegramAuthData {
 
 /**
  * Debug user для Browser Debug Mode
+ * Uses centralized DEBUG_USER configuration
  */
-const DEBUG_TELEGRAM_USER: TelegramUserInfo = {
-    id: 999999999,
-    first_name: 'Debug',
-    last_name: 'User',
-    username: 'eatfit24_debug',
-    language_code: 'ru',
-    is_premium: false,
-};
+const DEBUG_TELEGRAM_USER: TelegramUserInfo = DEBUG_USER;
 
 /**
- * Проверяет, включён ли Debug Mode через env переменную
- * SECURITY: Must be explicitly set to 'true' in .env
+ * Проверяет, включён ли Debug Mode
+ * Uses centralized IS_DEBUG configuration
  */
 export function isDebugModeEnabled(): boolean {
-    // Only enabled if explicitly set in env
-    return import.meta.env.VITE_DEBUG_MODE === 'true' || 
-           import.meta.env.VITE_WEB_DEBUG_ENABLED === 'true';
+    return IS_DEBUG;
 }
 
 /**
  * Проверяет, нужно ли использовать Debug Mode
- * (включён в env И нет реального Telegram WebApp)
+ * (debug включён И нет реального Telegram WebApp)
  */
 export function shouldUseDebugMode(): boolean {
     if (typeof window === 'undefined') return false;
-    
-    const debugEnabled = isDebugModeEnabled();
+
     const hasTelegram = Boolean(window.Telegram?.WebApp?.initData);
-    
-    return debugEnabled && !hasTelegram;
+
+    return IS_DEBUG && !hasTelegram;
 }
 
 /**
  * Проверка, включён ли Browser Debug Mode (legacy compatibility)
- * @deprecated Use shouldUseDebugMode() instead
+ * @deprecated Use IS_DEBUG from shared/config/debug instead
  */
 export function isBrowserDebugMode(): boolean {
-    if (typeof window === 'undefined') return false;
-
-    // Проверяем env переменную
-    if (!isDebugModeEnabled()) return false;
-
-    // Проверяем URL параметры
-    const params = new URLSearchParams(window.location.search);
-    const hasDebugFlag = params.has('web_debug') || params.has('debug');
-
-    // Проверяем, что не запущено в Telegram
-    const isTelegramEnv = Boolean(window.Telegram?.WebApp?.initData);
-
-    return !isTelegramEnv && hasDebugFlag;
+    return IS_DEBUG;
 }
 
 // ============================================================

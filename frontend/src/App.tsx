@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ClientsProvider } from './contexts/ClientsContext';
@@ -6,6 +6,7 @@ import { BillingProvider } from './contexts/BillingContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { initTelegramWebApp } from './lib/telegram';
+import { IS_DEBUG } from './shared/config/debug';
 import { Dashboard } from './components/Dashboard';
 import ApplicationsPage from './pages/ApplicationsPage';
 import ClientsPage from './pages/ClientsPage';
@@ -22,27 +23,32 @@ import PaymentHistoryPage from './pages/PaymentHistoryPage';
 import SubscribersPage from './pages/SubscribersPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import AuthErrorModal from './components/AuthErrorModal';
-// F-013: Offline indicator
 import OfflineIndicator from './components/OfflineIndicator';
-
 import MealDetailsPage from './pages/MealDetailsPage';
 
 function App() {
-  useEffect(() => {
-    // Условная инициализация Telegram WebApp (только когда работаем как Telegram Mini App)
-    if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
-      initTelegramWebApp();
-    } else if (import.meta.env.DEV) {
-      // В DEV режиме пытаемся инициализировать с фейковыми данными
-      initTelegramWebApp();
-    } else {
-      console.log('[App] Запуск вне Telegram WebApp - пропускаем инициализацию');
-    }
+  const [isReady, setIsReady] = useState(false);
 
-    // DEBUG: Version marker
-    console.log('🚀 EATFIT_FRONT_VERSION = 42');
-    console.log('📦 Build timestamp:', new Date().toISOString());
+  useEffect(() => {
+    // Initialize Telegram WebApp (works with both real and mock Telegram)
+    const init = async () => {
+      // In debug mode or when Telegram is available, init WebApp
+      if (IS_DEBUG || window.Telegram?.WebApp) {
+        await initTelegramWebApp();
+      }
+
+      // Mark app as ready to prevent flash
+      setIsReady(true);
+    };
+
+    init();
   }, []);
+
+  // Wait for initialization to prevent debug banner flash
+  // This ensures mock Telegram is set up before rendering
+  if (!isReady) {
+    return null;
+  }
 
   return (
     <ErrorBoundary>
