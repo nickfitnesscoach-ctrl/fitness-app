@@ -117,3 +117,41 @@ class PaymentServiceError(ExternalServiceError):
     """Payment service failure."""
     default_message = "Payment service error"
     default_code = "payment_service_error"
+
+
+# Additional error classes for unified error handling
+
+class InvalidImageError(ValidationError):
+    """Invalid image format or content."""
+    default_message = "Неверный формат изображения"
+    default_code = "INVALID_IMAGE"
+
+
+class AIRecognitionFailedError(ExternalServiceError):
+    """AI failed to recognize food."""
+    default_message = "Не удалось распознать еду на фото"
+    default_code = "AI_RECOGNITION_FAILED"
+
+
+class PaymentCreationError(ExternalServiceError):
+    """Failed to create payment."""
+    default_message = "Не удалось создать платёж"
+    default_code = "PAYMENT_ERROR"
+
+
+class NoPaymentMethodError(BusinessLogicError):
+    """No payment method attached."""
+    default_message = "Для автопродления необходима привязанная карта"
+    default_code = "NO_PAYMENT_METHOD"
+
+
+class NotAvailableForFreeError(BusinessLogicError):
+    """Feature not available for free plan."""
+    default_message = "Эта функция доступна только в PRO подписке"
+    default_code = "NOT_AVAILABLE_FOR_FREE"
+
+
+class ActiveSubscriptionError(BusinessLogicError):
+    """User already has active subscription."""
+    default_message = "У вас уже есть активная подписка"
+    default_code = "ACTIVE_SUBSCRIPTION"

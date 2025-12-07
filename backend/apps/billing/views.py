@@ -2,6 +2,9 @@
 Views для управления тарифами, подписками и платежами.
 """
 
+from functools import wraps
+import warnings
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -16,6 +19,49 @@ from decimal import Decimal
 import logging
 
 from apps.common.audit import SecurityAuditLogger
+
+
+# ============================================================
+# Deprecation decorator for legacy endpoints
+# ============================================================
+
+def deprecated(message, use_instead=None):
+    """
+    Decorator to mark API views as deprecated.
+    
+    Adds:
+    - X-Deprecated header with deprecation message
+    - X-Deprecated-Use header with suggested alternative (if provided)
+    - Logs deprecation warning
+    
+    Args:
+        message: Deprecation message for clients
+        use_instead: Suggested replacement endpoint path
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(request, *args, **kwargs):
+            # Log deprecation warning
+            warnings.warn(
+                f"Endpoint {request.path} is deprecated: {message}",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            logger.warning(
+                f"[DEPRECATED] {request.method} {request.path} called. {message}"
+            )
+            
+            # Call original function
+            response = func(request, *args, **kwargs)
+            
+            # Add deprecation headers
+            response['X-Deprecated'] = message
+            if use_instead:
+                response['X-Deprecated-Use'] = use_instead
+            
+            return response
+        return wrapper
+    return decorator
 
 from .models import SubscriptionPlan, Subscription, Payment, Refund
 from .serializers import (
@@ -94,9 +140,16 @@ def get_subscription_plans(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@deprecated(
+    message="This endpoint is deprecated and will be removed in v2.0",
+    use_instead="/api/v1/billing/me/"
+)
 def get_current_plan(request):
     """
     GET /api/v1/billing/plan
+    
+    DEPRECATED: Use GET /api/v1/billing/me/ instead.
+    
     Получение информации о текущем тарифном плане пользователя.
     """
     try:
@@ -241,9 +294,16 @@ def subscribe(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@deprecated(
+    message="This endpoint is deprecated and will be removed in v2.0",
+    use_instead="/api/v1/billing/subscription/autorenew/"
+)
 def toggle_auto_renew(request):
     """
     POST /api/v1/billing/auto-renew/toggle
+    
+    DEPRECATED: Use POST /api/v1/billing/subscription/autorenew/ instead.
+    
     Включение/отключение автопродления подписки.
     """
     try:

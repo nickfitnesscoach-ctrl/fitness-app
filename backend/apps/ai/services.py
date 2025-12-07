@@ -341,12 +341,16 @@ def recognize_and_save_meal(
         comment: Optional user comment
         
     Returns:
-        Dict with meal_id, recognized_items, recognition_time
+        Dict with meal, recognized_items (from DB), recognition_time
+        IMPORTANT: Items are returned from DB after refresh_from_db()
+        to ensure consistency with async tasks behavior.
         
     Raises:
         AIProxyTimeoutError: If AI service times out
         Exception: If AI service fails
     """
+    from django.db import transaction
+    
     # 1. Create Meal and save photo
     if image_file:
         image_file.seek(0)
@@ -378,25 +382,44 @@ def recognize_and_save_meal(
         f"recognition_time={recognition_elapsed:.2f}s"
     )
 
-    # 3. Save recognized items to Meal
+    # 3. Save recognized items to Meal in transaction
     recognized_items = result.get('recognized_items', [])
-    for item in recognized_items:
-        FoodItem.objects.create(
-            meal=meal,
-            name=item.get('name', 'Unknown'),
-            grams=item.get('estimated_weight', 100),
-            calories=item.get('calories', 0),
-            protein=item.get('protein', 0),
-            fat=item.get('fat', 0),
-            carbohydrates=item.get('carbohydrates', 0)
-        )
+    with transaction.atomic():
+        for item in recognized_items:
+            FoodItem.objects.create(
+                meal=meal,
+                name=item.get('name', 'Unknown'),
+                grams=item.get('estimated_weight', 100),
+                calories=item.get('calories', 0),
+                protein=item.get('protein', 0),
+                fat=item.get('fat', 0),
+                carbohydrates=item.get('carbohydrates', 0)
+            )
 
-    # 4. Increment photo usage counter
-    DailyUsage.objects.increment_photo_requests(user)
-    logger.info(f"Incremented photo counter for user {user.username}")
+        # 4. Increment photo usage counter inside transaction
+        DailyUsage.objects.increment_photo_requests(user)
+        logger.info(f"Incremented photo counter for user {user.username}")
+
+    # RACE CONDITION FIX: Return items from DB
+    # This ensures consistency with async tasks behavior
+    meal.refresh_from_db()
+    db_items = list(meal.items.all())
+    
+    items_data = [
+        {
+            'id': str(item.id),
+            'name': item.name,
+            'grams': item.grams,
+            'calories': float(item.calories),
+            'protein': float(item.protein),
+            'fat': float(item.fat),
+            'carbohydrates': float(item.carbohydrates),
+        }
+        for item in db_items
+    ]
 
     return {
         'meal': meal,
-        'recognized_items': recognized_items,
+        'recognized_items': items_data,
         'recognition_time': recognition_elapsed,
     }

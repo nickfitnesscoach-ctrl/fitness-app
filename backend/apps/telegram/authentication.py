@@ -36,7 +36,8 @@ class DebugModeAuthentication(authentication.BaseAuthentication):
     
     Security note:
         This authentication is intended for development only.
-        In production, ensure DEBUG_MODE_ENABLED=False or restrict access.
+        SECURITY: Requires WEBAPP_DEBUG_MODE_ENABLED=True in settings.
+        In production, this setting must be False to prevent unauthorized access.
     """
     
     # Default debug user ID
@@ -46,8 +47,11 @@ class DebugModeAuthentication(authentication.BaseAuthentication):
         """
         Authenticate request if X-Debug-Mode header is "true".
         
+        SECURITY: Checks both DEBUG_MODE_ENABLED and WEBAPP_DEBUG_MODE_ENABLED.
+        Logs all debug mode access attempts with IP and path.
+        
         Returns:
-            tuple: (user, None) if debug mode authentication successful
+            tuple: (user, 'debug') if debug mode authentication successful
             None: if X-Debug-Mode is not "true" (allows other auth methods)
         """
         debug_mode = request.META.get('HTTP_X_DEBUG_MODE', '').lower()
@@ -56,9 +60,20 @@ class DebugModeAuthentication(authentication.BaseAuthentication):
             # Not a debug request, allow other auth methods
             return None
         
-        # Check if debug mode is allowed
-        if not getattr(settings, 'DEBUG_MODE_ENABLED', settings.DEBUG):
-            logger.warning("[DebugModeAuth] Debug mode request rejected - not enabled in settings")
+        # Get client IP for security logging
+        client_ip = self._get_client_ip(request)
+        
+        # SECURITY: Check if debug mode is allowed in settings
+        # Requires WEBAPP_DEBUG_MODE_ENABLED=True (separate from DEBUG)
+        webapp_debug_enabled = getattr(settings, 'WEBAPP_DEBUG_MODE_ENABLED', False)
+        legacy_debug_enabled = getattr(settings, 'DEBUG_MODE_ENABLED', settings.DEBUG)
+        
+        if not webapp_debug_enabled and not legacy_debug_enabled:
+            logger.warning(
+                f"[SECURITY] Debug mode request REJECTED. "
+                f"IP: {client_ip}, Path: {request.path}, "
+                f"WEBAPP_DEBUG_MODE_ENABLED=False"
+            )
             return None
         
         # Get debug user ID from headers
@@ -88,16 +103,32 @@ class DebugModeAuthentication(authentication.BaseAuthentication):
         # Get or create debug user
         user = self._get_or_create_debug_user(user_data)
         
-        logger.info(
-            "[DebugModeAuth] Debug user authenticated: user_id=%s telegram_id=%s username=%s",
-            user.id, debug_user_id, user_data['username']
+        # SECURITY: Log debug mode authentication with full context
+        logger.warning(
+            f"[SECURITY] Debug mode authentication USED. "
+            f"IP: {client_ip}, Path: {request.path}, Method: {request.method}, "
+            f"user_id={user.id}, telegram_id={debug_user_id}, username={user_data['username']}"
         )
         
-        return (user, 'debug')
+        return (user, {'debug_mode': True, 'client_ip': client_ip})
     
     def authenticate_header(self, request):
         """Return WWW-Authenticate header value for 401 responses."""
         return 'DebugMode realm="api"'
+    
+    def _get_client_ip(self, request):
+        """
+        Extract client IP from request, handling proxies.
+        
+        Checks X-Forwarded-For header first (for requests through Nginx/proxy),
+        then falls back to REMOTE_ADDR.
+        """
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            # X-Forwarded-For can contain multiple IPs: client, proxy1, proxy2
+            # The first IP is the original client
+            return x_forwarded_for.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR', 'unknown')
     
     def _get_or_create_debug_user(self, telegram_user_data: dict):
         """Get existing debug user or create new one."""

@@ -8,6 +8,7 @@ allowing the API to return immediately with a task ID.
 import logging
 import time
 from celery import shared_task
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,9 @@ def recognize_food_async(
         comment: Optional user comment
         
     Returns:
-        dict with full recognition results for frontend polling
+        dict with full recognition results for frontend polling.
+        IMPORTANT: Items are returned from DB after refresh_from_db()
+        to prevent race condition where items are not yet visible.
     """
     from apps.nutrition.models import Meal, FoodItem
     from apps.ai_proxy.service import AIProxyRecognitionService
@@ -68,41 +71,51 @@ def recognize_food_async(
         recognized_items = result.get('recognized_items', [])
         
         if recognized_items:
-            # Create FoodItems for each recognized item
-            food_items_data = []
-            for item_data in recognized_items:
-                food_item = FoodItem.objects.create(
-                    meal=meal,
-                    name=item_data.get('name', 'Unknown'),
-                    grams=item_data.get('estimated_weight', 100),
-                    calories=item_data.get('calories', 0),
-                    protein=item_data.get('protein', 0),
-                    fat=item_data.get('fat', 0),
-                    carbohydrates=item_data.get('carbohydrates', 0),
-                )
-                food_items_data.append({
-                    'id': food_item.id,  # Keep as int for consistency with backend serializers
-                    'name': food_item.name,
-                    'grams': food_item.grams,
-                    'calories': food_item.calories,
-                    'protein': float(food_item.protein),
-                    'fat': float(food_item.fat),
-                    'carbohydrates': float(food_item.carbohydrates),
-                    'confidence': item_data.get('confidence', 0.9),
-                })
+            # Create FoodItems in transaction to ensure atomicity
+            with transaction.atomic():
+                for item_data in recognized_items:
+                    FoodItem.objects.create(
+                        meal=meal,
+                        name=item_data.get('name', 'Unknown'),
+                        grams=item_data.get('estimated_weight', 100),
+                        calories=item_data.get('calories', 0),
+                        protein=item_data.get('protein', 0),
+                        fat=item_data.get('fat', 0),
+                        carbohydrates=item_data.get('carbohydrates', 0),
+                    )
+                
+                # Increment usage counter inside transaction
+                DailyUsage.objects.increment_photo_requests(user)
             
-            # Increment usage counter
-            DailyUsage.objects.increment_photo_requests(user)
+            # RACE CONDITION FIX: Refresh from DB to get actual saved items
+            # This guarantees task result contains items that are really in the database
+            meal.refresh_from_db()
+            db_items = list(meal.items.all())
             
-            # Calculate meal totals
-            total_calories = sum(item.calories for item in meal.items.all())
-            total_protein = sum(float(item.protein) for item in meal.items.all())
-            total_fat = sum(float(item.fat) for item in meal.items.all())
-            total_carbs = sum(float(item.carbohydrates) for item in meal.items.all())
+            # Build result from DB items (not from AI response)
+            food_items_data = [
+                {
+                    'id': item.id,
+                    'name': item.name,
+                    'grams': item.grams,
+                    'calories': item.calories,
+                    'protein': float(item.protein),
+                    'fat': float(item.fat),
+                    'carbohydrates': float(item.carbohydrates),
+                    'confidence': 0.9,  # Default confidence
+                }
+                for item in db_items
+            ]
+            
+            # Calculate totals from DB items
+            total_calories = sum(item.calories for item in db_items)
+            total_protein = sum(float(item.protein) for item in db_items)
+            total_fat = sum(float(item.fat) for item in db_items)
+            total_carbs = sum(float(item.carbohydrates) for item in db_items)
             
             logger.info(
                 f"[Task {task_id}] Recognition complete for meal {meal_id}. "
-                f"Created {len(food_items_data)} food items in {recognition_time:.2f}s"
+                f"Created {len(db_items)} food items in {recognition_time:.2f}s"
             )
             
             return {

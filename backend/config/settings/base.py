@@ -39,6 +39,11 @@ DEBUG = os.environ.get("DEBUG", "True") == "True" or os.environ.get("DJANGO_DEBU
 # When enabled, X-Debug-Mode: true header will create/authenticate debug user
 DEBUG_MODE_ENABLED = os.environ.get("DEBUG_MODE_ENABLED", str(DEBUG)).lower() == "true"
 
+# SECURITY: Webapp Debug Mode - separate setting for stricter control
+# In production, this should ALWAYS be False to prevent unauthorized access
+# Set via WEBAPP_DEBUG_MODE_ENABLED env var (defaults to DEBUG value)
+WEBAPP_DEBUG_MODE_ENABLED = os.environ.get("WEBAPP_DEBUG_MODE_ENABLED", str(DEBUG)).lower() == "true"
+
 ALLOWED_HOSTS_RAW = os.environ.get("ALLOWED_HOSTS") or os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 ALLOWED_HOSTS = ALLOWED_HOSTS_RAW.split(",")
 
@@ -286,8 +291,8 @@ REST_FRAMEWORK = {
         "task_status": "60/minute",  # B-004 FIX: Task status polling rate limit
     },
 
-    # Error handling
-    "EXCEPTION_HANDLER": "rest_framework.views.exception_handler",
+    # Error handling - unified format for frontend
+    "EXCEPTION_HANDLER": "apps.core.exception_handler.custom_exception_handler",
 
     # Date/Time formatting
     "DATETIME_FORMAT": "%Y-%m-%dT%H:%M:%S%z",

@@ -8,6 +8,11 @@ import os
 
 DEBUG = False
 
+# SECURITY: Disable Debug Mode in production
+# This prevents X-Debug-Mode header from authenticating debug users
+DEBUG_MODE_ENABLED = False
+WEBAPP_DEBUG_MODE_ENABLED = False
+
 # Hosts - load from environment
 # SECURITY: Empty ALLOWED_HOSTS will cause Django to reject all requests
 # This is intentional - production MUST have explicit allowed hosts
