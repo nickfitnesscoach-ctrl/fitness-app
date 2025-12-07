@@ -77,10 +77,10 @@ const ClientDashboard: React.FC = () => {
 
     // Reload data when navigating back to dashboard (location.key changes on each navigation)
     useEffect(() => {
-        if (isReady && webAppDetected) {
+        if (isReady && (webAppDetected || isBrowserDebug || webAppBrowserDebug)) {
             loadDashboardData(selectedDate);
         }
-    }, [isReady, webAppDetected, selectedDate, location.key]);
+    }, [isReady, webAppDetected, isBrowserDebug, webAppBrowserDebug, selectedDate, location.key]);
 
     const loadDashboardData = async (date: Date) => {
         setLoading(true);
