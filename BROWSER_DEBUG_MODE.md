@@ -98,25 +98,68 @@ Backend должен распознать заголовок `X-Debug-Mode: true
 
 ## Backend-интеграция
 
-Backend должен обрабатывать заголовок `X-Debug-Mode: true`:
+**РЕАЛИЗОВАНО** в `apps/telegram/authentication.py`:
+
+### DebugModeAuthentication класс
+
+Backend автоматически обрабатывает `X-Debug-Mode: true` через DRF authentication class:
 
 ```python
-# Пример Django middleware/authentication
-def authenticate_debug_user(request):
-    if request.headers.get('X-Debug-Mode') == 'true':
-        debug_user_id = request.headers.get('X-Debug-User-Id')
-        # Создать или получить debug-пользователя
-        user, created = User.objects.get_or_create(
-            telegram_id=debug_user_id,
-            defaults={
-                'username': 'eatfit24_debug',
-                'first_name': 'Debug',
-                'last_name': 'User'
-            }
-        )
-        return user
-    # Иначе обычная Telegram-авторизация
-    return authenticate_telegram(request)
+# apps/telegram/authentication.py
+class DebugModeAuthentication(authentication.BaseAuthentication):
+    """
+    Authentication backend for Browser Debug Mode.
+    
+    Headers:
+        X-Debug-Mode: "true" (required)
+        X-Debug-User-Id: telegram_id (default: 999999999)
+        X-Telegram-ID: same as X-Debug-User-Id
+        X-Telegram-First-Name: first name
+        X-Telegram-Username: username
+    """
+    DEFAULT_DEBUG_USER_ID = 999999999
+    
+    def authenticate(self, request):
+        if request.META.get('HTTP_X_DEBUG_MODE', '').lower() != 'true':
+            return None  # Allow other auth methods
+        
+        # Get or create debug user
+        user = self._get_or_create_debug_user(user_data)
+        return (user, 'debug')
+```
+
+### Настройка в settings
+
+```python
+# config/settings/base.py
+
+# Browser Debug Mode - по умолчанию включен в DEBUG режиме
+DEBUG_MODE_ENABLED = os.environ.get("DEBUG_MODE_ENABLED", str(DEBUG)).lower() == "true"
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.telegram.authentication.DebugModeAuthentication",  # First!
+        "apps.telegram.authentication.TelegramHeaderAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+}
+```
+
+### Все endpoints поддерживают Debug Mode
+
+- `/api/v1/telegram/webapp/auth/` - авторизация
+- `/api/v1/meals/` - дневник питания
+- `/api/v1/ai/recognize/` - распознавание еды
+- `/api/v1/ai/task/{id}/` - статус задачи
+- `/api/v1/billing/me/` - биллинг
+- `/api/v1/goals/` - цели КБЖУ
+- `/api/v1/profile/` - профиль
+
+### Переменные окружения для production
+
+В production установите:
+```env
+DEBUG_MODE_ENABLED=false  # Отключить debug mode
 ```
 
 ## Примеры использования

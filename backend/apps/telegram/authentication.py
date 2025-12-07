@@ -2,10 +2,12 @@
 Telegram WebApp authentication backend.
 
 Проверяет подпись initData из Telegram Mini App для безопасной аутентификации.
+Также поддерживает Browser Debug Mode для локальной разработки.
 """
 
 import logging
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import authentication, exceptions
 
@@ -16,6 +18,156 @@ from apps.users.models import Profile
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
+
+
+class DebugModeAuthentication(authentication.BaseAuthentication):
+    """
+    Authentication backend for Browser Debug Mode.
+    
+    Allows frontend development without Telegram WebApp.
+    Creates/finds a debug user based on X-Debug-User-Id header.
+    
+    Headers used:
+        X-Debug-Mode: "true" (required to activate)
+        X-Debug-User-Id: Debug user's telegram_id (default: 999999999)
+        X-Telegram-ID: Same as X-Debug-User-Id
+        X-Telegram-First-Name: Debug user's first name
+        X-Telegram-Username: Debug user's username
+    
+    Security note:
+        This authentication is intended for development only.
+        In production, ensure DEBUG_MODE_ENABLED=False or restrict access.
+    """
+    
+    # Default debug user ID
+    DEFAULT_DEBUG_USER_ID = 999999999
+    
+    def authenticate(self, request):
+        """
+        Authenticate request if X-Debug-Mode header is "true".
+        
+        Returns:
+            tuple: (user, None) if debug mode authentication successful
+            None: if X-Debug-Mode is not "true" (allows other auth methods)
+        """
+        debug_mode = request.META.get('HTTP_X_DEBUG_MODE', '').lower()
+        
+        if debug_mode != 'true':
+            # Not a debug request, allow other auth methods
+            return None
+        
+        # Check if debug mode is allowed
+        if not getattr(settings, 'DEBUG_MODE_ENABLED', settings.DEBUG):
+            logger.warning("[DebugModeAuth] Debug mode request rejected - not enabled in settings")
+            return None
+        
+        # Get debug user ID from headers
+        debug_user_id = request.META.get('HTTP_X_DEBUG_USER_ID')
+        if not debug_user_id:
+            debug_user_id = request.META.get('HTTP_X_TELEGRAM_ID')
+        
+        if not debug_user_id:
+            debug_user_id = self.DEFAULT_DEBUG_USER_ID
+        
+        try:
+            debug_user_id = int(debug_user_id)
+        except (ValueError, TypeError):
+            logger.warning("[DebugModeAuth] Invalid debug user ID: %s", debug_user_id)
+            debug_user_id = self.DEFAULT_DEBUG_USER_ID
+        
+        # Build user data from headers
+        user_data = {
+            'id': debug_user_id,
+            'first_name': request.META.get('HTTP_X_TELEGRAM_FIRST_NAME', 'Debug'),
+            'username': request.META.get('HTTP_X_TELEGRAM_USERNAME', 'eatfit24_debug'),
+            'last_name': request.META.get('HTTP_X_TELEGRAM_LAST_NAME', 'User'),
+            'language_code': request.META.get('HTTP_X_TELEGRAM_LANGUAGE_CODE', 'ru'),
+            'is_premium': False,
+        }
+        
+        # Get or create debug user
+        user = self._get_or_create_debug_user(user_data)
+        
+        logger.info(
+            "[DebugModeAuth] Debug user authenticated: user_id=%s telegram_id=%s username=%s",
+            user.id, debug_user_id, user_data['username']
+        )
+        
+        return (user, 'debug')
+    
+    def authenticate_header(self, request):
+        """Return WWW-Authenticate header value for 401 responses."""
+        return 'DebugMode realm="api"'
+    
+    def _get_or_create_debug_user(self, telegram_user_data: dict):
+        """Get existing debug user or create new one."""
+        telegram_id = telegram_user_data['id']
+        
+        try:
+            telegram_user = TelegramUser.objects.select_related('user').get(
+                telegram_id=telegram_id
+            )
+            user = telegram_user.user
+            
+            # Update Telegram data
+            telegram_user.username = telegram_user_data.get('username', '')
+            telegram_user.first_name = telegram_user_data.get('first_name', '')
+            telegram_user.last_name = telegram_user_data.get('last_name', '')
+            telegram_user.language_code = telegram_user_data.get('language_code', 'ru')
+            telegram_user.save()
+            
+            return user
+            
+        except TelegramUser.DoesNotExist:
+            return self._create_debug_user(telegram_user_data)
+    
+    def _create_debug_user(self, telegram_user_data: dict):
+        """Create new debug user."""
+        telegram_id = telegram_user_data['id']
+        first_name = telegram_user_data.get('first_name', 'Debug')
+        last_name = telegram_user_data.get('last_name', 'User')
+        username = telegram_user_data.get('username', 'eatfit24_debug')
+        django_username = f"tg_{telegram_id}"
+        
+        # Check if user exists
+        try:
+            user = User.objects.get(username=django_username)
+        except User.DoesNotExist:
+            # Create user
+            user = User.objects.create_user(
+                username=django_username,
+                email=f"tg{telegram_id}@telegram.user",
+                first_name=first_name,
+                last_name=last_name
+            )
+            user.set_unusable_password()
+            user.save()
+        
+        # Create TelegramUser record
+        TelegramUser.objects.create(
+            user=user,
+            telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            language_code=telegram_user_data.get('language_code', 'ru'),
+            is_premium=False
+        )
+        
+        # Ensure profile exists
+        try:
+            Profile.objects.get_or_create(user=user)
+        except Exception as exc:
+            logger.exception(
+                "[DebugModeAuth] Failed to ensure Profile for debug user %s: %s", user.pk, exc
+            )
+        
+        logger.info(
+            "[DebugModeAuth] Created new debug user: user_id=%s telegram_id=%s",
+            user.id, telegram_id
+        )
+        
+        return user
 
 
 class TelegramWebAppAuthentication(authentication.BaseAuthentication):

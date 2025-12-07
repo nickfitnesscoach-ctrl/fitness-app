@@ -13,7 +13,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.telegram.authentication import TelegramWebAppAuthentication
+from apps.telegram.authentication import TelegramWebAppAuthentication, DebugModeAuthentication
 from apps.telegram.telegram_auth import telegram_admin_required
 from apps.telegram.services.webapp_auth import get_webapp_auth_service
 from apps.telegram.models import TelegramUser
@@ -143,14 +143,22 @@ def telegram_auth(request):
 def webapp_auth(request):
     """
     Единый endpoint для авторизации Telegram WebApp.
+    Также поддерживает Browser Debug Mode (X-Debug-Mode: true).
 
     POST /api/v1/telegram/webapp/auth/
     """
-    authenticator = TelegramWebAppAuthentication()
-
-    try:
+    # Try Debug Mode authentication first
+    debug_auth = DebugModeAuthentication()
+    result = debug_auth.authenticate(request)
+    
+    if result:
+        logger.info("[WebAppAuth] Using Debug Mode authentication")
+    else:
+        # Fall back to normal Telegram WebApp authentication
+        authenticator = TelegramWebAppAuthentication()
         result = authenticator.authenticate(request)
 
+    try:
         if not result:
             logger.warning("[WebAppAuth] Authentication failed: no result from authenticator")
             return Response(

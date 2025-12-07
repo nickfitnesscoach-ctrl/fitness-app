@@ -35,6 +35,10 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True") == "True" or os.environ.get("DJANGO_DEBUG", "True") == "True"
 
+# Browser Debug Mode - allows frontend development without Telegram WebApp
+# When enabled, X-Debug-Mode: true header will create/authenticate debug user
+DEBUG_MODE_ENABLED = os.environ.get("DEBUG_MODE_ENABLED", str(DEBUG)).lower() == "true"
+
 ALLOWED_HOSTS_RAW = os.environ.get("ALLOWED_HOSTS") or os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 ALLOWED_HOSTS = ALLOWED_HOSTS_RAW.split(",")
 
@@ -229,7 +233,9 @@ CACHES = {
 
 REST_FRAMEWORK = {
     # Authentication
+    # Order matters: DebugMode checked first, then Telegram, then JWT
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.telegram.authentication.DebugModeAuthentication",  # Browser Debug Mode
         "apps.telegram.authentication.TelegramHeaderAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
