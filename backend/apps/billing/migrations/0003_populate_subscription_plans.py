@@ -31,9 +31,9 @@ def populate_subscription_plans(apps, schema_editor):
         }
     )
     if created:
-        print(f"✓ Created FREE plan")
+        print(f"[OK] Created FREE plan")
     else:
-        print(f"✓ Updated FREE plan")
+        print(f"[OK] Updated FREE plan")
 
     # MONTHLY Plan (Pro Monthly)
     monthly_plan, created = SubscriptionPlan.objects.update_or_create(
@@ -53,9 +53,9 @@ def populate_subscription_plans(apps, schema_editor):
         }
     )
     if created:
-        print(f"✓ Created MONTHLY plan")
+        print(f"[OK] Created MONTHLY plan")
     else:
-        print(f"✓ Updated MONTHLY plan")
+        print(f"[OK] Updated MONTHLY plan")
 
     # YEARLY Plan (Pro Yearly)
     yearly_plan, created = SubscriptionPlan.objects.update_or_create(
@@ -75,9 +75,9 @@ def populate_subscription_plans(apps, schema_editor):
         }
     )
     if created:
-        print(f"✓ Created YEARLY plan")
+        print(f"[OK] Created YEARLY plan")
     else:
-        print(f"✓ Updated YEARLY plan")
+        print(f"[OK] Updated YEARLY plan")
 
 
 def reverse_populate_plans(apps, schema_editor):
@@ -92,9 +92,9 @@ def reverse_populate_plans(apps, schema_editor):
             plan = SubscriptionPlan.objects.get(name=plan_name)
             if plan.subscriptions.count() == 0:
                 plan.delete()
-                print(f"✓ Deleted {plan_name} plan (no active subscriptions)")
+                print(f"[OK] Deleted {plan_name} plan (no active subscriptions)")
             else:
-                print(f"⚠ Kept {plan_name} plan (has active subscriptions)")
+                print(f"[WARNING] Kept {plan_name} plan (has active subscriptions)")
         except SubscriptionPlan.DoesNotExist:
             pass
 

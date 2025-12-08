@@ -7,9 +7,9 @@ from decimal import Decimal
 def update_subscription_plans(apps, schema_editor):
     """
     Обновляет данные тарифных планов согласно ТЗ:
-    - FREE: 0₽, бессрочно
-    - PRO_MONTHLY: 299₽, 30 дней
-    - PRO_YEARLY: 2490₽, 365 дней
+    - FREE: 0 RUB, бессрочно
+    - PRO_MONTHLY: 299 RUB, 30 дней
+    - PRO_YEARLY: 2490 RUB, 365 дней
     """
     SubscriptionPlan = apps.get_model('billing', 'SubscriptionPlan')
 
@@ -26,7 +26,7 @@ def update_subscription_plans(apps, schema_editor):
         free_plan.priority_support = False
         free_plan.is_active = True
         free_plan.save()
-        print(f"Updated plan: {free_plan.code} -> {free_plan.display_name} ({free_plan.price}₽)")
+        print(f"Updated plan: {free_plan.code} -> {free_plan.display_name} ({free_plan.price} RUB)")
 
     # Обновляем PRO_MONTHLY план
     monthly_plan = SubscriptionPlan.objects.filter(code='PRO_MONTHLY').first()
@@ -41,7 +41,7 @@ def update_subscription_plans(apps, schema_editor):
         monthly_plan.priority_support = True
         monthly_plan.is_active = True
         monthly_plan.save()
-        print(f"Updated plan: {monthly_plan.code} -> {monthly_plan.display_name} ({monthly_plan.price}₽)")
+        print(f"Updated plan: {monthly_plan.code} -> {monthly_plan.display_name} ({monthly_plan.price} RUB)")
 
     # Обновляем PRO_YEARLY план
     yearly_plan = SubscriptionPlan.objects.filter(code='PRO_YEARLY').first()
@@ -56,7 +56,7 @@ def update_subscription_plans(apps, schema_editor):
         yearly_plan.priority_support = True
         yearly_plan.is_active = True
         yearly_plan.save()
-        print(f"Updated plan: {yearly_plan.code} -> {yearly_plan.display_name} ({yearly_plan.price}₽)")
+        print(f"Updated plan: {yearly_plan.code} -> {yearly_plan.display_name} ({yearly_plan.price} RUB)")
 
 
 class Migration(migrations.Migration):

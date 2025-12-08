@@ -6,7 +6,7 @@ from decimal import Decimal
 
 def create_test_plan(apps, schema_editor):
     """
-    Создаёт тестовый план за 1₽ для проверки live-платежей.
+    Создаёт тестовый план за 1 RUB для проверки live-платежей.
     Доступен только владельцу/админам.
     """
     SubscriptionPlan = apps.get_model('billing', 'SubscriptionPlan')
@@ -18,7 +18,7 @@ def create_test_plan(apps, schema_editor):
 
     SubscriptionPlan.objects.create(
         name='TEST_LIVE',
-        display_name='Test Live Payment 1₽',
+        display_name='Test Live Payment 1 RUB',
         description='Тестовый платёж для проверки боевого магазина YooKassa. Только для владельца/админов.',
         price=Decimal('1.00'),
         duration_days=30,  # 1 месяц как у MONTHLY
@@ -31,7 +31,7 @@ def create_test_plan(apps, schema_editor):
         is_active=True,
         is_test=True,  # Флаг тестового плана
     )
-    print("Created test plan: Test Live Payment 1₽")
+    print("Created test plan: Test Live Payment 1 RUB")
 
 
 def delete_test_plan(apps, schema_editor):
@@ -58,6 +58,6 @@ class Migration(migrations.Migration):
             ),
         ),
 
-        # 2. Создаём тестовый план за 1₽
+        # 2. Создаём тестовый план за 1 RUB
         migrations.RunPython(create_test_plan, delete_test_plan),
     ]
