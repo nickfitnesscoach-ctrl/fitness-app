@@ -2,12 +2,12 @@
  * Debug Mode Banner Component
  *
  * Displays a prominent warning banner when debug mode is active.
- * Only renders when IS_DEBUG is true (DEV or ?debug=1).
+ * Only renders when IS_DEBUG is true (DEV only).
  *
  * This banner:
- * - Appears at the top of the app
+ * - Appears at the top of the app in DEV environment only
  * - Shows debug user information
- * - Confirms debug mode is active
+ * - NEVER renders in production
  */
 
 import React from 'react';
@@ -18,7 +18,7 @@ import { IS_DEBUG } from '../../shared/config/debug';
 const DebugBanner: React.FC = () => {
   const { telegramUser } = useAuth();
 
-  // Only render in debug mode
+  // Only render in DEV mode (never in production)
   if (!IS_DEBUG) {
     return null;
   }

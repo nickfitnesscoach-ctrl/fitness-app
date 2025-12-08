@@ -39,7 +39,7 @@ const DEBUG_TELEGRAM_USER: TelegramUserInfo = DEBUG_USER;
 
 /**
  * Проверяет, включён ли Debug Mode
- * Uses centralized IS_DEBUG configuration
+ * Uses centralized IS_DEBUG configuration (DEV only)
  */
 export function isDebugModeEnabled(): boolean {
     return IS_DEBUG;
@@ -47,13 +47,14 @@ export function isDebugModeEnabled(): boolean {
 
 /**
  * Проверяет, нужно ли использовать Debug Mode
- * (debug включён И нет реального Telegram WebApp)
+ * (DEV environment AND no real Telegram WebApp available)
  */
 export function shouldUseDebugMode(): boolean {
     if (typeof window === 'undefined') return false;
 
     const hasTelegram = Boolean(window.Telegram?.WebApp?.initData);
 
+    // Only use debug in DEV when Telegram is not available
     return IS_DEBUG && !hasTelegram;
 }
 
@@ -174,9 +175,8 @@ export function isTelegramInitialized(): boolean {
  * Формирование заголовков для API запросов
  * Единая функция для всех запросов к backend
  *
- * SECURITY: Debug Mode headers are only sent when:
- * 1. VITE_DEBUG_MODE=true in .env
- * 2. No real Telegram WebApp is available
+ * SECURITY: Debug Mode headers are only sent in DEV environment
+ * Production ALWAYS uses real Telegram WebApp authentication
  */
 export function buildTelegramHeaders(): HeadersInit {
     if (!_telegramAuthData) {
@@ -190,9 +190,9 @@ export function buildTelegramHeaders(): HeadersInit {
     const { initData, user } = _telegramAuthData;
 
     // Browser Debug Mode - специальные заголовки
-    // SECURITY: Only when explicitly enabled and no Telegram available
+    // SECURITY: Only in DEV environment
     if (_isBrowserDebug) {
-        console.warn('[Auth] Using Debug Mode - payments disabled');
+        console.warn('[Auth] Using Debug Mode (DEV only) - payments disabled');
         return {
             'Content-Type': 'application/json',
             'X-Debug-Mode': 'true',
@@ -203,7 +203,7 @@ export function buildTelegramHeaders(): HeadersInit {
         };
     }
 
-    // Обычный Telegram режим
+    // Обычный Telegram режим (production)
     return {
         'Content-Type': 'application/json',
         'X-Telegram-ID': String(user.id),

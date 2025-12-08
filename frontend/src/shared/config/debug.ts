@@ -5,57 +5,24 @@
  *
  * Debug mode behavior:
  * - DEV build (localhost): Always enabled, mock Telegram API active
- * - PROD build with ?debug=1: Enabled for service owner testing
- * - PROD build without ?debug=1: Completely disabled, no mock, no banner
+ * - PROD build: Completely disabled, no mock, no banner, no URL override
  *
  * Security:
- * - In production, debug mode requires explicit ?debug=1 URL parameter
- * - Mock Telegram API only initializes when debug is active
- * - Debug banner only renders when debug is active
+ * - In production, debug mode is ALWAYS disabled
+ * - Mock Telegram API only initializes in DEV
+ * - Debug banner only renders in DEV
  */
-
-// Check URL parameters for debug flag
-const searchParams = new URLSearchParams(window.location.search);
-
-/**
- * Initialize debug mode with sessionStorage persistence
- * This allows debug mode to survive URL redirects/changes
- */
-function initDebugMode(): boolean {
-  // Always enable in DEV
-  if (import.meta.env.DEV) {
-    sessionStorage.setItem('eatfit24_debug', 'true');
-    return true;
-  }
-
-  // Check URL parameter first (explicit debug activation)
-  if (searchParams.has("debug")) {
-    sessionStorage.setItem('eatfit24_debug', 'true');
-    return true;
-  }
-
-  // Check if debug was enabled in this session (survives redirects)
-  const sessionDebug = sessionStorage.getItem('eatfit24_debug');
-  if (sessionDebug === 'true') {
-    return true;
-  }
-
-  return false;
-}
 
 /**
  * Main debug flag - determines if debug mode is active
  *
  * TRUE when:
  * - Running in DEV environment (import.meta.env.DEV)
- * - OR URL contains ?debug=1 parameter (production debug access)
- * - OR debug was activated in this browser session (survives redirects)
  *
  * FALSE when:
- * - Production build without ?debug=1 parameter
- * - AND no active debug session
+ * - Production build (ALWAYS)
  */
-export const IS_DEBUG = initDebugMode();
+export const IS_DEBUG = import.meta.env.DEV;
 
 /**
  * Debug user configuration for mock Telegram API

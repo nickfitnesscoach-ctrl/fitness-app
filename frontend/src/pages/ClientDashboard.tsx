@@ -49,9 +49,8 @@ const ClientDashboard: React.FC = () => {
     const { isReady, isTelegramWebApp: webAppDetected, isBrowserDebug: webAppBrowserDebug } = useTelegramWebApp();
     const [searchParams, setSearchParams] = useSearchParams();
 
-    // Meals loading state - separate from layout
+    // Meals loading state - only for meals list area
     const [mealsLoading, setMealsLoading] = useState(false);
-    const [initialLoading, setInitialLoading] = useState(true);
     const [consumed, setConsumed] = useState<TotalConsumed>({ calories: 0, protein: 0, fat: 0, carbohydrates: 0 });
     const [meals, setMeals] = useState<Meal[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -98,7 +97,6 @@ const ClientDashboard: React.FC = () => {
             const cached = mealsCacheRef.current[dateStr];
             setMeals(cached.meals);
             setConsumed(cached.consumed);
-            setInitialLoading(false);
             return;
         }
 
@@ -163,7 +161,6 @@ const ClientDashboard: React.FC = () => {
             setError('Не удалось загрузить данные');
         } finally {
             setMealsLoading(false);
-            setInitialLoading(false);
         }
     }, []);
 
@@ -272,47 +269,8 @@ const ClientDashboard: React.FC = () => {
         );
     }
 
-    // F-019: Show skeleton loader only during initial load (not on subsequent refreshes)
-    if (initialLoading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pb-24">
-                <div className="max-w-lg mx-auto space-y-6">
-                    <Calendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
-                    <div className="text-center pt-4">
-                        <h1 className="text-2xl font-bold text-gray-900">
-                            Привет, {user?.first_name || 'друг'}!
-                        </h1>
-                        <p className="text-gray-500 mt-1">
-                            {selectedDate.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
-                        </p>
-                    </div>
-                    {/* Goals card always visible - uses cached/context data */}
-                    <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-3xl p-6 text-white shadow-xl">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-white/20 p-3 rounded-xl">
-                                    <Flame size={28} />
-                                </div>
-                                <div>
-                                    <p className="text-white/80 text-sm">Калории сегодня</p>
-                                    <p className="text-3xl font-bold">0</p>
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-white/80 text-sm">Цель</p>
-                                <p className="text-xl font-semibold">{goals?.calories || '—'}</p>
-                            </div>
-                        </div>
-                        <div className="bg-white/20 rounded-full h-3 mb-3">
-                            <div className="bg-white rounded-full h-3 w-0" />
-                        </div>
-                    </div>
-                    {/* Skeleton only for meals list */}
-                    <SkeletonMealsList />
-                </div>
-            </div>
-        );
-    }
+    // REMOVED: Full-page skeleton on initial load
+    // Now we show the layout immediately with skeleton only in meals list area
 
     return (
         <PullToRefresh onRefresh={handleRefresh} disabled={mealsLoading}>
@@ -420,62 +378,67 @@ const ClientDashboard: React.FC = () => {
                         <span>Добавить прием пищи</span>
                     </button>
 
-                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold text-gray-900">Сегодня</h2>
-                            <span className="text-sm text-gray-500">{meals.length} приемов пищи</span>
-                        </div>
-
-                        {meals.length === 0 ? (
-                            <div className="text-center py-8">
-                                <p className="text-gray-400 mb-2">Пока нет записей</p>
-                                <p className="text-sm text-gray-300">Добавьте первый прием пищи</p>
+                    {/* Meals list with skeleton only in this area */}
+                    {mealsLoading && !mealsCacheRef.current[selectedDate.toISOString().split('T')[0]] ? (
+                        <SkeletonMealsList />
+                    ) : (
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-lg font-bold text-gray-900">Сегодня</h2>
+                                <span className="text-sm text-gray-500">{meals.length} приемов пищи</span>
                             </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {meals.map((meal: any) => {
-                                    // Бэкенд возвращает поле 'items', а не 'food_items'
-                                    const items = meal.items || meal.food_items || [];
-                                    const mealCalories = items.reduce((sum: number, item: any) =>
-                                        sum + (parseFloat(item.calories) || 0), 0) || 0;
 
-                                    return (
-                                        <div
-                                            key={meal.id}
-                                            className="relative group"
-                                        >
+                            {meals.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <p className="text-gray-400 mb-2">Пока нет записей</p>
+                                    <p className="text-sm text-gray-300">Добавьте первый прием пищи</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {meals.map((meal: any) => {
+                                        // Бэкенд возвращает поле 'items', а не 'food_items'
+                                        const items = meal.items || meal.food_items || [];
+                                        const mealCalories = items.reduce((sum: number, item: any) =>
+                                            sum + (parseFloat(item.calories) || 0), 0) || 0;
+
+                                        return (
                                             <div
-                                                onClick={() => navigate(`/meal/${meal.id}`, { state: { returnDate: selectedDate.toISOString().split('T')[0] } })}
-                                                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors active:scale-[0.98]"
+                                                key={meal.id}
+                                                className="relative group"
                                             >
-                                                <div>
-                                                    <p className="font-medium text-gray-900">
-                                                        {MEAL_TYPE_LABELS[meal.meal_type] || meal.meal_type}
-                                                    </p>
-                                                    <p className="text-sm text-gray-500">
-                                                        {items.length} {items.length === 1 ? 'блюдо' : 'блюд'}
-                                                    </p>
-                                                </div>
-                                                <div className="flex items-center gap-3">
-                                                    <span className="font-bold text-orange-600">
-                                                        {Math.round(mealCalories)} ккал
-                                                    </span>
-                                                    <button
-                                                        onClick={(e) => handleDeleteMealClick(e, meal.id)}
-                                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                                        aria-label="Удалить приём пищи"
-                                                    >
-                                                        <Trash2 size={18} />
-                                                    </button>
-                                                    <ChevronRight size={18} className="text-gray-400" />
+                                                <div
+                                                    onClick={() => navigate(`/meal/${meal.id}`, { state: { returnDate: selectedDate.toISOString().split('T')[0] } })}
+                                                    className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors active:scale-[0.98]"
+                                                >
+                                                    <div>
+                                                        <p className="font-medium text-gray-900">
+                                                            {MEAL_TYPE_LABELS[meal.meal_type] || meal.meal_type}
+                                                        </p>
+                                                        <p className="text-sm text-gray-500">
+                                                            {items.length} {items.length === 1 ? 'блюдо' : 'блюд'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="font-bold text-orange-600">
+                                                            {Math.round(mealCalories)} ккал
+                                                        </span>
+                                                        <button
+                                                            onClick={(e) => handleDeleteMealClick(e, meal.id)}
+                                                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                            aria-label="Удалить приём пищи"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                        <ChevronRight size={18} className="text-gray-400" />
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {!goals && (
                         <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4">

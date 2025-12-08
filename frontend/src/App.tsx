@@ -31,12 +31,12 @@ function App() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Initialize Telegram WebApp (works with both real and mock Telegram)
+    // Initialize Telegram WebApp
     const init = async () => {
-      // In debug mode or when Telegram is available, init WebApp
-      if (IS_DEBUG || window.Telegram?.WebApp) {
-        await initTelegramWebApp();
-      }
+      // Always initialize Telegram WebApp
+      // In DEV: mock will be used if no real Telegram
+      // In PROD: only real Telegram WebApp
+      await initTelegramWebApp();
 
       // Mark app as ready to prevent flash
       setIsReady(true);
