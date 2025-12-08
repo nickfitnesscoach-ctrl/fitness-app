@@ -90,7 +90,6 @@ jobs:
             git reset --hard origin/main
 
             echo ">>> Rebuilding and restarting frontend"
-            docker compose down frontend
             docker compose build --no-cache frontend
             docker compose up -d frontend
 

@@ -146,7 +146,6 @@ jobs:
             git reset --hard origin/main
 
             echo ">>> Rebuilding and restarting bot"
-            docker compose down bot
             docker compose up -d --build bot
 
             echo "✅ Bot deployment completed successfully"
