@@ -253,15 +253,19 @@ const SubscriptionPage: React.FC = () => {
     }
 
     return (
-        <div className="p-4 pb-24 px-6">
-            {/* Top Status Bar */}
-            <div className="text-center text-xs font-medium text-gray-500 uppercase tracking-wider mb-6">
-                {topStatusText}
-            </div>
+        <div className="px-4 py-6 max-w-2xl mx-auto">
+            <div className="px-4 pt-2 pb-3 text-center mb-6">
+                <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-slate-500">
+                    {topStatusText}
+                </p>
 
-            <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold mb-2 leading-tight">{headerTitle}</h1>
-                <p className="text-gray-500 leading-snug">{headerSubtitle}</p>
+                <h1 className="mt-1 text-[22px] font-bold leading-tight text-slate-900">
+                    {headerTitle}
+                </h1>
+
+                <p className="mt-2 text-sm leading-snug text-slate-600">
+                    {headerSubtitle}
+                </p>
             </div>
 
             <div className="space-y-4">
@@ -310,7 +314,7 @@ const SubscriptionPage: React.FC = () => {
                                 const hasCard = paymentMethod?.is_attached ?? false;
 
                                 bottomContent = (
-                                    <div className="space-y-3">
+                                    <div className="space-y-3 mt-auto">
                                         {/* Expiration Badge */}
                                         <div className="bg-white/10 rounded-lg p-3 text-center">
                                             <p className="text-sm font-medium text-white">
@@ -319,7 +323,7 @@ const SubscriptionPage: React.FC = () => {
                                         </div>
 
                                         {/* Auto-renew Status */}
-                                        <div className="space-y-2">
+                                        <div className="space-y-2.5">
                                             {hasCard && autoRenew ? (
                                                 // Variant 1: Auto-renew ON
                                                 <>
@@ -394,7 +398,7 @@ const SubscriptionPage: React.FC = () => {
 
                                 // We can use bottomContent here too to add the badge above the button
                                 bottomContent = (
-                                    <div className="space-y-3">
+                                    <div className="space-y-3 mt-auto">
                                         <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center">
                                             <p className="text-sm font-medium text-red-400">
                                                 Доступ к PRO закончился {formatDate(expiresAt)}
@@ -403,7 +407,7 @@ const SubscriptionPage: React.FC = () => {
                                         <button
                                             onClick={() => handleSelectPlan(plan.id)}
                                             disabled={loadingPlanId === plan.id}
-                                            className="w-full py-3 bg-white text-black rounded-xl font-bold hover:bg-gray-100 transition-all flex items-center justify-center gap-2"
+                                            className="w-full py-3.5 bg-white text-black rounded-xl font-bold hover:bg-gray-100 transition-all flex items-center justify-center gap-2"
                                         >
                                             {loadingPlanId === plan.id ? (
                                                 <span className="animate-pulse">Загрузка...</span>
@@ -432,7 +436,7 @@ const SubscriptionPage: React.FC = () => {
                 })}
             </div>
 
-            <p className="text-center text-xs text-gray-400 mt-8">
+            <p className="text-center text-xs text-gray-400 mt-4">
                 Нажимая кнопку, вы соглашаетесь с условиями использования и политикой конфиденциальности.
             </p>
         </div>
