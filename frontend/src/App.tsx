@@ -88,8 +88,8 @@ function App() {
               <ClientsProvider>
                 {/* F-029: Toast notifications provider */}
                 <ToastProvider>
-                  {/* Глобальный обработчик ошибок авторизации (401/403) */}
-                  <AuthErrorModal />
+                  {/* Глобальный обработчик ошибок авторизации (401/403) - DISABLED */}
+                  {/* Pages show "Open via Telegram" message instead of modal */}
                   {/* F-013: Offline indicator */}
                   <OfflineIndicator />
                   <Router basename="/app">
