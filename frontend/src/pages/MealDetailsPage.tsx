@@ -7,6 +7,10 @@ import { Flame, Drumstick, Droplets, Wheat, Trash2, Edit2 } from 'lucide-react';
 import { SkeletonMealDetails } from '../components/Skeleton';
 // F-029: Toast notifications
 import { useToast } from '../contexts/ToastContext';
+// Meal modals
+import { DeleteMealModal } from '../components/meal/DeleteMealModal';
+import { DeleteFoodItemModal } from '../components/meal/DeleteFoodItemModal';
+import { EditFoodItemModal } from '../components/meal/EditFoodItemModal';
 
 const MealDetailsPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -31,14 +35,30 @@ const MealDetailsPage: React.FC = () => {
     const [editName, setEditName] = useState('');
     const [editGrams, setEditGrams] = useState('');
 
+    // Helper: Navigate back to date from location state
+    const navigateBackToDate = () => {
+        const returnDate = (location.state as any)?.returnDate;
+        if (returnDate) {
+            navigate(`/?date=${returnDate}`, { replace: true });
+        } else {
+            navigate('/', { replace: true });
+        }
+    };
+
+    // Helper: Reload meal data from API
+    const reloadMeal = async (): Promise<MealAnalysis | null> => {
+        if (!id) return null;
+        const result = await api.getMealAnalysis(parseInt(id));
+        setData(result);
+        return result;
+    };
 
     useEffect(() => {
         const loadData = async () => {
             if (!id) return;
             try {
                 setLoading(true);
-                const result = await api.getMealAnalysis(parseInt(id));
-                setData(result);
+                await reloadMeal();
             } catch (err) {
                 console.error('Failed to load meal details:', err);
                 setError('Не удалось загрузить данные блюда');
@@ -57,12 +77,7 @@ const MealDetailsPage: React.FC = () => {
             setDeleting(true);
             await api.deleteMeal(parseInt(id));
             // Success - navigate back with date from location state
-            const returnDate = (location.state as any)?.returnDate;
-            if (returnDate) {
-                navigate(`/?date=${returnDate}`, { replace: true });
-            } else {
-                navigate('/', { replace: true });
-            }
+            navigateBackToDate();
         } catch (err) {
             console.error('Failed to delete meal:', err);
             const errorMessage = err instanceof Error ? err.message : 'Не удалось удалить приём пищи';
@@ -80,17 +95,11 @@ const MealDetailsPage: React.FC = () => {
             await api.deleteFoodItem(parseInt(id), itemToDelete);
 
             // Reload meal data to reflect the changes
-            const result = await api.getMealAnalysis(parseInt(id));
-            setData(result);
+            const result = await reloadMeal();
 
             // If no items left, navigate back with date from location state
-            if (result.recognized_items.length === 0) {
-                const returnDate = (location.state as any)?.returnDate;
-                if (returnDate) {
-                    navigate(`/?date=${returnDate}`, { replace: true });
-                } else {
-                    navigate('/', { replace: true });
-                }
+            if (result && result.recognized_items.length === 0) {
+                navigateBackToDate();
                 return;
             }
 
@@ -107,7 +116,7 @@ const MealDetailsPage: React.FC = () => {
         }
     };
 
-    const handleEditClick = (item: any) => {
+    const handleEditClick = (item: MealAnalysis['recognized_items'][number]) => {
         // F-005 FIX: Backend returns item.grams, not item.amount_grams
         setItemToEdit({ id: item.id, name: item.name, grams: item.grams });
         setEditName(item.name);
@@ -144,8 +153,7 @@ const MealDetailsPage: React.FC = () => {
             });
 
             // Reload meal data
-            const result = await api.getMealAnalysis(parseInt(id));
-            setData(result);
+            await reloadMeal();
 
             setShowEditModal(false);
             setItemToEdit(null);
@@ -303,147 +311,39 @@ const MealDetailsPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Delete Meal Confirmation Modal */}
-            {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
-                        <div className="text-center mb-4">
-                            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                <Trash2 className="text-red-600" size={32} />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                Удалить приём пищи?
-                            </h3>
-                            <p className="text-gray-600">
-                                Это действие нельзя будет отменить. Все блюда в этом приёме пищи будут удалены.
-                            </p>
-                        </div>
+            {/* Modals */}
+            <DeleteMealModal
+                isOpen={showDeleteConfirm}
+                onClose={() => setShowDeleteConfirm(false)}
+                onConfirm={handleDelete}
+                loading={deleting}
+            />
 
-                        <div className="space-y-3">
-                            <button
-                                onClick={handleDelete}
-                                disabled={deleting}
-                                className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {deleting ? 'Удаление...' : 'Да, удалить'}
-                            </button>
-                            <button
-                                onClick={() => setShowDeleteConfirm(false)}
-                                disabled={deleting}
-                                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Отмена
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <DeleteFoodItemModal
+                isOpen={showDeleteItemConfirm}
+                onClose={() => {
+                    setShowDeleteItemConfirm(false);
+                    setItemToDelete(null);
+                }}
+                onConfirm={handleDeleteItem}
+                loading={deletingItem}
+            />
 
-            {/* Delete Food Item Confirmation Modal */}
-            {showDeleteItemConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
-                        <div className="text-center mb-4">
-                            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                <Trash2 className="text-red-600" size={32} />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                Удалить блюдо?
-                            </h3>
-                            <p className="text-gray-600">
-                                Это действие нельзя будет отменить. Блюдо будет удалено из приёма пищи.
-                            </p>
-                        </div>
-
-                        <div className="space-y-3">
-                            <button
-                                onClick={handleDeleteItem}
-                                disabled={deletingItem}
-                                className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {deletingItem ? 'Удаление...' : 'Да, удалить'}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setShowDeleteItemConfirm(false);
-                                    setItemToDelete(null);
-                                }}
-                                disabled={deletingItem}
-                                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Отмена
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Edit Food Item Modal */}
-            {showEditModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
-                        <div className="mb-4">
-                            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                <Edit2 className="text-blue-600" size={32} />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
-                                Редактировать блюдо
-                            </h3>
-                        </div>
-
-                        <div className="space-y-4 mb-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Название
-                                </label>
-                                <input
-                                    type="text"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                    placeholder="Название блюда"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Вес (граммы)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={editGrams}
-                                    onChange={(e) => setEditGrams(e.target.value)}
-                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                    placeholder="Вес в граммах"
-                                    min="1"
-                                    max="10000"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-3">
-                            <button
-                                onClick={handleUpdateItem}
-                                disabled={editing}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {editing ? 'Сохранение...' : 'Сохранить'}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setShowEditModal(false);
-                                    setItemToEdit(null);
-                                    setEditName('');
-                                    setEditGrams('');
-                                }}
-                                disabled={editing}
-                                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Отмена
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <EditFoodItemModal
+                isOpen={showEditModal}
+                onClose={() => {
+                    setShowEditModal(false);
+                    setItemToEdit(null);
+                    setEditName('');
+                    setEditGrams('');
+                }}
+                onConfirm={handleUpdateItem}
+                loading={editing}
+                itemName={editName}
+                itemGrams={editGrams}
+                onNameChange={setEditName}
+                onGramsChange={setEditGrams}
+            />
         </div>
     );
 };

@@ -6,8 +6,7 @@ import { ClientsProvider } from './contexts/ClientsContext';
 import { BillingProvider } from './contexts/BillingContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { initTelegramWebApp } from './lib/telegram';
-import { IS_DEBUG } from './shared/config/debug';
+import { initTelegramWebApp } from './lib/telegram'
 import { Dashboard } from './components/Dashboard';
 import ApplicationsPage from './pages/ApplicationsPage';
 import ClientsPage from './pages/ClientsPage';
@@ -23,10 +22,8 @@ import SubscriptionDetailsPage from './pages/SubscriptionDetailsPage';
 import PaymentHistoryPage from './pages/PaymentHistoryPage';
 import SubscribersPage from './pages/SubscribersPage';
 import ErrorBoundary from './components/ErrorBoundary';
-import AuthErrorModal from './components/AuthErrorModal';
 import OfflineIndicator from './components/OfflineIndicator';
 import MealDetailsPage from './pages/MealDetailsPage';
-
 function App() {
   const [isReady, setIsReady] = useState(false);
 
