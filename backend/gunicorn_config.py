@@ -1,4 +1,13 @@
-"""Gunicorn configuration for FoodMind Django application."""
+"""
+Gunicorn configuration for EatFit24 Django application.
+
+Production configuration:
+- Used in Docker containers (backend service)
+- Log files written to /app/logs/ (created by Docker image)
+- No debug settings should be present here
+- Worker count: CPU cores * 2 + 1
+- Worker class: sync (standard synchronous workers)
+"""
 import multiprocessing
 
 # Server socket
@@ -9,8 +18,10 @@ backlog = 2048
 workers = multiprocessing.cpu_count() * 2 + 1
 worker_class = "sync"
 worker_connections = 1000
-# Temporarily increased to 140s to allow AI recognition to complete
-# TODO: Implement async processing for production
+# Request timeout set to 140s for long-running API operations
+# Note: AI recognition processing is now handled asynchronously via Celery,
+# but some API endpoints may still require extended timeout for file uploads
+# and complex database operations
 timeout = 140
 keepalive = 2
 
@@ -21,7 +32,7 @@ loglevel = "info"
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 
 # Process naming
-proc_name = "foodmind"
+proc_name = "eatfit24"
 
 # Server mechanics
 daemon = False
