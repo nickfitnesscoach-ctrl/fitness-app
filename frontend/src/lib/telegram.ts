@@ -58,14 +58,6 @@ export function shouldUseDebugMode(): boolean {
     return IS_DEBUG && !hasTelegram;
 }
 
-/**
- * Проверка, включён ли Browser Debug Mode (legacy compatibility)
- * @deprecated Use IS_DEBUG from shared/config/debug instead
- */
-export function isBrowserDebugMode(): boolean {
-    return IS_DEBUG;
-}
-
 // ============================================================
 // Internal State
 // ============================================================
@@ -110,7 +102,7 @@ export async function initTelegramWebApp(): Promise<TelegramAuthData | null> {
 
 async function _doInitTelegramWebApp(): Promise<TelegramAuthData | null> {
     // Проверяем Browser Debug Mode
-    if (isBrowserDebugMode()) {
+    if (IS_DEBUG) {
         console.log('[Telegram] Browser Debug Mode enabled');
         _isBrowserDebug = true;
         _telegramAuthData = {
@@ -213,57 +205,6 @@ export function buildTelegramHeaders(): HeadersInit {
     };
 }
 
-// ============================================================
-// Legacy Functions (для совместимости)
-// ============================================================
-
-/**
- * @deprecated Используйте getTelegramAuthData().user
- */
-export function getTelegramUser(): TelegramUserInfo | null {
-    return _telegramAuthData?.user || null;
-}
-
-/**
- * @deprecated Используйте getTelegramAuthData().initData
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function getTelegramInitData(_devMode = false): string | null {
-    if (_telegramAuthData) {
-        return _telegramAuthData.initData;
-    }
-
-    // Fallback для legacy кода
-    const tg = getTelegramWebApp();
-    if (tg?.initData) {
-        return tg.initData;
-    }
-
-
-
-    return null;
-}
-
-/**
- * @deprecated Используйте getTelegramAuthData().user.id
- */
-export function getTelegramUserId(): string | null {
-    return _telegramAuthData?.user?.id ? String(_telegramAuthData.user.id) : null;
-}
-
-/**
- * @deprecated Используйте getTelegramAuthData().user.first_name
- */
-export function getTelegramUserName(): string {
-    return _telegramAuthData?.user?.first_name || 'User';
-}
-
-/**
- * @deprecated Используйте getTelegramAuthData().user.username
- */
-export function getTelegramUsername(): string {
-    return _telegramAuthData?.user?.username || '';
-}
 
 // ============================================================
 // Theme & UI Functions

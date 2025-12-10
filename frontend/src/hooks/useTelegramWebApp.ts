@@ -6,7 +6,12 @@
  */
 
 import { useState, useEffect } from 'react';
-import { getTelegramWebApp, isBrowserDebugMode, type TelegramUserInfo } from '../lib/telegram';
+import {
+    initTelegramWebApp,
+    getTelegramWebApp,
+    isDebugModeEnabled,
+    type TelegramUserInfo
+} from '../lib/telegram';
 
 export type TelegramPlatform = 'ios' | 'android' | 'tdesktop' | 'macos' | 'web' | 'unknown';
 
@@ -67,67 +72,41 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
     const [platform, setPlatform] = useState<TelegramPlatform>('unknown');
 
     useEffect(() => {
-        // Give time for window.Telegram to load (CDN script)
-        const checkWebApp = () => {
-            // Check Browser Debug Mode first
-            const debugMode = isBrowserDebugMode();
-            if (debugMode) {
-                console.log('[useTelegramWebApp] Browser Debug Mode detected');
-                setIsBrowserDebug(true);
-                setIsTelegramWebApp(false);
-                setPlatform('web');
-                setIsReady(true);
-                return;
-            }
+        const initializeWebApp = async () => {
+            // Use centralized initialization from telegram module
+            const authData = await initTelegramWebApp();
 
+            // Check if we're in debug mode
+            const debugMode = isDebugModeEnabled();
+            setIsBrowserDebug(debugMode);
+
+            // Get WebApp instance for platform detection
             const tg = getTelegramWebApp();
 
-            if (!tg) {
-                // Telegram WebApp not found
+            if (tg) {
+                setWebApp(tg);
+                // Определяем платформу
+                const tgPlatform = (tg.platform || 'unknown').toLowerCase() as TelegramPlatform;
+                setPlatform(tgPlatform);
+            } else if (debugMode) {
+                // Debug mode without Telegram
+                setPlatform('web');
+            }
+
+            if (authData) {
+                // Successfully initialized (either real Telegram or debug mode)
+                setIsTelegramWebApp(!debugMode); // Only true for real Telegram
+                setTelegramUserId(Number(authData.user.id));
+                setTelegramUser(authData.user);
+            } else {
+                // Not in Telegram and not in debug mode
                 setIsTelegramWebApp(false);
-                setIsReady(true);
-                return;
-            }
-
-            setWebApp(tg);
-
-            // Определяем платформу
-            const tgPlatform = (tg.platform || 'unknown').toLowerCase() as TelegramPlatform;
-            setPlatform(tgPlatform);
-
-            // Check for initData (main indicator)
-            if (!tg.initData) {
-                // WebApp exists but initData is empty (opened in browser)
-                setIsTelegramWebApp(false);
-                setIsReady(true);
-                return;
-            }
-
-            // WebApp is available and initData exists
-            try {
-                tg.ready?.();
-                tg.expand?.();
-            } catch (e) {
-                console.warn('[useTelegramWebApp] Error calling ready():', e);
-            }
-
-            setIsTelegramWebApp(true);
-
-            // Extract user data
-            const initDataUnsafe = tg.initDataUnsafe;
-            if (initDataUnsafe?.user?.id) {
-                const user = initDataUnsafe.user as TelegramUserInfo;
-                setTelegramUserId(Number(user.id));
-                setTelegramUser(user);
             }
 
             setIsReady(true);
         };
 
-        // Run check with a small delay (for CDN loading)
-        const timeoutId = setTimeout(checkWebApp, 100);
-
-        return () => clearTimeout(timeoutId);
+        initializeWebApp();
     }, []);
 
     // Вычисляем isMobile/isDesktop на основе платформы
