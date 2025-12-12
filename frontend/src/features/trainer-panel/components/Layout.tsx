@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { ClipboardList, Users, LayoutDashboard } from 'lucide-react';
+import { auth } from '../../../services/api';
 
 const Layout = () => {
     const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean | null>(null);
@@ -40,39 +41,26 @@ const Layout = () => {
             }
 
             try {
-                const response = await fetch('/api/v1/trainer-panel/auth/', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ init_data: initData }),
-                });
-
-                if (response.status === 200) {
-                    const data = await response.json();
-                    if (isMounted) {
-                        setAuthState({ status: 'authorized', message: null, userId: data.user_id });
-                    }
-                    return;
+                // Use unified API client instead of direct fetch
+                const result = await auth.trainerPanelAuth(initData);
+                
+                if (result.ok && isMounted) {
+                    setAuthState({ status: 'authorized', message: null, userId: result.user_id });
                 }
-
-                if (response.status === 401 || response.status === 403) {
-                    if (isMounted) {
-                        setAuthState({ status: 'forbidden', message: 'У вас нет прав доступа', userId: null });
-                    }
-                    return;
-                }
-
-                const errorData = await response.json().catch(() => ({}));
-                if (isMounted) {
+            } catch (error: any) {
+                console.error('[TrainerPanel] Auth failed', error);
+                
+                if (!isMounted) return;
+                
+                // Handle specific error codes
+                if (error.status === 401 || error.status === 403) {
+                    setAuthState({ status: 'forbidden', message: 'У вас нет прав доступа', userId: null });
+                } else {
                     setAuthState({
                         status: 'error',
-                        message: (errorData as { detail?: string }).detail || 'Ошибка авторизации',
+                        message: error.message || 'Ошибка авторизации',
                         userId: null,
                     });
-                }
-            } catch (error) {
-                console.error('[TrainerPanel] Auth failed', error);
-                if (isMounted) {
-                    setAuthState({ status: 'error', message: 'Ошибка авторизации', userId: null });
                 }
             }
         };

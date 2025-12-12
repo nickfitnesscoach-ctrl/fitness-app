@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Crown, Users, Star, Calendar, DollarSign, RefreshCw } from 'lucide-react';
-import { api } from '../services/api';
+import { api } from '../../../services/api';
 
 interface Subscriber {
     id: number;

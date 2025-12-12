@@ -1,7 +1,7 @@
 import React from 'react';
 import { Eye, MessageCircle } from 'lucide-react';
 import { Application } from '../../types/application';
-import { Avatar } from '../Avatar';
+import { Avatar } from '../../../../components/Avatar';
 
 interface ApplicationCardProps {
     app: Application;

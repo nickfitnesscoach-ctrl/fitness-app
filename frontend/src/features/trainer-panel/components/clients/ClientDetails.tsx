@@ -1,8 +1,8 @@
 import React from 'react';
 import { ArrowLeft, MessageCircle, CheckCircle2, AlertCircle, ImageIcon, Trash2 } from 'lucide-react';
 import { Application } from '../../types/application';
-import { Avatar } from '../Avatar';
-import { InfoItem } from '../common/InfoItem';
+import { Avatar } from '../../../../components/Avatar';
+import { InfoItem } from '../../../../components/common/InfoItem';
 import { ACTIVITY_DESCRIPTIONS, TRAINING_LEVEL_DESCRIPTIONS } from '../../constants/applications';
 
 interface ClientDetailsProps {

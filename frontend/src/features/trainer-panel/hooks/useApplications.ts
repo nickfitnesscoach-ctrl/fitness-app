@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Application } from '../types/application';
-import { api } from '../services/api';
+import { api } from '../../../services/api';
 
 type ApplicationStatus = 'all' | 'new' | 'viewed' | 'contacted';
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Search, Copy, ArrowLeft } from 'lucide-react';
-import { useClients } from '../contexts/ClientsContext';
+import { useClients } from '../../../contexts/ClientsContext';
 import { useNavigate } from 'react-router-dom';
 import { useApplications } from '../hooks/useApplications';
 import { ApplicationDetails } from '../components/applications/ApplicationDetails';

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useClients } from '../contexts/ClientsContext';
+import { useClients } from '../../../contexts/ClientsContext';
 import { Application } from '../types/application';
 
 export const useClientsList = () => {
