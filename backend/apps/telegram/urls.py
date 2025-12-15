@@ -24,6 +24,7 @@ from apps.telegram.trainer_panel.views import (
     get_applications_api,
     clients_list,
     client_detail,
+    get_subscribers_api,
 )
 
 urlpatterns = [
@@ -51,6 +52,9 @@ urlpatterns = [
 
     # Получить ссылку-приглашение
     path('invite-link/', get_invite_link, name='telegram-invite-link'),
+
+    # Статистика подписчиков и выручки
+    path('subscribers/', get_subscribers_api, name='telegram-subscribers'),
 
     # Personal Plan API (для бота)
     path('users/get-or-create/', get_user_or_create, name='telegram-user-get-or-create'),

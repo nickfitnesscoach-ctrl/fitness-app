@@ -12,6 +12,11 @@ from rest_framework.response import Response
 
 from apps.telegram.telegram_auth import TelegramAdminPermission
 from apps.telegram.models import TelegramUser
+from apps.telegram.trainer_panel.billing_adapter import (
+    get_subscriptions_for_users,
+    get_subscribers_metrics,
+    get_revenue_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +34,25 @@ def get_applications_api(request):
 
     GET /api/v1/telegram/applications/
     """
-    clients = TelegramUser.objects.filter(ai_test_completed=True).only(
+    clients = TelegramUser.objects.filter(ai_test_completed=True).select_related('user').only(
         'id', 'telegram_id', 'first_name', 'last_name', 'username',
         'ai_test_completed', 'ai_test_answers', 'recommended_calories', 'recommended_protein',
-        'recommended_fat', 'recommended_carbs', 'created_at', 'is_client'
+        'recommended_fat', 'recommended_carbs', 'created_at', 'is_client', 'user_id'
     ).order_by('-created_at')
+
+    # Batch fetch subscription data to prevent N+1 queries
+    user_ids = [client.user_id for client in clients]
+    subscriptions_map = get_subscriptions_for_users(user_ids)
 
     data = []
     for client in clients:
+        subscription_info = subscriptions_map.get(client.user_id, {
+            'plan_type': 'free',
+            'is_paid': False,
+            'status': 'unknown',
+            'paid_until': None
+        })
+
         data.append({
             "id": client.id,
             "telegram_id": str(client.telegram_id),
@@ -53,6 +69,7 @@ def get_applications_api(request):
             "recommended_fat": client.recommended_fat,
             "recommended_carbs": client.recommended_carbs,
             "created_at": client.created_at.isoformat(),
+            "subscription": subscription_info,
         })
 
     return Response(data, status=status.HTTP_200_OK)
@@ -64,12 +81,12 @@ def get_applications_api(request):
     description="Получить список всех клиентов (applications с флагом is_client=True)"
 )
 @api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
+@permission_classes([TelegramAdminPermission])
 def clients_list(request):
     """
     GET: Получить список клиентов
     POST: Добавить заявку в клиенты
-    
+
     GET /api/v1/telegram/clients/
     POST /api/v1/telegram/clients/
     """
@@ -77,14 +94,25 @@ def clients_list(request):
         clients = TelegramUser.objects.filter(
             ai_test_completed=True,
             is_client=True
-        ).only(
+        ).select_related('user').only(
             'id', 'telegram_id', 'first_name', 'last_name', 'username',
             'ai_test_completed', 'ai_test_answers', 'recommended_calories', 'recommended_protein',
-            'recommended_fat', 'recommended_carbs', 'created_at', 'is_client'
+            'recommended_fat', 'recommended_carbs', 'created_at', 'is_client', 'user_id'
         ).order_by('-created_at')
+
+        # Batch fetch subscription data to prevent N+1 queries
+        user_ids = [client.user_id for client in clients]
+        subscriptions_map = get_subscriptions_for_users(user_ids)
 
         data = []
         for client in clients:
+            subscription_info = subscriptions_map.get(client.user_id, {
+                'plan_type': 'free',
+                'is_paid': False,
+                'status': 'unknown',
+                'paid_until': None
+            })
+
             data.append({
                 "id": client.id,
                 "telegram_id": str(client.telegram_id),
@@ -101,8 +129,10 @@ def clients_list(request):
                 "recommended_fat": client.recommended_fat,
                 "recommended_carbs": client.recommended_carbs,
                 "created_at": client.created_at.isoformat(),
+                "is_paid": subscription_info['is_paid'],
+                "subscription": subscription_info,
             })
-        
+
         return Response(data, status=status.HTTP_200_OK)
     
     elif request.method == 'POST':
@@ -138,25 +168,71 @@ def clients_list(request):
     description="Удалить клиента (убрать флаг is_client)"
 )
 @api_view(['DELETE'])
-@permission_classes([AllowAny])
+@permission_classes([TelegramAdminPermission])
 def client_detail(request, client_id):
     """
     DELETE: Удалить клиента
-    
+
     DELETE /api/v1/telegram/clients/{id}/
     """
     try:
         telegram_user = TelegramUser.objects.get(id=client_id)
         telegram_user.is_client = False
         telegram_user.save()
-        
+
         return Response({
             "status": "success",
             "message": "Client removed successfully"
         }, status=status.HTTP_200_OK)
-        
+
     except TelegramUser.DoesNotExist:
         return Response(
             {"error": "Client not found"},
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+@extend_schema(
+    tags=['Telegram'],
+    summary="Get subscribers stats and revenue",
+    description="Получить статистику подписчиков и выручки"
+)
+@api_view(['GET'])
+@permission_classes([TelegramAdminPermission])
+def get_subscribers_api(request):
+    """
+    API endpoint для получения статистики подписчиков и выручки.
+
+    GET /api/v1/telegram/subscribers/
+
+    Returns:
+        {
+            "counts": {
+                "free": 123,
+                "monthly": 45,
+                "yearly": 12,
+                "paid_total": 57
+            },
+            "revenue": {
+                "total": 999999.00,
+                "mtd": 12345.00,
+                "last_30d": 23456.00,
+                "currency": "RUB"
+            }
+        }
+    """
+    counts = get_subscribers_metrics()
+    revenue = get_revenue_metrics()
+
+    # Convert Decimal to float for JSON serialization
+    revenue_data = {
+        'total': float(revenue['total']),
+        'mtd': float(revenue['mtd']),
+        'last_30d': float(revenue['last_30d']),
+        'currency': revenue['currency']
+    }
+
+    return Response({
+        'counts': counts,
+        'revenue': revenue_data
+    }, status=status.HTTP_200_OK)
