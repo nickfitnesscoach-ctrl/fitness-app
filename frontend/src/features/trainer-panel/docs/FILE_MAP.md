@@ -1,147 +1,143 @@
-# Trainer Panel: File Map
+# FILE_MAP — Trainer Panel (Frozen)
 
-Краткий справочник ключевых файлов панели тренера.
-
----
-
-## Feature Files (`features/trainer-panel/`)
-
-### Pages
-
-| Файл | Назначение |
-|------|------------|
-| `pages/ApplicationsPage.tsx` | Список заявок с фильтрами, поиском, переходом к деталям |
-| `pages/ClientsPage.tsx` | Список клиентов тренера с поиском |
-| `pages/InviteClientPage.tsx` | Страница генерации ссылки-приглашения |
-| `pages/SubscribersPage.tsx` | Статистика подписчиков и доходов |
-
-### Components
-
-| Файл | Назначение |
-|------|------------|
-| `components/Dashboard.tsx` | Главная панели с навигационными кнопками |
-| `components/Layout.tsx` | Layout с авторизацией и нижней навигацией |
-| `components/applications/ApplicationCard.tsx` | Карточка заявки в списке |
-| `components/applications/ApplicationDetails.tsx` | Детальный просмотр заявки |
-| `components/clients/ClientCard.tsx` | Карточка клиента в списке |
-| `components/clients/ClientDetails.tsx` | Детальный просмотр клиента |
-
-### Hooks
-
-| Файл | Назначение |
-|------|------------|
-| `hooks/useApplications.ts` | Загрузка, фильтрация, CRUD заявок |
-| `hooks/useClientsList.ts` | Фильтрация клиентов, действия с ними |
-
-### Types
-
-| Файл | Назначение |
-|------|------------|
-| `types/application.ts` | `Application`, `ApplicationDetails`, `ApplicationStatusApi`, `ApplicationStatusUi` |
-| `types/index.ts` | **SSOT** Re-export типов — импорт только отсюда |
-
-### Constants
-
-| Файл | Назначение |
-|------|------------|
-| `constants/applications.ts` | Маппинги данных (активность, цели, ограничения) |
-| `constants/invite.ts` | Ссылка приглашения из env |
-
-### Documentation
-
-| Файл | Назначение |
-|------|------------|
-| `docs/TRAINER_PANEL.md` | Обзор, flows, Import Policy, debug guide |
-| `docs/TRAINER_API.md` | Endpoints, типы, error handling, Migration Notes |
-| `docs/AUDIT_REPORT.md` | Отчёт аудита |
-| `docs/FILE_MAP.md` | Этот файл |
+**Frozen state:** 2025-12-15  
+Документ отражает ТЕКУЩУЮ структуру Trainer Panel и каноны импортов.  
+Цель: чтобы любой разработчик/агент быстро понял “где что лежит” и не сломал панель.
 
 ---
 
-## Related Files Outside Feature
+## 1) Структура feature
 
-### API Layer (`services/api/`)
+src/features/trainer-panel/
+├── pages/
+│ ├── ApplicationsPage.tsx
+│ ├── ClientsPage.tsx
+│ ├── InviteClientPage.tsx
+│ └── TrainerPanelPage.tsx
+├── components/
+│ ├── applications/
+│ │ ├── ApplicationCard.tsx
+│ │ └── ApplicationDetails.tsx
+│ ├── clients/
+│ │ ├── ClientCard.tsx
+│ │ └── ClientDetails.tsx
+│ ├── Layout.tsx
+│ └── Dashboard.tsx
+├── hooks/
+│ ├── useApplications.ts # загрузка + transform заявок (API → UI)
+│ └── useClientsList.ts # список/поиск/фильтр клиентов (UI слой)
+├── constants/
+│ ├── applications.ts # справочники/описания (activity/training/etc)
+│ └── invite.ts # invite-related константы (если используются)
+├── types/
+│ ├── application.ts # SSOT типов Trainer Panel (API + UI)
+│ └── index.ts # re-export типов (канон импорта типов)
+└── docs/
+├── TRAINER_PANEL.md # главный канон (архитектура/типы/импорты)
+├── TRAINER_API.md # API канон (методы, статусы, usage)
+├── FILE_MAP.md # этот файл
+└── AUDIT_REPORT.md # фиксация “после рефактора”
 
-| Файл | Назначение |
-|------|------------|
-| `trainer.ts` | **SSOT** — все trainer API функции |
-| `auth.ts` | Авторизация + ⚠️ deprecated re-export trainer |
-| `index.ts` | Экспорт всех модулей + `api` объект |
-| `urls.ts` | URL endpoints |
-| `client.ts` | Base fetch, headers, error classes |
-| `types.ts` | Общие API типы |
-
-### Context
-
-| Файл | Назначение |
-|------|------------|
-| `contexts/ClientsContext.tsx` | Глобальное состояние клиентов |
-
-### Shared Components (используются в trainer-panel)
-
-| Файл | Назначение |
-|------|------------|
-| `components/Avatar.tsx` | Аватар пользователя |
-| `components/common/InfoItem.tsx` | Info card для деталей |
-
-### Routing
-
-| Файл | Назначение |
-|------|------------|
-| `App.tsx` | Маршруты `/panel/*` |
+yaml
+Копировать код
 
 ---
 
-## Import Guidelines
+## 2) Связанные файлы вне feature (важное)
 
-### Types (SSOT: `features/trainer-panel/types/`)
+src/
+├── contexts/
+│ └── ClientsContext.tsx # клиенты тренера + transform (API → UI)
+├── services/api/
+│ ├── trainer.ts # SSOT trainer endpoints (implementation)
+│ ├── auth.ts # auth endpoints (+ deprecated re-exports)
+│ ├── index.ts # export { api } — канон использования
+│ ├── client.ts # fetch wrappers / headers / retry / logging
+│ ├── urls.ts # URLS для API
+│ └── types.ts # общие API типы (не trainer-panel домен)
+└── App.tsx # роутинг /panel/*
 
-```typescript
-// ✅ From external file (contexts/, services/) - use path alias
-import type { Application, ApplicationStatusApi } from 'features/trainer-panel/types';
+yaml
+Копировать код
 
-// ✅ Within feature (hooks, components) - relative paths OK
-import { Application } from '../types/application';
-import type { Application } from '../types';  // via index re-export
-```
+---
 
-### API (SSOT: `services/api/trainer.ts`)
+## 3) Каноны импортов (строго)
 
-```typescript
-// ✅ Canon: через api объект
+### 3.1 Типы (SSOT)
+
+**SSOT:** `src/features/trainer-panel/types/`
+
+✅ Канон (внешние файлы: `src/contexts/*`, `src/services/*`, любые “не внутри feature”):
+```ts
+import type { Application, ApplicationResponse, ClientDetailsUi } 
+  from 'features/trainer-panel/types';
+✅ Канон (внутри feature: src/features/trainer-panel/**):
+
+ts
+Копировать код
+import type { Application } from '../types';
+❌ Запрещено:
+
+импортировать типы из конкретных файлов глубже, минуя features/trainer-panel/types
+
+дублировать доменные типы Trainer Panel внутри services/api/*
+
+3.2 API (канон вызовов)
+SSOT implementation: src/services/api/trainer.ts
+SSOT usage: import { api } from 'services/api'
+
+✅ Канон:
+
+ts
+Копировать код
 import { api } from 'services/api';
 await api.getApplications();
+Допустимо (редко, если нужен прямой импорт):
 
-// ✅ Допустимо: прямой импорт из trainer
-import { getApplications } from 'services/api/trainer';
+ts
+Копировать код
+import { getClients } from 'services/api/trainer';
+❌ Запрещено:
 
-// ❌ Запрещено: импорт из auth.ts (deprecated)
-import { getApplications } from 'services/api/auth';
-```
+ts
+Копировать код
+import { getClients } from 'services/api/auth';
+3.3 Constants
+✅ Внутри feature:
 
-### Constants
-
-```typescript
-// ✅ Внутри feature (относительный путь)
+ts
+Копировать код
 import { ACTIVITY_DESCRIPTIONS } from '../constants/applications';
+✅ Из внешних файлов:
 
-// ✅ Снаружи feature (концептуальный путь)
-import { ACTIVITY_DESCRIPTIONS } from 'features/trainer-panel/constants/applications';
-```
+ts
+Копировать код
+import { TRAINER_INVITE_LINK } from 'features/trainer-panel/constants/invite';
+4) Где происходит transform (самое важное)
+Transform — это место, где сырые данные backend (*Api, ApplicationResponse) превращаются в UI модель (Application, ClientDetailsUi).
 
-> [!WARNING]
-> Не импортировать trainer функции из `auth.ts` — deprecated!
-> См. TRAINER_API.md → Migration Notes
+src/features/trainer-panel/hooks/useApplications.ts
 
----
+api.getApplications() → ApplicationResponse[]
 
-## Quick Reference
+transform → Application[]
 
-| Нужно | Файл |
-|-------|------|
-| Добавить новую страницу | `pages/` + обновить `App.tsx` |
-| Добавить API endpoint | `services/api/trainer.ts` |
-| Добавить тип | `types/application.ts` + `types/index.ts` |
-| Добавить маппинг данных | `constants/applications.ts` |
-| Изменить layout/навигацию | `components/Layout.tsx` |
+src/contexts/ClientsContext.tsx
 
+api.getClients() → API response
+
+transform → Application[] со статусом client (UI-only)
+
+Правило: UI компоненты должны потреблять только UI модель.
+
+5) Quick Reference (куда лезть)
+Задача	Где менять
+Добавить страницу панели	features/trainer-panel/pages/ + роут в App.tsx
+Изменить UI карточек/деталей	features/trainer-panel/components/*
+Изменить загрузку/transform заявок	features/trainer-panel/hooks/useApplications.ts
+Изменить фильтр/поиск клиентов	features/trainer-panel/hooks/useClientsList.ts
+Изменить transform клиентов	src/contexts/ClientsContext.tsx
+Добавить/изменить API endpoint	src/services/api/trainer.ts (+ экспорт через api)
+Добавить/изменить доменные типы	features/trainer-panel/types/application.ts + types/index.ts
+Добавить справочники/маппинги	features/trainer-panel/constants/*

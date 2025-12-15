@@ -13,9 +13,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.telegram.authentication import TelegramWebAppAuthentication, DebugModeAuthentication
+from apps.telegram.auth.authentication import TelegramWebAppAuthentication, DebugModeAuthentication
 from apps.telegram.telegram_auth import telegram_admin_required
-from apps.telegram.services.webapp_auth import get_webapp_auth_service
+from apps.telegram.auth.services.webapp_auth import get_webapp_auth_service
 from apps.telegram.models import TelegramUser
 from apps.telegram.serializers import (
     TelegramAuthSerializer,

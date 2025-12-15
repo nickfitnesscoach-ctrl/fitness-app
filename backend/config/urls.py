@@ -82,8 +82,8 @@ urlpatterns = [
     path("api/v1/telegram/", include("apps.telegram.urls")),
     
     # Trainer panel (includes auth endpoint)
-    path("api/v1/trainer-panel/", include("apps.telegram.trainer_urls")),
-    
+    path("api/v1/trainer-panel/", include("apps.telegram.trainer_panel.urls")),
+
     # Legacy alias for old frontend versions
     path("api/trainer-panel/auth/", telegram_views.trainer_panel_auth),
 

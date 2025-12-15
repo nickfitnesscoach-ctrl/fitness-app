@@ -10,7 +10,7 @@ from django.conf import settings
 from django.http import HttpResponseForbidden
 from django.utils.deprecation import MiddlewareMixin
 
-from .services.webapp_auth import get_webapp_auth_service
+from apps.telegram.auth.services.webapp_auth import get_webapp_auth_service
 
 try:
     from rest_framework.permissions import BasePermission

@@ -4,20 +4,26 @@ URL configuration for Telegram app.
 
 from django.urls import path
 
-from .views import (
+from apps.telegram.auth.views import (
     telegram_auth,
     webapp_auth,
     trainer_admin_panel,
     telegram_profile,
+)
+
+from apps.telegram.bot.views import (
     save_test_results,
-    get_applications_api,
-    clients_list,
-    client_detail,
-    get_invite_link,
     get_user_or_create,
     create_survey,
     create_plan,
     count_plans_today,
+    get_invite_link,
+)
+
+from apps.telegram.trainer_panel.views import (
+    get_applications_api,
+    clients_list,
+    client_detail,
 )
 
 urlpatterns = [

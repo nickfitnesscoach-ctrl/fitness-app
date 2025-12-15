@@ -243,8 +243,8 @@ REST_FRAMEWORK = {
     # Order matters: DebugMode checked first, then Telegram
     # NOTE: JWTAuthentication removed - EatFit24 uses Telegram WebApp auth only
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "apps.telegram.authentication.DebugModeAuthentication",  # Browser Debug Mode (dev only)
-        "apps.telegram.authentication.TelegramHeaderAuthentication",  # Production: Telegram WebApp
+        "apps.telegram.auth.authentication.DebugModeAuthentication",  # Browser Debug Mode (dev only)
+        "apps.telegram.auth.authentication.TelegramHeaderAuthentication",  # Production: Telegram WebApp
     ],
 
     # Permissions

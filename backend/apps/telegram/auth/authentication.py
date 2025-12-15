@@ -11,8 +11,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import authentication, exceptions
 
-from .models import TelegramUser
-from .services.webapp_auth import get_webapp_auth_service
+from apps.telegram.models import TelegramUser
+from apps.telegram.auth.services.webapp_auth import get_webapp_auth_service
 from apps.users.models import Profile
 
 User = get_user_model()
