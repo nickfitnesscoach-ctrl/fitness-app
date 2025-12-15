@@ -3,8 +3,9 @@
  */
 
 import { API_BASE } from './client';
+import { TRAINER_PANEL_AUTH_URL as TRAINER_AUTH_URL } from '../../config/env';
 
-const TRAINER_PANEL_AUTH_URL = import.meta.env.VITE_TRAINER_PANEL_AUTH_URL || '/api/v1/trainer-panel/auth/';
+const TRAINER_PANEL_AUTH_URL = TRAINER_AUTH_URL;
 
 export const URLS = {
     // Telegram endpoints

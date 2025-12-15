@@ -10,7 +10,7 @@ export const useClientsList = () => {
     const filteredClients = useMemo(() => {
         return clients.filter(client =>
             client.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            client.username.toLowerCase().includes(searchTerm.toLowerCase())
+            (client.username?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
         );
     }, [clients, searchTerm]);
 

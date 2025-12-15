@@ -15,10 +15,11 @@ import * as nutrition from './nutrition';
 import * as ai from './ai';
 import * as billing from './billing';
 import * as profile from './profile';
+import * as trainer from './trainer';
 import { getLogs, getDebugInfo, resolveImageUrl } from './client';
 
 // Re-export individual modules for direct imports
-export { auth, nutrition, ai, billing, profile };
+export { auth, nutrition, ai, billing, profile, trainer };
 
 /**
  * Backward-compatible API object
@@ -35,29 +36,32 @@ export const api = {
     // Debug
     getLogs,
     getDebugInfo,
-    
+
     // Utility
     resolveImageUrl,
-    
+
     // Legacy JWT methods (no-op for WebApp)
     setAccessToken: (_token: string) => {
         console.log('[API] setAccessToken called (ignored - WebApp uses Header auth)');
     },
     getAccessToken: () => null,
-    clearToken: () => {},
-    
-    // Auth
+    clearToken: () => { },
+
+    // Auth (authentication only)
     authenticate: auth.authenticate,
     trainerPanelAuth: auth.trainerPanelAuth,
-    getApplications: auth.getApplications,
-    deleteApplication: auth.deleteApplication,
-    updateApplicationStatus: auth.updateApplicationStatus,
-    getClients: auth.getClients,
-    addClient: auth.addClient,
-    removeClient: auth.removeClient,
-    getInviteLink: auth.getInviteLink,
-    getSubscribers: auth.getSubscribers,
-    
+
+    // Trainer Panel (SSOT: services/api/trainer.ts)
+    // @see features/trainer-panel/docs/TRAINER_API.md
+    getApplications: trainer.getApplications,
+    deleteApplication: trainer.deleteApplication,
+    updateApplicationStatus: trainer.updateApplicationStatus,
+    getClients: trainer.getClients,
+    addClient: trainer.addClient,
+    removeClient: trainer.removeClient,
+    getInviteLink: trainer.getInviteLink,
+    getSubscribers: trainer.getSubscribers,
+
     // Nutrition
     getMeals: nutrition.getMeals,
     createMeal: nutrition.createMeal,
@@ -71,11 +75,11 @@ export const api = {
     calculateGoals: nutrition.calculateGoals,
     setAutoGoals: nutrition.setAutoGoals,
     getWeeklyStats: nutrition.getWeeklyStats,
-    
+
     // AI
     recognizeFood: ai.recognizeFood,
     getTaskStatus: ai.getTaskStatus,
-    
+
     // Billing
     getSubscriptionPlan: billing.getSubscriptionPlan,
     getSubscriptionPlans: billing.getSubscriptionPlans,
@@ -90,7 +94,7 @@ export const api = {
     bindCard: billing.bindCard,
     addPaymentMethod: billing.addPaymentMethod,
     getPaymentsHistory: billing.getPaymentsHistory,
-    
+
     // Profile
     getProfile: profile.getProfile,
     updateProfile: profile.updateProfile,

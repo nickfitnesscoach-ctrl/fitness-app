@@ -73,7 +73,7 @@ const ApplicationsPage: React.FC = () => {
                 application={selectedApp}
                 onBack={() => selectApp(null)}
                 onMakeClient={handleMakeClient}
-                onOpenChat={() => handleOpenChat(selectedApp.username)}
+                onOpenChat={() => handleOpenChat(selectedApp.username ?? '')}
                 onChangeStatus={(status) => changeStatus(selectedApp.id, status)}
                 onDelete={() => confirmAndDelete(selectedApp.id)}
             />
@@ -134,8 +134,8 @@ const ApplicationsPage: React.FC = () => {
                         key={status}
                         onClick={() => setFilterStatus(status)}
                         className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${filterStatus === status
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-50'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
                             }`}
                     >
                         {status === 'all' && 'Все'}
@@ -156,7 +156,7 @@ const ApplicationsPage: React.FC = () => {
                             key={app.id}
                             app={app}
                             onOpenDetails={() => selectApp(app)}
-                            onOpenChat={() => handleOpenChat(app.username)}
+                            onOpenChat={() => handleOpenChat(app.username ?? '')}
                         />
                     ))
                 ) : (

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Application } from '../types/application';
+import type { Application } from '../features/trainer-panel/types';
 import { api } from '../services/api';
 
 interface ClientsContextType {

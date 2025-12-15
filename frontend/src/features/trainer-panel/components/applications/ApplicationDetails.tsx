@@ -22,14 +22,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
     onChangeStatus,
     onDelete
 }) => {
-    const activityInfo = ACTIVITY_DESCRIPTIONS[application.details.activity_level] || {
-        title: application.details.activity_level,
+    const activityInfo = (application.details.activity_level ? ACTIVITY_DESCRIPTIONS[application.details.activity_level] : null) || {
+        title: application.details.activity_level ?? 'Не указана',
         description: '',
         icon: '❓'
     };
 
-    const trainingInfo = TRAINING_LEVEL_DESCRIPTIONS[application.details.training_level] || {
-        title: application.details.training_level,
+    const trainingInfo = (application.details.training_level ? TRAINING_LEVEL_DESCRIPTIONS[application.details.training_level] : null) || {
+        title: application.details.training_level ?? 'Не указан',
         description: '',
         icon: '💪',
         color: 'text-gray-500'
@@ -90,31 +90,28 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                 <div className="flex gap-2">
                     <button
                         onClick={() => onChangeStatus('new')}
-                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                            application.status === 'new'
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${application.status === 'new'
                                 ? 'bg-blue-500 text-white'
                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
+                            }`}
                     >
                         Новая
                     </button>
                     <button
                         onClick={() => onChangeStatus('viewed')}
-                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                            application.status === 'viewed'
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${application.status === 'viewed'
                                 ? 'bg-yellow-500 text-white'
                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
+                            }`}
                     >
                         Просмотрено
                     </button>
                     <button
                         onClick={() => onChangeStatus('contacted')}
-                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                            application.status === 'contacted'
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${application.status === 'contacted'
                                 ? 'bg-green-500 text-white'
                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
+                            }`}
                     >
                         Связался
                     </button>
@@ -132,7 +129,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                         <div className="text-xs text-gray-500 mb-1">Возраст:</div>
                         <div className="font-bold text-gray-900 text-right">{application.details.age} лет</div>
                     </div>
-                    <InfoItem label="Пол:" value={application.details.gender} />
+                    <InfoItem label="Пол:" value={application.details.gender ?? '—'} />
                     <InfoItem label="Рост:" value={`${application.details.height} см`} />
                     <InfoItem label="Вес:" value={`${application.details.weight} кг`} />
                     <InfoItem label="Целевой вес:" value={`${application.details.target_weight} кг`} />
@@ -172,7 +169,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                             <div className="text-sm text-gray-500 mb-3">Цели</div>
                             <div className="space-y-2">
-                                {application.details.goals.map((goal, index) => (
+                                {(application.details.goals ?? []).map((goal, index) => (
                                     <div key={index} className="flex items-center gap-2">
                                         <CheckCircle2 size={18} className="text-green-500 shrink-0" />
                                         <span className="text-gray-900 font-medium">{goal}</span>
@@ -188,13 +185,13 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                                 Ограничения по здоровью
                             </div>
                             <div className="space-y-2">
-                                {application.details.limitations.map((limitation, index) => (
+                                {(application.details.limitations ?? []).map((limitation, index) => (
                                     <div key={index} className="flex items-center gap-2">
                                         <CheckCircle2 size={18} className="text-red-500 shrink-0" />
                                         <span className="text-gray-900 font-medium">{limitation}</span>
                                     </div>
                                 ))}
-                                {application.details.limitations.length === 0 && (
+                                {(application.details.limitations ?? []).length === 0 && (
                                     <div className="text-gray-500 italic">Нет ограничений</div>
                                 )}
                             </div>
@@ -205,10 +202,10 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                             <div className="text-sm text-gray-500 mb-3">Тип фигуры</div>
                             <div className="flex flex-col gap-3">
                                 <div className="aspect-[3/4] w-full max-w-[200px] bg-gray-200 rounded-lg overflow-hidden self-center">
-                                    {application.details.body_type.image_url ? (
+                                    {application.details.body_type?.image_url ? (
                                         <img
-                                            src={application.details.body_type.image_url}
-                                            alt={application.details.body_type.description}
+                                            src={application.details.body_type?.image_url}
+                                            alt={application.details.body_type?.description ?? 'Тип фигуры'}
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
@@ -218,7 +215,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                                     )}
                                 </div>
                                 <div className="text-center">
-                                    <div className="font-bold text-gray-900">{application.details.body_type.description}</div>
+                                    <div className="font-bold text-gray-900">{application.details.body_type?.description ?? 'Текущая форма'}</div>
                                 </div>
                             </div>
                         </div>
@@ -228,10 +225,10 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                             <div className="text-sm text-gray-500 mb-3">Желаемая форма</div>
                             <div className="flex flex-col gap-3">
                                 <div className="aspect-[3/4] w-full max-w-[200px] bg-gray-200 rounded-lg overflow-hidden self-center">
-                                    {application.details.desired_body_type.image_url ? (
+                                    {application.details.desired_body_type?.image_url ? (
                                         <img
-                                            src={application.details.desired_body_type.image_url}
-                                            alt={application.details.desired_body_type.description}
+                                            src={application.details.desired_body_type?.image_url}
+                                            alt={application.details.desired_body_type?.description ?? 'Желаемая форма'}
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
@@ -241,7 +238,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({
                                     )}
                                 </div>
                                 <div className="text-center">
-                                    <div className="font-bold text-gray-900">{application.details.desired_body_type.description}</div>
+                                    <div className="font-bold text-gray-900">{application.details.desired_body_type?.description ?? 'Желаемая форма'}</div>
                                 </div>
                             </div>
                         </div>

@@ -134,7 +134,7 @@ export function useApplications({ isClient }: UseApplicationsArgs): UseApplicati
         .filter(app => !isClient(app.id)) // Hide if already a client
         .filter(app => {
             const matchesSearch = app.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                app.username.toLowerCase().includes(searchTerm.toLowerCase());
+                (app.username?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
             const matchesStatus = filterStatus === 'all' || app.status === filterStatus;
             return matchesSearch && matchesStatus;
         });

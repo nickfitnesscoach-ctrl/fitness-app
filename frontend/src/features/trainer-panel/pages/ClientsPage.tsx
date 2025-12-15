@@ -63,7 +63,7 @@ const ClientsPage: React.FC = () => {
                         key={client.id}
                         client={client}
                         onView={() => setSelectedClient(client)}
-                        onOpenChat={() => handleOpenChat(client.username)}
+                        onOpenChat={() => handleOpenChat(client.username ?? '')}
                     />
                 ))}
 

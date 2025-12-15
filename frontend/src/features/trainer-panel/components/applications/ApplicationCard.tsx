@@ -52,7 +52,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
                 </div>
                 <div className="text-center">
                     <div className="text-xs text-gray-500">Акт.</div>
-                    <div className="font-bold text-gray-900 text-xs">{app.details.activity_level.substring(0, 3)}</div>
+                    <div className="font-bold text-gray-900 text-xs">{app.details.activity_level?.substring(0, 3) ?? '—'}</div>
                 </div>
             </div>
 

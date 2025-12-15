@@ -18,14 +18,14 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
     onOpenChat,
     onRemoveClient
 }) => {
-    const activityInfo = ACTIVITY_DESCRIPTIONS[client.details.activity_level] || {
-        title: client.details.activity_level,
+    const activityInfo = (client.details.activity_level ? ACTIVITY_DESCRIPTIONS[client.details.activity_level] : null) || {
+        title: client.details.activity_level ?? 'Не указана',
         description: '',
         icon: '❓'
     };
 
-    const trainingInfo = TRAINING_LEVEL_DESCRIPTIONS[client.details.training_level] || {
-        title: client.details.training_level,
+    const trainingInfo = (client.details.training_level ? TRAINING_LEVEL_DESCRIPTIONS[client.details.training_level] : null) || {
+        title: client.details.training_level ?? 'Не указан',
         description: '',
         icon: '💪',
         color: 'text-gray-500'
@@ -56,7 +56,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
             </div>
 
             <button
-                onClick={() => onOpenChat(client.username)}
+                onClick={() => onOpenChat(client.username ?? '')}
                 className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 py-3 rounded-xl font-medium text-gray-700 shadow-sm active:scale-95 transition-transform"
             >
                 <MessageCircle size={20} />
@@ -73,7 +73,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
                         <div className="text-xs text-gray-500 mb-1">Возраст:</div>
                         <div className="font-bold text-gray-900 text-right">{client.details.age} лет</div>
                     </div>
-                    <InfoItem label="Пол:" value={client.details.gender} />
+                    <InfoItem label="Пол:" value={client.details.gender ?? '—'} />
                     <InfoItem label="Рост:" value={`${client.details.height} см`} />
                     <InfoItem label="Вес:" value={`${client.details.weight} кг`} />
                     <InfoItem label="Целевой вес:" value={`${client.details.target_weight} кг`} />
@@ -106,7 +106,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                             <div className="text-sm text-gray-500 mb-3">Цели</div>
                             <div className="space-y-2">
-                                {client.details.goals.map((goal, index) => (
+                                {(client.details.goals ?? []).map((goal, index) => (
                                     <div key={index} className="flex items-center gap-2">
                                         <CheckCircle2 size={18} className="text-green-500 shrink-0" />
                                         <span className="text-gray-900 font-medium">{goal}</span>
@@ -121,13 +121,13 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
                                 Ограничения по здоровью
                             </div>
                             <div className="space-y-2">
-                                {client.details.limitations.map((limitation, index) => (
+                                {(client.details.limitations ?? []).map((limitation, index) => (
                                     <div key={index} className="flex items-center gap-2">
                                         <CheckCircle2 size={18} className="text-red-500 shrink-0" />
                                         <span className="text-gray-900 font-medium">{limitation}</span>
                                     </div>
                                 ))}
-                                {client.details.limitations.length === 0 && (
+                                {(client.details.limitations ?? []).length === 0 && (
                                     <div className="text-gray-500 italic">Нет ограничений</div>
                                 )}
                             </div>
@@ -137,10 +137,10 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
                             <div className="text-sm text-gray-500 mb-3">Тип фигуры</div>
                             <div className="flex flex-col gap-3">
                                 <div className="aspect-[3/4] w-full max-w-[200px] bg-gray-200 rounded-lg overflow-hidden self-center">
-                                    {client.details.body_type.image_url ? (
+                                    {client.details.body_type?.image_url ? (
                                         <img
-                                            src={client.details.body_type.image_url}
-                                            alt={client.details.body_type.description}
+                                            src={client.details.body_type?.image_url}
+                                            alt={client.details.body_type?.description ?? 'Тип фигуры'}
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
@@ -150,7 +150,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     )}
                                 </div>
                                 <div className="text-center">
-                                    <div className="font-bold text-gray-900">{client.details.body_type.description}</div>
+                                    <div className="font-bold text-gray-900">{client.details.body_type?.description ?? 'Текущая форма'}</div>
                                 </div>
                             </div>
                         </div>
@@ -159,10 +159,10 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
                             <div className="text-sm text-gray-500 mb-3">Желаемая форма</div>
                             <div className="flex flex-col gap-3">
                                 <div className="aspect-[3/4] w-full max-w-[200px] bg-gray-200 rounded-lg overflow-hidden self-center">
-                                    {client.details.desired_body_type.image_url ? (
+                                    {client.details.desired_body_type?.image_url ? (
                                         <img
-                                            src={client.details.desired_body_type.image_url}
-                                            alt={client.details.desired_body_type.description}
+                                            src={client.details.desired_body_type?.image_url}
+                                            alt={client.details.desired_body_type?.description ?? 'Желаемая форма'}
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
@@ -172,7 +172,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     )}
                                 </div>
                                 <div className="text-center">
-                                    <div className="font-bold text-gray-900">{client.details.desired_body_type.description}</div>
+                                    <div className="font-bold text-gray-900">{client.details.desired_body_type?.description ?? 'Желаемая форма'}</div>
                                 </div>
                             </div>
                         </div>

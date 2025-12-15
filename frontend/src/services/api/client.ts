@@ -9,12 +9,13 @@
  */
 
 import { buildTelegramHeaders, getTelegramDebugInfo } from '../../lib/telegram';
+import { API_BASE_URL } from '../../config/env';
 
 // ============================================================
 // Configuration
 // ============================================================
 
-export const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+export const API_BASE = API_BASE_URL;
 export const API_TIMEOUT = 150000; // 150 seconds
 export const API_RETRY_ATTEMPTS = 3;
 export const API_RETRY_DELAY = 1000; // ms
