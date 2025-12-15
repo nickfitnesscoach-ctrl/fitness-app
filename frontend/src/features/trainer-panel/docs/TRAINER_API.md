@@ -1,174 +1,119 @@
-# Trainer API — Эндпоинты и контракты
+# Trainer Panel API — Frozen State (SSOT)
 
-> **Frozen state:** 2025-12-15  
-> Документация отражает текущую реализацию `services/api/trainer.ts`.
-
----
-
-## Источник истины
-
-**Файл:** `services/api/trainer.ts`
-
-```typescript
-// ✅ Канон импорта
-import { api } from '../services/api';
-```
+Этот документ фиксирует ТЕКУЩЕЕ состояние API-слоя Trainer Panel после рефакторинга.
+Цель — чтобы любой разработчик/агент вызывал API одинаково и не ломал канон импортов/типов.
+Код менять нельзя. Документация должна соответствовать коду 1:1.
 
 ---
 
-## Эндпоинты
+## 1) Канон использования API
 
-### Applications (Заявки)
+✅ Канон:
+```ts
+import { api } from 'services/api';
 
-| Метод | Функция | Endpoint |
-|-------|---------|----------|
-| GET | `api.getApplications()` | `/api/v1/trainer/applications/` |
-| PATCH | `api.updateApplicationStatus(id, status)` | `/api/v1/trainer/applications/{id}/` |
-| DELETE | `api.deleteApplication(id)` | `/api/v1/trainer/applications/{id}/` |
+const apps = await api.getApplications();
+Допустимо (если нужен прямой импорт):
 
-### Clients (Клиенты)
+ts
+Копировать код
+import { getClients } from 'services/api/trainer';
+❌ Запрещено:
 
-| Метод | Функция | Endpoint |
-|-------|---------|----------|
-| GET | `api.getClients()` | `/api/v1/trainer/clients/` |
-| POST | `api.addClient(applicationId)` | `/api/v1/trainer/clients/` |
-| DELETE | `api.removeClient(clientId)` | `/api/v1/trainer/clients/{id}/` |
+ts
+Копировать код
+import { getClients } from 'services/api/auth';
+services/api/auth.ts — только authentication/authorization.
+Trainer endpoints находятся в services/api/trainer.ts.
 
-### Invite Links
+2) Статусы заявок (важно)
+Backend возвращает и принимает ТОЛЬКО:
 
-| Метод | Функция | Endpoint |
-|-------|---------|----------|
-| GET | `api.getInviteLink()` | `/api/v1/trainer/invite/` |
+ts
+Копировать код
+'new' | 'viewed' | 'contacted'
+Backend НЕ знает про client.
+client — UI-only derived состояние.
 
-### Subscribers
+Типы:
 
-| Метод | Функция | Endpoint |
-|-------|---------|----------|
-| GET | `api.getSubscribers()` | `/api/v1/trainer/subscribers/` |
+ApplicationStatusApi = 'new' | 'viewed' | 'contacted'
 
----
+ApplicationStatusUi = ApplicationStatusApi | 'client' (UI only)
 
-## Типы статусов
+3) Типы ответов (SSOT)
+Типы для Trainer Panel берутся из:
 
-### Backend статусы
+ts
+Копировать код
+import type { ApplicationResponse } from 'features/trainer-panel/types';
+Канон:
 
-```typescript
-type ApplicationStatusApi = 'new' | 'viewed' | 'contacted';
-```
+ApplicationResponse.details: ClientDetailsApi
 
-**Backend возвращает только эти три статуса.**
+Application.details: ClientDetailsUi (после transform в hooks/contexts)
 
-### UI статусы
+Transform выполняется в:
 
-```typescript
-type ApplicationStatusUi = ApplicationStatusApi | 'client';
-```
+features/trainer-panel/hooks/useApplications.ts
 
-> **Важно:** Статус `'client'` — **только UI**. Backend его никогда не возвращает и не принимает.
+src/contexts/ClientsContext.tsx
 
----
+4) Методы Trainer API (фактические)
+Ниже перечислены методы, которые использует Trainer Panel.
 
-## Типы ответов
+Applications
+api.getApplications(): Promise<ApplicationResponse[]>
 
-### ApplicationResponse
+Получить список заявок
 
-```typescript
-interface ApplicationResponse {
-    id: number;
-    telegram_id: number;
-    first_name: string;
-    last_name?: string;
-    username?: string;
-    photo_url?: string;
-    status: ApplicationStatusApi;  // 'new' | 'viewed' | 'contacted'
-    created_at: string;
-    details: ClientDetailsApi;
-}
-```
+api.updateApplicationStatus(applicationId: number, status: ApplicationStatusApi): Promise<ApplicationResponse>
 
-### ClientDetailsApi
+Обновить статус заявки (new/viewed/contacted)
 
-```typescript
-interface ClientDetailsApi {
-    age?: number;
-    gender?: 'male' | 'female';
-    height?: number;
-    weight?: number;
-    target_weight?: number;
-    activity_level?: string;
-    training_level?: string;
-    goals?: string[];
-    health_restrictions?: string[];
-    current_body_type?: number;
-    ideal_body_type?: number;
-    timezone?: string;
-    diet_type?: string;
-    meals_per_day?: number;
-    allergies?: string[] | string;
-    disliked_food?: string;
-    supplements?: string;
-}
-```
+api.deleteApplication(applicationId: number): Promise<boolean>
 
----
+Удалить заявку
 
-## Примеры использования
+Clients
+api.getClients(): Promise<Client[]>
 
-### Загрузка заявок
+Получить список клиентов тренера
 
-```typescript
-import { api } from '../services/api';
-import type { ApplicationResponse } from '../features/trainer-panel/types';
+api.addClient(clientId: number): Promise<Client>
 
-const data = await api.getApplications() as ApplicationResponse[];
-```
+Добавить клиента из заявки
 
-### Обновление статуса
+api.removeClient(clientId: number): Promise<boolean>
 
-```typescript
-await api.updateApplicationStatus(applicationId, 'contacted');
-```
+Удалить клиента из списка
 
-### Добавление клиента
+Invite
+api.getInviteLink(): Promise<string>
 
-```typescript
-await api.addClient(applicationId);
-```
+Получить инвайт-ссылку тренера
 
----
+Subscribers
+api.getSubscribers(): Promise<SubscribersResponse>
 
-## Deprecated
+Получить подписчиков + статистику
 
-> ⚠️ **Будет удалено в v2.0**
+5) Ошибки и безопасность вызовов (как принято сейчас)
+Любой запрос может вернуть ошибку сети/401/403/500 — UI должен быть устойчивым.
 
-В `services/api/auth.ts` есть re-export trainer методов для обратной совместимости:
+В случаях, где данные не критичны (например, список), допустимо возвращать пустой массив и логировать ошибку.
 
-```typescript
-// ❌ Deprecated — не использовать
-export {
-    getApplications,
-    deleteApplication,
-    updateApplicationStatus,
-    // ...
-} from './trainer';
-```
+В случаях, где действие критично (update/delete), ошибка должна всплыть до UI, чтобы показать сообщение пользователю.
 
-**Канон:** импортировать через `api` объект, не из `auth.ts`.
+6) Deprecated (текущее состояние)
+В services/api/auth.ts могут существовать re-export trainer методов только для обратной совместимости.
 
----
+Правило:
 
-## Аутентификация
+UI/feature код НЕ должен импортировать trainer функции из auth.ts.
 
-Все trainer-эндпоинты требуют заголовок:
+Канон — import { api } from 'services/api' или прямой импорт из services/api/trainer.
 
-```
-X-Telegram-Init-Data: <initData>
-```
+Статус:
 
-Аутентификация тренера:
-
-```typescript
-await api.trainerPanelAuth(initData);
-// POST /api/v1/auth/trainer/
-// Body: { init_data: initData }
-```
+re-export блок в auth.ts помечен deprecated и будет удалён в следующей мажорной версии.

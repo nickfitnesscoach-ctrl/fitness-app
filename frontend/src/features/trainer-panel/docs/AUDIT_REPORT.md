@@ -1,122 +1,55 @@
-# AUDIT_REPORT — Рефакторинг Trainer Panel
+# Trainer Panel — Audit Report (Frozen)
 
-> **Frozen state:** 2025-12-15  
-> Рефакторинг завершён. Изменения дальше только инкрементальные.
+## Цель
+Зафиксировать текущее состояние Trainer Panel после рефакторинга так, чтобы:
+- код и документация совпадали 1:1
+- не было обратных зависимостей
+- правила импортов и типов были едины
 
----
+## Итоговый статус
+- TypeScript: зелёный (`type-check` ✅)
+- Lint: зелёный (`lint` ✅)
+- Build: зелёный (`build` ✅)
+- Архитектура данных приведена к единому канону:
+  Backend API → services/api → transform (hooks/contexts) → UI
 
-## Итоговое состояние
+## Что было (проблема)
+- UI-компоненты ожидали “UI-поля”, но типы описывали только “сырой backend”.
+- Были несогласованные импорты и неоднозначные источники типов.
+- Из-за этого TypeScript либо молчал (через any/дыры), либо падал при усилении типов.
 
-### Архитектура ✅
+## Что стало (решение)
+### 1) SSOT типов для trainer panel
+Типы зафиксированы в `features/trainer-panel/types`:
 
-```
-Backend API → services/api/* → hooks/contexts (transform) → UI components
-```
+- API слой:
+  - `ClientDetailsApi`
+  - `ApplicationResponse` (status: `ApplicationStatusApi`, details: `ClientDetailsApi`)
 
-- Чёткое разделение слоёв
-- Типы разделены: API vs UI
-- Обратных зависимостей нет
-- Трансформация происходит в хуках/контекстах
+- UI слой:
+  - `ClientDetailsUi`
+  - `Application` (details: `ClientDetailsUi`, status: `ApplicationStatusUi`, date optional)
 
-### Типы ✅
+### 2) Централизованный transform
+Transform из API формы в UI форму выполняется ТОЛЬКО в:
+- `features/trainer-panel/hooks/useApplications.ts`
+- `src/contexts/ClientsContext.tsx`
 
-| Тип | Назначение |
-|-----|------------|
-| `ApplicationResponse` | API response (сырые данные) |
-| `Application` | UI model (трансформированные данные) |
-| `ClientDetailsApi` | Детали с backend |
-| `ClientDetailsUi` | Детали для UI |
-| `ApplicationStatusApi` | `'new' \| 'viewed' \| 'contacted'` |
-| `ApplicationStatusUi` | `ApplicationStatusApi \| 'client'` |
+### 3) Канон импортов
+- Типы: импортировать из `features/trainer-panel/types`
+- API: использовать `import { api } from 'services/api'`
+- Trainer функции из `services/api/auth` — запрещены (deprecated)
 
-### Импорты ✅
+## Post-change verification (что проверено)
+- Нет импорта trainer функций из `services/api/auth` в UI/feature коде
+- Типы trainer panel не зависят от `services/api/*`
+- Статус `client` используется только в UI, не уходит на backend
+- `npm run type-check` / `npm run lint` / `npm run build` — зелёные
 
-- Типы: из `features/trainer-panel/types`
-- API: через `api` объект из `services/api`
-- Trainer функции из `auth.ts` — deprecated
-
-### Quality Gates ✅
-
-| Команда | Результат |
-|---------|-----------|
-| `npm run type-check` | ✅ 0 ошибок |
-| `npm run lint` | ✅ 0 ошибок |
-| `npm run build` | ✅ Успешно |
-
----
-
-## Выполненные исправления
-
-### 1. Разделение типов
-
-**До:** Один `ClientDetails` для всего  
-**После:** `ClientDetailsApi` (backend) + `ClientDetailsUi` (UI)
-
-### 2. Статусы
-
-**До:** Неявное смешение API и UI статусов  
-**После:** Явное разделение `ApplicationStatusApi` / `ApplicationStatusUi`
-
-### 3. Импорты
-
-**До:** Смешанные пути импортов  
-**После:** Единый канон через `features/trainer-panel/types`
-
-### 4. Null Safety
-
-**До:** Отсутствие проверок на undefined  
-**После:** Optional chaining + fallback во всех UI компонентах
-
-### 5. Документация
-
-**До:** Неактуальная, описывала "будущее"  
-**После:** Frozen state, 1:1 с кодом
-
----
-
-## Deprecated (v2.0 cleanup)
-
-В `services/api/auth.ts` остаются re-exports trainer функций:
-
-```typescript
-// ⚠️ DEPRECATED — будет удалено в v2.0
-export {
-    getApplications,
-    deleteApplication,
-    updateApplicationStatus,
-    getClients,
-    addClient,
-    removeClient,
-    // ...
-} from './trainer';
-```
-
-**Чеклист для v2.0:**
-- [ ] Удалить deprecated re-exports из `auth.ts`
-- [ ] Проверить отсутствие импортов из `auth.ts`
-- [ ] Обновить документацию
-
----
-
-## Acceptance Criteria ✅
-
-| Критерий | Статус |
-|----------|--------|
-| Trainer Panel — цельная feature папка | ✅ |
-| Типы разделены (API vs UI) | ✅ |
-| Все trainer-запросы через `trainer.ts` | ✅ |
-| Import policy задокументирована | ✅ |
-| Статус `client` — только UI | ✅ |
-| TypeScript strict — зелёный | ✅ |
-| Документация соответствует коду | ✅ |
-
----
-
-## Заключение
-
-Рефакторинг Trainer Panel завершён. Текущее состояние зафиксировано.
-
-Любые будущие изменения должны:
-1. Следовать установленным канонам импортов
-2. Поддерживать разделение API/UI типов
-3. Обновлять документацию при структурных изменениях
+## Канон (6 пунктов)
+1) Backend не возвращает `client`.
+2) `ClientDetailsApi` — сырой backend, `ClientDetailsUi` — только для UI.
+3) Transform только в `useApplications.ts` и `ClientsContext.tsx`.
+4) UI работает только с UI-моделью (`Application`, `ClientDetailsUi`).
+5) API вызываем через `api` из `services/api`.
+6) Типы импортируем только из `features/trainer-panel/types`.

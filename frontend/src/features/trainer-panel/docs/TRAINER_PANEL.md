@@ -1,158 +1,133 @@
-# Trainer Panel — Архитектурный канон
+# Trainer Panel — Frozen State (SSOT)
 
-> **Frozen state:** 2025-12-15  
-> Документация отражает текущий код после рефакторинга.
+Этот документ фиксирует ТЕКУЩЕЕ состояние Trainer Panel после рефакторинга.
+Цель — зафиксировать каноны архитектуры, типов и импортов.
+Код менять нельзя. Документация должна соответствовать коду 1:1.
 
 ---
 
-## Архитектура данных
+## 1. Архитектура данных (канон)
 
-```
 Backend API
-     ↓
-services/api/* (fetch, raw response)
-     ↓
-hooks / contexts (data transformation)
-     ↓
-UI components (consume UI-ready data)
-```
+↓
+services/api/*
+↓
+Transform layer (hooks + contexts)
+↓
+UI components
 
-### Ключевой принцип
+yaml
+Копировать код
 
-**Backend API возвращает сырые данные → хуки/контексты трансформируют → UI компоненты получают готовые данные.**
+### Где происходит transform
+Transform данных из backend-формы в UI-форму выполняется ТОЛЬКО здесь:
+- `features/trainer-panel/hooks/useApplications.ts`
+- `src/contexts/ClientsContext.tsx`
 
-| Слой | Типы | Ответственность |
-|------|------|-----------------|
-| API | `ApplicationResponse`, `ClientDetailsApi` | Fetch + передача сырых данных |
-| Transform | `mapDetailsApiToUi()`, `mapApplicationFromApi()` | Преобразование API → UI |
-| UI | `Application`, `ClientDetailsUi` | Отображение готовых данных |
-
----
-
-## Типы (SSOT)
-
-**Источник истины:** `features/trainer-panel/types/`
-
-### Status Types
-
-```typescript
-// Backend возвращает ТОЛЬКО эти статусы
-type ApplicationStatusApi = 'new' | 'viewed' | 'contacted';
-
-// UI добавляет 'client' (никогда не отправляется на backend)
-type ApplicationStatusUi = ApplicationStatusApi | 'client';
-```
-
-> **Важно:** Backend **НИКОГДА** не возвращает `'client'`. Этот статус устанавливается локально в `ClientsContext` когда заявка конвертируется в клиента.
-
-### Details Types
-
-```typescript
-// Сырые данные с backend
-interface ClientDetailsApi {
-    gender?: 'male' | 'female';
-    health_restrictions?: string[];
-    current_body_type?: number;
-    // ...
-}
-
-// После трансформации для UI
-interface ClientDetailsUi {
-    gender?: string;        // "Мужской" / "Женский"
-    limitations: string[];  // Локализованные ограничения
-    body_type?: BodyTypeInfo;  // { id, description, image_url }
-    // ...
-}
-```
-
-### Application Types
-
-```typescript
-// API response (строгий статус)
-interface ApplicationResponse {
-    status: ApplicationStatusApi;
-    details: ClientDetailsApi;
-    // ...
-}
-
-// UI model (расширенный статус)
-interface Application {
-    status?: ApplicationStatusUi;
-    details: ClientDetailsUi;
-    date?: string;  // UI-formatted
-    // ...
-}
-```
+UI-компоненты НЕ работают с сырыми API-типами.
 
 ---
 
-## Import Policy
+## 2. Канон типов (SSOT)
+
+### Статусы
+- `ApplicationStatusApi = 'new' | 'viewed' | 'contacted'`
+- `ApplicationStatusUi = ApplicationStatusApi | 'client'`
+
+Правила:
+- Backend НИКОГДА не возвращает `client`
+- `client` — UI-only derived состояние
+
+---
+
+### API-типы (backend → frontend)
+Используются только для приёма данных с backend.
+
+- `ClientDetailsApi`
+  - сырые поля backend (`gender: 'male' | 'female'`, `health_restrictions`, body_type id и т.д.)
+
+- `ApplicationResponse`
+  - `status: ApplicationStatusApi`
+  - `details: ClientDetailsApi`
+
+---
+
+### UI-типы (то, что потребляет интерфейс)
+Используются ТОЛЬКО в UI и после transform.
+
+- `ClientDetailsUi`
+  - локализованные строки
+  - нормализованные массивы (`goals`, `limitations`, `allergies`)
+  - `body_type` / `desired_body_type` как `BodyTypeInfo`
+
+- `Application`
+  - `details: ClientDetailsUi`
+  - `status?: ApplicationStatusUi`
+  - `date?: string` — UI-форматированная дата
+
+---
+
+## 3. Import Policy (строго)
 
 ### Типы
+**Канон (вне feature):**
+```ts
+import type { Application, ApplicationResponse } 
+  from 'features/trainer-panel/types';
+Канон (внутри feature):
 
-```typescript
-// ✅ Канон — из features/trainer-panel/types
-import type { Application, ClientDetailsUi } from '../features/trainer-panel/types';
-
-// ✅ Внутри feature — относительный путь
+ts
+Копировать код
 import type { Application } from '../types';
-```
+❌ Запрещено:
 
-### API
+импортировать типы напрямую из файлов глубже, минуя features/trainer-panel/types
 
-```typescript
-// ✅ Канон — через api объект
-import { api } from '../services/api';
-await api.getApplications();
+дублировать типы в services/api/*
 
-// ❌ Запрещено — импорт из auth.ts
-import { getApplications } from '../services/api/auth';
-```
+API
+Канон:
 
----
+ts
+Копировать код
+import { api } from 'services/api';
+❌ Запрещено:
 
-## Трансформация данных
+ts
+Копировать код
+import { getClients } from 'services/api/auth';
+services/api/auth.ts — только аутентификация/авторизация.
+Trainer API — в services/api/trainer.ts, доступ через api.
 
-### Где происходит
+4. Правила, чтобы панель не ломалась
+UI-компоненты работают только с Application и ClientDetailsUi
 
-| Файл | Что делает |
-|------|------------|
-| `hooks/useApplications.ts` | `mapApplicationFromApi()` — API → UI для заявок |
-| `contexts/ClientsContext.tsx` | Трансформация клиентов при загрузке |
+Backend не должен получать ApplicationStatusUi
 
-### Что трансформируется
+client не хранится и не передаётся — только вычисляется в UI
 
-| API поле | UI поле | Пример |
-|----------|---------|--------|
-| `gender: 'male'` | `gender: 'Мужской'` | Локализация |
-| `health_restrictions[]` | `limitations[]` | Переименование + локализация |
-| `current_body_type: 3` | `body_type: { id, description, image_url }` | Обогащение данных |
-| `created_at` | `date` | Форматирование даты |
+Все опциональные поля (username, created_at, массивы) должны быть безопасны к отсутствию
 
----
+Transform логика централизована — не дублировать её в компонентах
 
-## Структура feature
+5. Типовой поток данных
+Заявки
+api.getApplications() → ApplicationResponse[]
 
-```
-features/trainer-panel/
-├── components/
-│   ├── applications/     # Карточки и детали заявок
-│   └── clients/          # Карточки и детали клиентов
-├── constants/            # Маппинги (ACTIVITY_MAP, GOALS_MAP, etc.)
-├── docs/                 # Эта документация
-├── hooks/                # useApplications, useClientsList
-├── pages/                # ApplicationsPage, ClientsPage
-└── types/                # SSOT для типов
-    ├── application.ts    # Все интерфейсы
-    └── index.ts          # Re-export
-```
+Transform в useApplications.ts → Application[]
 
----
+Рендер в UI
 
-## Правила для разработчиков
+Клиенты
+api.getClients() → API response
 
-1. **Типы** — импортировать только из `features/trainer-panel/types`
-2. **API** — использовать `api.method()`, не прямые импорты из `auth.ts`
-3. **Трансформация** — происходит в хуках/контекстах, не в компонентах
-4. **Статус `client`** — существует только в UI, backend его не знает
-5. **UI компоненты** — получают только `Application` с `ClientDetailsUi`
+Transform в ClientsContext.tsx → Application[] со status: 'client'
+
+Рендер в UI
+
+6. Статус документа
+Документ отражает текущий код (Frozen)
+
+Рефакторинг Trainer Panel завершён
+
+Любые изменения дальше — только инкрементальные
