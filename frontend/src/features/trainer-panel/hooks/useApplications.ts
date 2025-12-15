@@ -1,8 +1,14 @@
-import { useState, useEffect } from 'react';
-import { Application } from '../types/application';
+import { useEffect, useMemo, useState } from 'react';
+import type {
+    Application,
+    ApplicationResponse,
+    ApplicationStatusApi,
+    ClientDetailsApi,
+    ClientDetailsUi,
+} from '../types';
 import { api } from '../../../services/api';
 
-type ApplicationStatus = 'all' | 'new' | 'viewed' | 'contacted';
+type ApplicationStatusFilter = 'all' | ApplicationStatusApi;
 
 interface UseApplicationsArgs {
     isClient: (id: number) => boolean;
@@ -13,95 +19,132 @@ interface UseApplicationsResult {
     filteredApplications: Application[];
     isLoading: boolean;
     searchTerm: string;
-    filterStatus: ApplicationStatus;
+    filterStatus: ApplicationStatusFilter;
     selectedApp: Application | null;
 
     setSearchTerm: (value: string) => void;
-    setFilterStatus: (status: ApplicationStatus) => void;
+    setFilterStatus: (status: ApplicationStatusFilter) => void;
     selectApp: (app: Application | null) => void;
 
-    changeStatus: (id: number, status: Exclude<ApplicationStatus, 'all'>) => Promise<void>;
+    changeStatus: (id: number, status: Exclude<ApplicationStatusFilter, 'all'>) => Promise<void>;
     deleteApplication: (id: number) => Promise<void>;
-
     reload: () => Promise<void>;
 }
 
-// Mapping functions for backend data transformation
-const GENDER_MAP: Record<string, string> = {
-    'male': 'Мужской',
-    'female': 'Женский'
-};
-
+// ---------- Maps (backend -> UI text) ----------
+const GENDER_MAP: Record<string, string> = { male: 'Мужской', female: 'Женский' };
 const ACTIVITY_MAP: Record<string, string> = {
-    'minimal': 'Минимальная',
-    'low': 'Низкая',
-    'medium': 'Средняя',
-    'high': 'Высокая'
+    minimal: 'Минимальная',
+    low: 'Низкая',
+    medium: 'Средняя',
+    high: 'Высокая',
 };
-
 const TRAINING_MAP: Record<string, string> = {
-    'beginner': 'Новичок',
-    'intermediate': 'Средний',
-    'advanced': 'Продвинутый',
-    'home': 'Домашний формат'
+    beginner: 'Новичок',
+    intermediate: 'Средний',
+    advanced: 'Продвинутый',
+    home: 'Домашний формат',
 };
-
 const GOALS_MAP: Record<string, string> = {
-    'weight_loss': 'Снижение веса',
-    'fat_loss': 'Сжигание жира',
-    'muscle_gain': 'Набор мышц',
-    'tighten_body': 'Подтянуть тело',
-    'belly_sides': 'Убрать живот и бока',
-    'glutes_shape': 'Округлые ягодицы',
-    'maintenance': 'Поддержание формы'
+    weight_loss: 'Снижение веса',
+    fat_loss: 'Сжигание жира',
+    muscle_gain: 'Набор мышц',
+    tighten_body: 'Подтянуть тело',
+    belly_sides: 'Убрать живот и бока',
+    glutes_shape: 'Округлые ягодицы',
+    maintenance: 'Поддержание формы',
 };
-
 const RESTRICTIONS_MAP: Record<string, string> = {
-    'none': 'Нет ограничений',
-    'back': 'Проблемы со спиной',
-    'joints': 'Проблемы с суставами',
-    'heart': 'Сердечно-сосудистые',
-    'allergy': 'Аллергии',
-    'stress': 'Высокий стресс',
-    'diabetes': 'Диабет'
+    none: 'Нет ограничений',
+    back: 'Проблемы со спиной',
+    joints: 'Проблемы с суставами',
+    heart: 'Сердечно-сосудистые',
+    allergy: 'Аллергии',
+    stress: 'Высокий стресс',
+    diabetes: 'Диабет',
 };
 
-function mapBackendApplication(item: any): Application {
-    const details = item.details || {};
+function normalizeStringArray(value: string[] | string | undefined): string[] {
+    if (!value) return [];
+    return Array.isArray(value) ? value : [value];
+}
+
+function formatDateRu(createdAt?: string): string {
+    if (!createdAt) return '—';
+    const d = new Date(createdAt);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU');
+}
+
+function buildBodyTypeImageUrl(
+    genderApi: ClientDetailsApi['gender'],
+    typeId?: number,
+    variant: 'current' | 'desired' = 'current'
+): string {
+    if (!typeId) return '';
+    const g = genderApi === 'male' ? 'm' : genderApi === 'female' ? 'f' : 'm';
+    return variant === 'current'
+        ? `/assets/body_types/${g}_type_${typeId}.jpg`
+        : `/assets/body_types/${g}_type_after_${typeId}.jpg`;
+}
+
+function mapDetailsApiToUi(details: ClientDetailsApi | undefined): ClientDetailsUi {
+    const d = details ?? {};
+    const genderUi = d.gender ? (GENDER_MAP[d.gender] ?? '—') : '—';
+
+    const goals = (d.goals ?? []).map((g: string) => GOALS_MAP[g] ?? g);
+    const limitations = (d.health_restrictions ?? []).map((r: string) => RESTRICTIONS_MAP[r] ?? r);
+
+    return {
+        age: d.age,
+        gender: genderUi,
+        height: d.height,
+        weight: d.weight,
+        target_weight: d.target_weight,
+
+        activity_level: d.activity_level ? (ACTIVITY_MAP[d.activity_level] ?? d.activity_level) : 'Не указана',
+        training_level: d.training_level ? (TRAINING_MAP[d.training_level] ?? d.training_level) : 'Не указан',
+
+        goals,
+        limitations,
+
+        body_type: d.current_body_type
+            ? {
+                id: d.current_body_type,
+                description: 'Текущая форма',
+                image_url: buildBodyTypeImageUrl(d.gender, d.current_body_type, 'current'),
+            }
+            : undefined,
+
+        desired_body_type: d.ideal_body_type
+            ? {
+                id: d.ideal_body_type,
+                description: 'Желаемая форма',
+                image_url: buildBodyTypeImageUrl(d.gender, d.ideal_body_type, 'desired'),
+            }
+            : undefined,
+
+        timezone: d.timezone ?? 'UTC+3',
+
+        diet_type: d.diet_type ?? '',
+        meals_per_day: d.meals_per_day ?? 0,
+        allergies: normalizeStringArray(d.allergies),
+        disliked_food: d.disliked_food ?? '',
+        supplements: d.supplements ?? '',
+    };
+}
+
+function mapApplicationFromApi(item: ApplicationResponse, isClient: (id: number) => boolean): Application {
     return {
         id: item.id,
+        telegram_id: item.telegram_id,
         first_name: item.first_name,
-        username: item.username || 'anon',
-        photo_url: item.photo_url || '',
-        status: item.status || 'new',
-        date: new Date(item.created_at).toLocaleDateString('ru-RU'),
-        details: {
-            age: details.age || 0,
-            gender: (GENDER_MAP[details.gender] || 'Мужской') as 'Мужской' | 'Женский',
-            height: details.height || 0,
-            weight: details.weight || 0,
-            target_weight: details.target_weight || 0,
-            activity_level: ACTIVITY_MAP[details.activity_level] || 'Не указана',
-            training_level: TRAINING_MAP[details.training_level] || 'Не указан',
-            goals: (details.goals || []).map((g: string) => GOALS_MAP[g] || g),
-            limitations: (details.health_restrictions || []).map((r: string) => RESTRICTIONS_MAP[r] || r),
-            body_type: {
-                id: details.current_body_type || 1,
-                description: 'Текущая форма',
-                image_url: details.current_body_type ? `/assets/body_types/${details.gender === 'male' ? 'm' : 'f'}_type_${details.current_body_type}.jpg` : ''
-            },
-            desired_body_type: {
-                id: details.ideal_body_type || 1,
-                description: 'Желаемая форма',
-                image_url: details.ideal_body_type ? `/assets/body_types/${details.gender === 'male' ? 'm' : 'f'}_type_after_${details.ideal_body_type}.jpg` : ''
-            },
-            diet_type: details.diet_type || '',
-            meals_per_day: details.meals_per_day || 0,
-            allergies: details.allergies || '',
-            disliked_food: details.disliked_food || '',
-            supplements: details.supplements || '',
-            timezone: details.timezone || 'UTC+3'
-        }
+        last_name: item.last_name,
+        username: item.username,
+        photo_url: item.photo_url ?? '',
+        created_at: item.created_at,
+        date: formatDateRu(item.created_at),
+        status: isClient(item.id) ? 'client' : item.status,
+        details: mapDetailsApiToUi(item.details),
     };
 }
 
@@ -109,47 +152,51 @@ export function useApplications({ isClient }: UseApplicationsArgs): UseApplicati
     const [applications, setApplications] = useState<Application[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filterStatus, setFilterStatus] = useState<ApplicationStatus>('new');
+    const [filterStatus, setFilterStatus] = useState<ApplicationStatusFilter>('new');
     const [selectedApp, setSelectedApp] = useState<Application | null>(null);
 
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const data = await api.getApplications();
-            const formattedData: Application[] = data.map(mapBackendApplication);
-            setApplications(formattedData);
+            const data = (await api.getApplications()) as ApplicationResponse[];
+            const formatted = data.map((item) => mapApplicationFromApi(item, isClient));
+            setApplications(formatted);
         } catch (error) {
-            console.error("Failed to load applications", error);
+            console.error('Failed to load applications', error);
         } finally {
             setIsLoading(false);
         }
     };
 
     useEffect(() => {
-        loadData();
+        void loadData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Filter applications
-    const filteredApplications = applications
-        .filter(app => !isClient(app.id)) // Hide if already a client
-        .filter(app => {
-            const matchesSearch = app.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (app.username?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
-            const matchesStatus = filterStatus === 'all' || app.status === filterStatus;
-            return matchesSearch && matchesStatus;
-        });
+    const filteredApplications = useMemo(() => {
+        const q = searchTerm.trim().toLowerCase();
 
-    const changeStatus = async (appId: number, newStatus: 'new' | 'viewed' | 'contacted') => {
+        return applications
+            .filter((app) => !isClient(app.id)) // keep behavior: hide if already a client
+            .filter((app) => {
+                const matchesSearch =
+                    app.first_name.toLowerCase().includes(q) ||
+                    (app.username ? app.username.toLowerCase().includes(q) : false);
+
+                const matchesStatus = filterStatus === 'all' || app.status === filterStatus;
+                return matchesSearch && matchesStatus;
+            });
+    }, [applications, filterStatus, isClient, searchTerm]);
+
+    const changeStatus = async (appId: number, newStatus: ApplicationStatusApi) => {
         try {
-            // Optimistic update
-            setApplications(prev => prev.map(app =>
-                app.id === appId ? { ...app, status: newStatus } : app
-            ));
-            // Update selectedApp if it's open
-            if (selectedApp && selectedApp.id === appId) {
+            // optimistic update
+            setApplications((prev) => prev.map((app) => (app.id === appId ? { ...app, status: newStatus } : app)));
+
+            if (selectedApp?.id === appId) {
                 setSelectedApp({ ...selectedApp, status: newStatus });
             }
-            // Save to backend
+
             await api.updateApplicationStatus(appId, newStatus);
         } catch (error) {
             console.error('Ошибка при обновлении статуса:', error);
@@ -158,17 +205,12 @@ export function useApplications({ isClient }: UseApplicationsArgs): UseApplicati
 
     const deleteApplication = async (appId: number) => {
         try {
-            // Delete from backend
             await api.deleteApplication(appId);
-            // Remove from local state
-            setApplications(prev => prev.filter(app => app.id !== appId));
-            // Clear selectedApp if it was deleted
-            if (selectedApp && selectedApp.id === appId) {
-                setSelectedApp(null);
-            }
+            setApplications((prev) => prev.filter((app) => app.id !== appId));
+            if (selectedApp?.id === appId) setSelectedApp(null);
         } catch (error) {
             console.error('Ошибка при удалении:', error);
-            throw error; // Re-throw to allow UI to handle error display
+            throw error;
         }
     };
 
@@ -179,11 +221,13 @@ export function useApplications({ isClient }: UseApplicationsArgs): UseApplicati
         searchTerm,
         filterStatus,
         selectedApp,
+
         setSearchTerm,
         setFilterStatus,
         selectApp: setSelectedApp,
+
         changeStatus,
         deleteApplication,
-        reload: loadData
+        reload: loadData,
     };
 }

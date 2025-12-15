@@ -20,7 +20,7 @@
 import { fetchWithTimeout, getHeaders, log } from './client';
 import { URLS } from './urls';
 import { TELEGRAM_BOT_NAME } from '../../config/env';
-import type { ApplicationResponse, ApplicationStatusApi, ClientDetails } from '../../features/trainer-panel/types';
+import type { ApplicationResponse, ApplicationStatusApi, ClientDetailsApi } from '../../features/trainer-panel/types';
 
 // ============================================================
 // API Types (non-feature specific)
@@ -34,7 +34,7 @@ export interface Client {
     username?: string;
     photo_url?: string;
     created_at: string;
-    details: ClientDetails;
+    details: ClientDetailsApi;
 }
 
 export interface Subscriber {

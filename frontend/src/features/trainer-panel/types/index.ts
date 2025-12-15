@@ -15,6 +15,7 @@ export type {
     ApplicationDetails,
     ApplicationStatusApi,
     ApplicationStatusUi,
-    ClientDetails,
+    ClientDetailsApi,
+    ClientDetailsUi,
     BodyTypeInfo,
 } from './application';
