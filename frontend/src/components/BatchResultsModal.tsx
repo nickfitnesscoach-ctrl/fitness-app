@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Check, AlertCircle, X, ChevronRight, ChevronLeft, Flame, Drumstick, Droplets, Wheat } from 'lucide-react';
+import { Check, AlertCircle, X, ChevronLeft, Flame, Drumstick, Droplets, Wheat } from 'lucide-react';
+import { IS_DEV } from '../config/env';
 
 export interface RecognizedItem {
     name: string;
@@ -35,7 +36,7 @@ interface BatchResultsModalProps {
     mealId?: number | null;
 }
 
-export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, onClose, onOpenDiary }) => {
+export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, onClose, onOpenDiary: _onOpenDiary }) => {
     const successCount = results.filter(r => r.status === 'success').length;
     const totalCount = results.length;
 
@@ -55,8 +56,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
         const result = results[selectedResultIndex];
 
         // DEV MODE: Mock successful data for testing UI
-        const isDev = import.meta.env.DEV;
-        const mockResult: BatchResult | null = isDev && result.status === 'error' ? {
+        const mockResult: BatchResult | null = IS_DEV && result.status === 'error' ? {
             ...result,
             status: 'success',
             data: {

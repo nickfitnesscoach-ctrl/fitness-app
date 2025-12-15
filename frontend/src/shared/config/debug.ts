@@ -13,6 +13,8 @@
  * - Debug banner only renders in DEV
  */
 
+import { IS_DEV } from '../../config/env';
+
 /**
  * Main debug flag - determines if debug mode is active
  *
@@ -22,7 +24,7 @@
  * FALSE when:
  * - Production build (ALWAYS)
  */
-export const IS_DEBUG = import.meta.env.DEV;
+export const IS_DEBUG = IS_DEV;
 
 /**
  * Debug user configuration for mock Telegram API
@@ -58,7 +60,7 @@ export function getDebugInfo() {
   const searchParams = new URLSearchParams(window.location.search);
   return {
     isDebug: IS_DEBUG,
-    isDev: import.meta.env.DEV,
+    isDev: IS_DEV,
     hasDebugParam: searchParams.has("debug"),
     hasTelegram: Boolean(window.Telegram?.WebApp),
     shouldMock: shouldInitMockTelegram(),

@@ -1,3 +1,15 @@
 {
-    "css.lint.unknownAtRules": "ignore"
+    "css.lint.unknownAtRules": "ignore",
+    "github-actions.workflows.pinned.workflows": [],
+    "yaml.validate": true,
+    "yaml.customTags": [
+        "!secret"
+    ],
+    "[yaml]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+    },
+    "python.defaultInterpreterPath": "C:\\Users\\Nicolas\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/backend"
+    ]
 }

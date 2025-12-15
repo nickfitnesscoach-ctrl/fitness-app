@@ -1,5 +1,6 @@
 import React from 'react';
 import { TestTube } from 'lucide-react';
+import { MODE } from '../../config/env';
 
 interface AdminTestPaymentCardProps {
   creatingTestPayment: boolean;
@@ -45,7 +46,7 @@ const AdminTestPaymentCard: React.FC<AdminTestPaymentCardProps> = ({
         )}
       </button>
       <p className="text-xs text-yellow-600 mt-2 text-center">
-        Доступно только админам • Режим: {process.env.NODE_ENV || 'production'}
+        Доступно только админам • Режим: {MODE}
       </p>
     </div>
   );

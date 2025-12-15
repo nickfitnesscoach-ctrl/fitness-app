@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plan } from '../components/PlanCard';
 import { api } from '../services/api';
+import { IS_DEV } from '../config/env';
 
 interface UseSubscriptionPlansResult {
     plans: Plan[];
@@ -19,7 +20,6 @@ export const useSubscriptionPlans = (): UseSubscriptionPlansResult => {
                 setLoading(true);
 
                 // DEV MODE: Mock subscription plans for testing UI
-                const isDev = import.meta.env.DEV;
                 const mockApiPlans = [
                     {
                         code: 'FREE',
@@ -61,7 +61,7 @@ export const useSubscriptionPlans = (): UseSubscriptionPlansResult => {
                     }
                 ];
 
-                const apiPlans = isDev ? mockApiPlans : await api.getSubscriptionPlans();
+                const apiPlans = IS_DEV ? mockApiPlans : await api.getSubscriptionPlans();
                 const uiPlans: Plan[] = apiPlans
                     .filter(p => ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'].includes(p.code))
                     .map(p => {

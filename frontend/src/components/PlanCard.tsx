@@ -42,7 +42,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
         : "bg-gradient-to-b from-gray-900 to-gray-800 text-white border border-gray-700";
 
     return (
-        <div className={`relative rounded-3xl p-6 shadow-lg overflow-hidden flex flex-col h-full ${cardClasses}`}>
+        <div className={`relative rounded-3xl p-6 shadow-lg overflow-hidden flex flex-col ${cardClasses}`}>
             {/* Badge */}
             {plan.tag && (
                 <div className="absolute top-0 right-0 bg-yellow-500 text-black text-xs font-bold px-3 py-1 rounded-bl-xl z-10">
@@ -51,8 +51,8 @@ const PlanCard: React.FC<PlanCardProps> = ({
             )}
 
             {/* Header */}
-            <div className="mb-4">
-                <h3 className="font-bold text-lg mb-1">{plan.name}</h3>
+            <div className="mb-5">
+                <h3 className="font-bold text-xl mb-2">{plan.name}</h3>
                 <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-3xl font-bold">{plan.priceText}</span>
                     {plan.oldPriceText && (
@@ -62,12 +62,12 @@ const PlanCard: React.FC<PlanCardProps> = ({
                     )}
                 </div>
                 {plan.priceSubtext && (
-                    <p className="text-sm text-gray-400 mt-1">{plan.priceSubtext}</p>
+                    <p className="text-sm text-gray-400 mt-1.5">{plan.priceSubtext}</p>
                 )}
             </div>
 
             {/* Features */}
-            <ul className="space-y-3 mb-8 flex-grow">
+            <ul className="space-y-3 mb-6 flex-grow">
                 {plan.features.map((feature, i) => (
                     <li key={i} className="flex items-start gap-3">
                         <div className={`mt-0.5 p-0.5 rounded-full ${isFree ? 'bg-green-100 text-green-600' : 'bg-white/10 text-white'}`}>
@@ -81,33 +81,35 @@ const PlanCard: React.FC<PlanCardProps> = ({
             </ul>
 
             {/* Button or Custom Bottom Content */}
-            {bottomContent ? (
-                bottomContent
-            ) : (
-                <button
-                    onClick={() => onSelect(plan.id)}
-                    disabled={isCurrent || isLoading || disabled}
-                    className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2
-                        ${disabled
-                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                            : isCurrent
-                                ? (isFree ? "bg-gray-100 text-gray-400" : "bg-white/20 text-white/50")
-                                : (isFree ? "bg-black text-white hover:bg-gray-800" : "bg-white text-black hover:bg-gray-100")
-                        }
-                        ${isLoading ? 'opacity-80 cursor-wait' : ''}
-                    `}
-                >
-                    {isLoading ? (
-                        <span className="animate-pulse">Загрузка...</span>
-                    ) : customButtonText ? (
-                        customButtonText
-                    ) : isCurrent ? (
-                        "Текущий план"
-                    ) : (
-                        isFree ? "Использовать бесплатно" : (plan.id === 'pro_yearly' ? "Оформить годовую" : "Оформить подписку")
-                    )}
-                </button>
-            )}
+            <div className="mt-auto">
+                {bottomContent ? (
+                    bottomContent
+                ) : (
+                    <button
+                        onClick={() => onSelect(plan.id)}
+                        disabled={isCurrent || isLoading || disabled}
+                        className={`w-full py-3.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2
+                            ${disabled
+                                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                                : isCurrent
+                                    ? (isFree ? "bg-gray-100 text-gray-400" : "bg-white/20 text-white/50")
+                                    : (isFree ? "bg-black text-white hover:bg-gray-800" : "bg-white text-black hover:bg-gray-100")
+                            }
+                            ${isLoading ? 'opacity-80 cursor-wait' : ''}
+                        `}
+                    >
+                        {isLoading ? (
+                            <span className="animate-pulse">Загрузка...</span>
+                        ) : customButtonText ? (
+                            customButtonText
+                        ) : isCurrent ? (
+                            "Текущий план"
+                        ) : (
+                            isFree ? "Использовать бесплатно" : (plan.id === 'pro_yearly' ? "Оформить годовую" : "Оформить подписку")
+                        )}
+                    </button>
+                )}
+            </div>
         </div>
     );
 };
