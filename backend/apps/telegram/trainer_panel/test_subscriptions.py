@@ -4,17 +4,17 @@ Tests for Trainer Panel subscription features.
 
 from datetime import timedelta
 from decimal import Decimal
+
+from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
-from django.contrib.auth.models import User
 
-from apps.billing.models import SubscriptionPlan, Subscription, Payment
-from apps.telegram.models import TelegramUser
+from apps.billing.models import Payment, SubscriptionPlan
 from apps.telegram.trainer_panel.billing_adapter import (
-    get_user_subscription_info,
-    get_subscriptions_for_users,
-    get_subscribers_metrics,
     get_revenue_metrics,
+    get_subscribers_metrics,
+    get_subscriptions_for_users,
+    get_user_subscription_info,
 )
 
 
