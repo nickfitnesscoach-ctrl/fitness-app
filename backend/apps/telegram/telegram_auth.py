@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-import logging
 from functools import wraps
+import logging
 from typing import Optional, Set
 
 from django.conf import settings
