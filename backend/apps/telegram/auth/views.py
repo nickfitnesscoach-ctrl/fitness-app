@@ -1,11 +1,26 @@
 """
 Authentication views for Telegram integration.
+
+Зачем этот файл:
+- Здесь вся авторизация, связанная с Telegram:
+  1) Telegram Mini App (WebApp initData)
+  2) Trainer Panel (только для админов)
+  3) JWT-токены для backend API
+- Это КРИТИЧЕСКАЯ зона безопасности.
+  Любая ошибка здесь = утечка доступа.
+
+Принципы:
+- В PROD никаких "если список админов пустой — пускаем"
+- Debug-режим работает ТОЛЬКО при settings.DEBUG=True
+- Клиенту никогда не возвращаем детали ошибок
 """
 
+from __future__ import annotations
+
 import logging
+from typing import Set
 
 from django.conf import settings
-from django.http import JsonResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -13,8 +28,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.telegram.auth.authentication import TelegramWebAppAuthentication, DebugModeAuthentication
-from apps.telegram.telegram_auth import telegram_admin_required
+from apps.nutrition.models import DailyGoal
+from apps.telegram.auth.authentication import (
+    DebugModeAuthentication,
+    TelegramWebAppAuthentication,
+)
 from apps.telegram.auth.services.webapp_auth import get_webapp_auth_service
 from apps.telegram.models import TelegramUser
 from apps.telegram.serializers import (
@@ -22,25 +40,72 @@ from apps.telegram.serializers import (
     TelegramUserSerializer,
     WebAppAuthResponseSerializer,
 )
-from apps.nutrition.models import DailyGoal
 from apps.users.models import Profile
 
 logger = logging.getLogger(__name__)
 
 
-@telegram_admin_required
-def trainer_admin_panel(request):
-    """Simple admin panel endpoint protected by Telegram WebApp validation."""
-    return JsonResponse({"ok": True, "section": "trainer_panel", "user_id": request.telegram_user_id})
+# ---------------------------------------------------------------------
+# Вспомогательные функции
+# ---------------------------------------------------------------------
+
+def _forbidden() -> Response:
+    """Единый ответ 403 без утечек информации."""
+    return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
 
 
-@extend_schema(tags=["TrainerPanel"])
+def _parse_admin_ids() -> Set[int]:
+    """
+    Приводим TELEGRAM_ADMINS к set[int].
+
+    Допустимые форматы в settings:
+    - set / list / tuple[int]
+    - строка "123,456"
+    """
+    raw = getattr(settings, "TELEGRAM_ADMINS", None)
+    result: Set[int] = set()
+
+    if not raw:
+        return result
+
+    try:
+        if isinstance(raw, str):
+            for x in raw.split(","):
+                if x.strip().isdigit():
+                    result.add(int(x.strip()))
+        elif isinstance(raw, (set, list, tuple)):
+            result.update(int(x) for x in raw)
+    except Exception:
+        logger.warning("Failed to parse TELEGRAM_ADMINS")
+
+    return result
+
+
+def _is_debug_allowed() -> bool:
+    """
+    DebugModeAuthentication разрешён ТОЛЬКО в DEBUG.
+    Никаких debug-флагов в проде.
+    """
+    return bool(getattr(settings, "DEBUG", False))
+
+
+# ---------------------------------------------------------------------
+# Trainer Panel (админка)
+# ---------------------------------------------------------------------
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def trainer_panel_auth(request):
-    """Validate Telegram WebApp initData and ensure the user is an admin."""
-    logger.info("[TrainerPanel] Auth request started")
+    """
+    Авторизация Trainer Panel через Telegram WebApp.
 
+    Условия доступа:
+    - валидный Telegram initData
+    - telegram_id ∈ TELEGRAM_ADMINS
+    - если список админов пустой:
+        - DEV (DEBUG=True) → доступ
+        - PROD → 403
+    """
     raw_init_data = (
         request.data.get("init_data")
         or request.data.get("initData")
@@ -48,235 +113,175 @@ def trainer_panel_auth(request):
     )
 
     if not raw_init_data:
-        logger.warning("[TrainerPanel] No initData in request")
-        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
-
-    logger.info("[TrainerPanel] initData length: %d", len(raw_init_data))
+        return _forbidden()
 
     auth_service = get_webapp_auth_service()
-    parsed_data = auth_service.validate_init_data(raw_init_data)
+    parsed = auth_service.validate_init_data(raw_init_data)
 
-    if not parsed_data:
-        logger.warning("[TrainerPanel] initData validation failed")
-        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
+    if not parsed:
+        return _forbidden()
 
-    logger.info("[TrainerPanel] initData validation successful")
+    telegram_id = auth_service.get_user_id_from_init_data(parsed)
+    if not telegram_id:
+        return _forbidden()
 
-    user_id = auth_service.get_user_id_from_init_data(parsed_data)
-    if not user_id:
-        logger.error("[TrainerPanel] Failed to extract user_id")
-        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
+    admin_ids = _parse_admin_ids()
 
-    logger.info("[TrainerPanel] Extracted user_id: %s", user_id)
+    # Если админы не заданы
+    if not admin_ids:
+        if not settings.DEBUG:
+            logger.error("TELEGRAM_ADMINS is empty in PROD")
+            return _forbidden()
 
-    admins = settings.TELEGRAM_ADMINS
+        # DEV-режим
+        logger.warning("Trainer panel access allowed in DEBUG mode")
+        return Response({"ok": True, "role": "admin", "debug": True})
 
-    if not admins:
-        logger.warning("[TrainerPanel] Admin list empty, allowing access (DEV mode?)")
-        return Response({
-            "ok": True,
-            "user_id": user_id,
-            "role": "admin",
-            "warning": "admin_list_empty"
-        })
+    if telegram_id not in admin_ids:
+        return _forbidden()
 
-    if user_id not in admins:
-        logger.warning(
-            "[TrainerPanel] Access denied for user_id=%s (admins: %s)",
-            user_id, admins
-        )
-        return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
-
-    logger.info("[TrainerPanel] Access granted for user_id=%s", user_id)
-    return Response({
-        "ok": True,
-        "user_id": user_id,
-        "role": "admin"
-    })
+    return Response({"ok": True, "role": "admin"})
 
 
-@extend_schema(tags=['Telegram'])
-@api_view(['POST'])
+# ---------------------------------------------------------------------
+# Telegram Mini App → JWT
+# ---------------------------------------------------------------------
+
+@extend_schema(tags=["Telegram"])
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def telegram_auth(request):
     """
-    Аутентификация через Telegram Mini App.
+    Аутентификация Telegram Mini App → JWT.
 
     POST /api/v1/telegram/auth/
+
+    Используется, когда Mini App общается с backend API.
     """
     authenticator = TelegramWebAppAuthentication()
 
     try:
-        user, _ = authenticator.authenticate(request)
-
-        if not user:
-            return Response(
-                {"error": "Authentication failed"},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-
-        refresh = RefreshToken.for_user(user)
-        telegram_user = user.telegram_profile
-
-        telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', set())
-        is_admin = telegram_user.telegram_id in telegram_admins
-
-        serializer = TelegramAuthSerializer({
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': telegram_user,
-            'is_admin': is_admin
-        })
-
-        return Response(serializer.data)
-
-    except Exception as e:
-        return Response(
-            {"error": str(e)},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-
-@extend_schema(tags=['Telegram'])
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def webapp_auth(request):
-    """
-    Единый endpoint для авторизации Telegram WebApp.
-    Также поддерживает Browser Debug Mode (X-Debug-Mode: true).
-
-    POST /api/v1/telegram/webapp/auth/
-    """
-    # Try Debug Mode authentication first
-    debug_auth = DebugModeAuthentication()
-    result = debug_auth.authenticate(request)
-    
-    if result:
-        logger.info("[WebAppAuth] Using Debug Mode authentication")
-    else:
-        # Fall back to normal Telegram WebApp authentication
-        authenticator = TelegramWebAppAuthentication()
         result = authenticator.authenticate(request)
-
-    try:
         if not result:
-            logger.warning("[WebAppAuth] Authentication failed: no result from authenticator")
-            return Response(
-                {"error": "Authentication failed"},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            return Response({"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        user, auth_data = result
-
+        user, _ = result
         if not user:
-            logger.warning("[WebAppAuth] Authentication failed: no user")
-            return Response(
-                {"error": "Authentication failed"},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-
-        logger.info(f"[WebAppAuth] User authenticated: {user.id} (username: {user.username})")
+            return Response({"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
             telegram_user = user.telegram_profile
         except TelegramUser.DoesNotExist:
-            logger.warning(f"[WebAppAuth] User {user.id} without TelegramUser, attempting to create")
-            telegram_id = getattr(request, 'telegram_id', None)
-            if not telegram_id and hasattr(user, 'profile') and user.profile.telegram_id:
-                telegram_id = user.profile.telegram_id
+            return Response({"error": "Telegram profile not found"}, status=status.HTTP_404_NOT_FOUND)
 
-            if telegram_id:
-                telegram_user = TelegramUser.objects.create(
-                    user=user,
-                    telegram_id=telegram_id,
-                    username=user.username.replace('tg_', '') if user.username.startswith('tg_') else '',
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                )
-                logger.info(f"[WebAppAuth] Created TelegramUser {telegram_id} for user {user.id}")
-            else:
-                logger.error(f"[WebAppAuth] Cannot create TelegramUser for user {user.id}: no telegram_id")
-                return Response(
-                    {"error": "Telegram profile creation failed"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+        refresh = RefreshToken.for_user(user)
 
-        profile, created = Profile.objects.get_or_create(user=user)
-        if created:
-            logger.info(f"[WebAppAuth] Created empty Profile for user {user.id}")
-
-        active_goal = (
-            DailyGoal.objects
-            .filter(user=user, is_active=True)
-            .order_by('-created_at')
-            .first()
-        )
-
-        admin_ids = set()
-        telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', '')
-        if telegram_admins:
-            try:
-                if isinstance(telegram_admins, str):
-                    admin_ids.update(
-                        int(x.strip())
-                        for x in telegram_admins.split(',')
-                        if x.strip().isdigit()
-                    )
-                elif isinstance(telegram_admins, (set, list)):
-                    admin_ids.update(int(x) for x in telegram_admins)
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"[WebAppAuth] Failed to parse TELEGRAM_ADMINS: {e}")
-
-        bot_admin_id = getattr(settings, 'BOT_ADMIN_ID', None)
-        if bot_admin_id:
-            try:
-                admin_ids.add(int(bot_admin_id))
-            except (ValueError, TypeError) as e:
-                logger.warning(f"[WebAppAuth] Failed to parse BOT_ADMIN_ID: {e}")
-
+        admin_ids = _parse_admin_ids()
         is_admin = telegram_user.telegram_id in admin_ids
-        logger.info(f"[WebAppAuth] User {user.id} admin status: {is_admin}")
 
-        response_data = {
-            'user': {
-                'id': user.id,
-                'telegram_id': telegram_user.telegram_id,
-                'username': telegram_user.username or '',
-                'first_name': telegram_user.first_name or '',
-                'last_name': telegram_user.last_name or '',
-            },
-            'profile': profile,
-            'goals': active_goal,
-            'is_admin': is_admin,
-        }
+        serializer = TelegramAuthSerializer({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": telegram_user,
+            "is_admin": is_admin,
+        })
 
-        serializer = WebAppAuthResponseSerializer(response_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    except Exception as e:
-        logger.exception(f"[WebAppAuth] Unexpected error: {e}")
-        return Response(
-            {"error": "Internal server error"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+    except Exception:
+        logger.exception("telegram_auth failed")
+        return Response({"error": "Authentication failed"}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@extend_schema(tags=['Telegram'])
-@api_view(['GET'])
+# ---------------------------------------------------------------------
+# Unified WebApp Auth (Mini App + Trainer Panel)
+# ---------------------------------------------------------------------
+
+@extend_schema(tags=["Telegram"])
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def webapp_auth(request):
+    """
+    Универсальная авторизация Telegram WebApp.
+
+    - В DEV: допускается DebugModeAuthentication
+    - В PROD: ТОЛЬКО Telegram initData
+    """
+    result = None
+
+    # Debug auth — только в DEBUG
+    if _is_debug_allowed():
+        debug_auth = DebugModeAuthentication()
+        result = debug_auth.authenticate(request)
+
+    if not result:
+        authenticator = TelegramWebAppAuthentication()
+        result = authenticator.authenticate(request)
+
+    if not result:
+        return Response({"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    user, _ = result
+    if not user:
+        return Response({"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # TelegramUser
+    telegram_user, _ = TelegramUser.objects.get_or_create(
+        user=user,
+        defaults={
+            "telegram_id": getattr(request, "telegram_id", None),
+            "username": "",
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+        }
+    )
+
+    # Profile
+    profile, _ = Profile.objects.get_or_create(user=user)
+
+    # Active goals
+    active_goal = (
+        DailyGoal.objects
+        .filter(user=user, is_active=True)
+        .order_by("-created_at")
+        .first()
+    )
+
+    admin_ids = _parse_admin_ids()
+    is_admin = telegram_user.telegram_id in admin_ids
+
+    serializer = WebAppAuthResponseSerializer({
+        "user": {
+            "id": user.id,
+            "telegram_id": telegram_user.telegram_id,
+            "username": telegram_user.username or "",
+            "first_name": telegram_user.first_name or "",
+            "last_name": telegram_user.last_name or "",
+        },
+        "profile": profile,
+        "goals": active_goal,
+        "is_admin": is_admin,
+    })
+
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------
+# Profile
+# ---------------------------------------------------------------------
+
+@extend_schema(tags=["Telegram"])
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def telegram_profile(request):
     """
     Получить Telegram профиль текущего пользователя.
-
-    GET /api/v1/telegram/profile/
+    Требует JWT.
     """
     try:
         telegram_user = request.user.telegram_profile
-        serializer = TelegramUserSerializer(telegram_user)
-        return Response(serializer.data)
-
     except TelegramUser.DoesNotExist:
-        return Response(
-            {"error": "Telegram profile not found"},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"error": "Telegram profile not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = TelegramUserSerializer(telegram_user)
+    return Response(serializer.data, status=status.HTTP_200_OK)
