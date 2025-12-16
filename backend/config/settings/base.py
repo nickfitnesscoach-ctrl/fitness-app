@@ -603,6 +603,13 @@ BILLING_PLUS_DURATION_DAYS = 30
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "EatFit24_bot")
 
+# Bot API Secret - защита Bot API endpoints от внешних запросов
+# Бот должен присылать этот секрет в заголовке X-Bot-Secret
+TELEGRAM_BOT_API_SECRET = os.environ.get("TELEGRAM_BOT_API_SECRET")
+
+# Personal Plan daily limit (default 3 plans per day per user)
+PERSONAL_PLAN_DAILY_LIMIT = int(os.environ.get("PERSONAL_PLAN_DAILY_LIMIT", "3"))
+
 # Дополнительный админ из окружения (совместимость с ботом)
 BOT_ADMIN_ID = os.environ.get("BOT_ADMIN_ID")
 
