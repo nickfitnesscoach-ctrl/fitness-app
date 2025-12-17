@@ -124,7 +124,7 @@ class TelegramWebAppAuthService:
                 logger.warning("[DEBUG-VALIDATION] Hash mismatch - signature validation failed")
                 return None
 
-            logger.info("[DEBUG-VALIDATION] initData validation SUCCESS")
+            logger.warning("[DEBUG-VALIDATION] initData validation SUCCESS")
             return ValidationResult(parsed=parsed, auth_date=auth_date)
 
         except Exception:

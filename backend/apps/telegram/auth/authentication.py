@@ -225,11 +225,11 @@ class TelegramWebAppAuthentication(authentication.BaseAuthentication):
             init_data = (request.data.get("initData") or request.data.get("init_data") or "").strip()
 
         # TEMPORARY DEBUG LOGGING
-        logger.info(f"[DEBUG-AUTH] Path: {request.path}, Method: {request.method}")
-        logger.info(f"[DEBUG-AUTH] initData present: {bool(init_data)}, length: {len(init_data) if init_data else 0}")
+        logger.warning(f"[DEBUG-AUTH] Path: {request.path}, Method: {request.method}")
+        logger.warning(f"[DEBUG-AUTH] initData present: {bool(init_data)}, length: {len(init_data) if init_data else 0}")
 
         if not init_data:
-            logger.info("[DEBUG-AUTH] No initData found, returning None")
+            logger.warning("[DEBUG-AUTH] No initData found, returning None")
             return None
 
         auth_service = get_webapp_auth_service()
