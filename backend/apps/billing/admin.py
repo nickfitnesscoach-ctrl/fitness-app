@@ -132,11 +132,12 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
     def days_left_badge(self, obj: Subscription):
         """Красивый бейдж оставшихся дней."""
+        from django.utils.safestring import mark_safe
         days = obj.days_remaining
         if days is None:
-            return format_html('<span style="color:#2b8a3e;font-weight:700;">FREE</span>', )
+            return mark_safe('<span style="color:#2b8a3e;font-weight:700;">FREE</span>')
         if days <= 0:
-            return format_html('<span style="color:#c92a2a;font-weight:700;">Истекла</span>', )
+            return mark_safe('<span style="color:#c92a2a;font-weight:700;">Истекла</span>')
         if days < 7:
             return format_html('<span style="color:#e67700;font-weight:700;">{} дн.</span>', days)
         return f"{days} дн."
