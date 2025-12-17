@@ -27,6 +27,12 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from yookassa.domain.exceptions import (
+    ApiError,
+    BadRequestError,
+    ForbiddenError,
+    UnauthorizedError,
+)
 
 from apps.common.audit import SecurityAuditLogger
 
@@ -536,9 +542,70 @@ def create_payment(request):
         return _err("INVALID_PLAN", f"Plan '{plan_code}' not found or inactive", status.HTTP_400_BAD_REQUEST)
     except ValueError as e:
         return _err("INVALID_PLAN", str(e), status.HTTP_400_BAD_REQUEST)
+
+    # YooKassa-специфичные ошибки
+    except ForbiddenError as e:
+        # Forbidden обычно означает, что recurring не настроен на аккаунте ЮKassa
+        recurring_enabled = getattr(settings, "BILLING_RECURRING_ENABLED", False)
+
+        if recurring_enabled:
+            # Если мы пытались использовать recurring, но получили forbidden
+            logger.error(
+                f"YooKassa Forbidden (recurring mode) for user {request.user.id}: {e}. "
+                "Recurring payments may not be enabled on YooKassa account.",
+                exc_info=True
+            )
+            return _err(
+                "RECURRING_NOT_AVAILABLE",
+                "Автопродление временно недоступно. Попробуйте оплатить без сохранения карты или свяжитесь с поддержкой.",
+                status.HTTP_403_FORBIDDEN,
+            )
+        else:
+            # Если recurring выключен, но всё равно forbidden — проблема с магазином/ключами
+            logger.error(
+                f"YooKassa Forbidden (one-time mode) for user {request.user.id}: {e}. "
+                "Check YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY.",
+                exc_info=True
+            )
+            return _err(
+                "YOOKASSA_FORBIDDEN",
+                "Ошибка доступа к платёжной системе. Свяжитесь с поддержкой.",
+                status.HTTP_403_FORBIDDEN,
+            )
+
+    except UnauthorizedError as e:
+        logger.error(f"YooKassa Unauthorized for user {request.user.id}: {e}. Check credentials.", exc_info=True)
+        return _err(
+            "YOOKASSA_UNAUTHORIZED",
+            "Ошибка конфигурации платёжной системы. Свяжитесь с поддержкой.",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    except BadRequestError as e:
+        logger.error(f"YooKassa BadRequest for user {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "INVALID_PAYMENT_REQUEST",
+            "Некорректные данные платежа. Попробуйте позже или свяжитесь с поддержкой.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    except ApiError as e:
+        # Общая ошибка YooKassa API (включает все наследников, но ловим последней)
+        logger.error(f"YooKassa API error for user {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "YOOKASSA_API_ERROR",
+            "Ошибка платёжной системы. Попробуйте позже.",
+            status.HTTP_502_BAD_GATEWAY,
+        )
+
     except Exception as e:
-        logger.error(f"Create payment error: {e}", exc_info=True)
-        return _err("PAYMENT_CREATE_FAILED", "Не удалось создать платеж. Попробуйте позже.", status.HTTP_502_BAD_GATEWAY)
+        # Неожиданная ошибка (не от YooKassa)
+        logger.error(f"Unexpected error creating payment for user {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "PAYMENT_CREATE_FAILED",
+            "Не удалось создать платеж. Попробуйте позже.",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["POST"])
@@ -592,12 +659,40 @@ def bind_card_start(request):
             status=status.HTTP_201_CREATED,
         )
 
+    except ForbiddenError as e:
+        logger.error(
+            f"YooKassa Forbidden (card binding) for user {request.user.id}: {e}. "
+            "Card binding requires recurring to be enabled.",
+            exc_info=True
+        )
+        return _err(
+            "CARD_BINDING_NOT_AVAILABLE",
+            "Привязка карты временно недоступна. Свяжитесь с поддержкой.",
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    except UnauthorizedError as e:
+        logger.error(f"YooKassa Unauthorized (card binding) for user {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "YOOKASSA_UNAUTHORIZED",
+            "Ошибка конфигурации платёжной системы. Свяжитесь с поддержкой.",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    except ApiError as e:
+        logger.error(f"YooKassa API error (card binding) for user {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "YOOKASSA_API_ERROR",
+            "Ошибка платёжной системы. Попробуйте позже.",
+            status.HTTP_502_BAD_GATEWAY,
+        )
+
     except Exception as e:
-        logger.error(f"Card binding payment creation error: {e}", exc_info=True)
+        logger.error(f"Unexpected error creating card binding payment for user {request.user.id}: {e}", exc_info=True)
         return _err(
             "BINDING_PAYMENT_CREATE_FAILED",
             "Не удалось создать платёж для привязки карты. Попробуйте позже.",
-            status.HTTP_502_BAD_GATEWAY,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
@@ -682,6 +777,34 @@ def create_test_live_payment(request):
             status=status.HTTP_201_CREATED,
         )
 
+    except ForbiddenError as e:
+        logger.error(f"YooKassa Forbidden (test payment) for admin {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "YOOKASSA_FORBIDDEN",
+            "Тестовый платёж заблокирован платёжной системой. Проверьте настройки YooKassa.",
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    except UnauthorizedError as e:
+        logger.error(f"YooKassa Unauthorized (test payment) for admin {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "YOOKASSA_UNAUTHORIZED",
+            "Ошибка авторизации в YooKassa. Проверьте учётные данные.",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    except ApiError as e:
+        logger.error(f"YooKassa API error (test payment) for admin {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "YOOKASSA_API_ERROR",
+            "Ошибка YooKassa API. Попробуйте позже.",
+            status.HTTP_502_BAD_GATEWAY,
+        )
+
     except Exception as e:
-        logger.error(f"Test payment creation error: {e}", exc_info=True)
-        return _err("PAYMENT_CREATE_FAILED", "Не удалось создать тестовый платёж.", status.HTTP_502_BAD_GATEWAY)
+        logger.error(f"Unexpected error creating test payment for admin {request.user.id}: {e}", exc_info=True)
+        return _err(
+            "PAYMENT_CREATE_FAILED",
+            "Не удалось создать тестовый платёж.",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

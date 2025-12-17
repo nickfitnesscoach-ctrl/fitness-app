@@ -43,6 +43,56 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------
+# YooKassa payload builder
+# ---------------------------------------------------------------------
+
+def build_yookassa_payment_payload(
+    *,
+    amount: Decimal,
+    description: str,
+    return_url: str,
+    save_payment_method: bool = True,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Универсальный билдер payload для YooKassa.
+
+    Режимы работы:
+    - BILLING_RECURRING_ENABLED=true → recurring mode (save_payment_method)
+    - BILLING_RECURRING_ENABLED=false → one-time mode (без recurring полей)
+
+    Это единственное место, где определяется структура payload.
+    """
+    recurring_enabled = getattr(settings, "BILLING_RECURRING_ENABLED", False)
+
+    # Базовые поля (обязательны всегда)
+    payload: Dict[str, Any] = {
+        "amount": {"value": str(amount), "currency": "RUB"},
+        "confirmation": {"type": "redirect", "return_url": return_url},
+        "capture": True,
+        "description": description,
+        "metadata": metadata or {},
+    }
+
+    # Добавляем billing_mode в metadata для прозрачности
+    billing_mode = "RECURRING" if recurring_enabled else "ONE_TIME"
+    payload["metadata"]["billing_mode"] = billing_mode
+
+    # Если recurring включён И запрошено сохранение карты
+    if recurring_enabled and save_payment_method:
+        payload["save_payment_method"] = True
+
+    logger.info(
+        "Built YooKassa payload: mode=%s, save_payment_method=%s, amount=%s",
+        billing_mode,
+        save_payment_method if recurring_enabled else False,
+        amount,
+    )
+
+    return payload
+
+
+# ---------------------------------------------------------------------
 # YooKassa SDK wrapper
 # ---------------------------------------------------------------------
 
@@ -114,16 +164,14 @@ class YooKassaService:
         """
         idempotence_key = str(uuid.uuid4())
 
-        payload: Dict[str, Any] = {
-            "amount": {"value": str(amount), "currency": "RUB"},
-            "confirmation": {"type": "redirect", "return_url": return_url},
-            "capture": True,
-            "description": description,
-            "metadata": metadata or {},
-        }
-
-        if save_payment_method:
-            payload["save_payment_method"] = True
+        # Используем централизованный билдер payload
+        payload = build_yookassa_payment_payload(
+            amount=amount,
+            description=description,
+            return_url=return_url,
+            save_payment_method=save_payment_method,
+            metadata=metadata,
+        )
 
         try:
             payment = YooKassaPayment.create(payload, idempotence_key)
@@ -322,11 +370,17 @@ def create_subscription_payment(
         )
 
         payment.yookassa_payment_id = yk_payment["id"]
+
+        # Получаем billing_mode из настроек для согласованности
+        recurring_enabled = getattr(settings, "BILLING_RECURRING_ENABLED", False)
+        billing_mode = "RECURRING" if recurring_enabled else "ONE_TIME"
+
         payment.metadata = {
             "idempotence_note": "SDK handles idempotence_key per request",
             "plan_code": plan.code,
             "amount": str(plan.price),
             "return_url": resolved_return_url,
+            "billing_mode": billing_mode,
         }
         payment.save(update_fields=["yookassa_payment_id", "metadata", "updated_at"])
 
