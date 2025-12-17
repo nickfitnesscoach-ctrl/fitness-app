@@ -5,11 +5,10 @@ Billing API Views (DRF function-based).
 
 Задачи файла:
 - Дать фронту стабильный API для: планов, статуса подписки, оплаты, привязки карты, истории платежей
-- Сохранить обратную совместимость: legacy endpoints остаются, но помечены deprecated
-- Свести логику к понятному “ядру” без дублирования
+- Свести логику к понятному "ядру" без дублирования
 
 Принципы безопасности:
-- Никогда не принимаем сумму/цену с фронта — только plan_code (или legacy plan)
+- Никогда не принимаем сумму/цену с фронта — только plan_code
 - Все цены/длительности/лимиты берём только из БД (SubscriptionPlan)
 - Подписка активируется/продлевается ТОЛЬКО после webhook (см. billing/webhooks/*)
 """
@@ -18,17 +17,14 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
-from functools import wraps
 import logging
-from typing import Optional, Tuple
-import warnings
+from typing import Tuple
 
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -37,8 +33,6 @@ from apps.common.audit import SecurityAuditLogger
 from .models import Payment, Subscription, SubscriptionPlan
 from .serializers import (
     AutoRenewToggleSerializer,
-    PaymentSerializer,
-    SubscribeSerializer,
     SubscriptionPlanPublicSerializer,
 )
 from .services import YooKassaService
@@ -48,38 +42,8 @@ logger = logging.getLogger(__name__)
 
 
 # =====================================================================
-# Helpers (deprecation + unified errors + safe plan/subscription access)
+# Helpers (unified errors + safe plan/subscription access)
 # =====================================================================
-
-def deprecated(message: str, use_instead: Optional[str] = None):
-    """
-    Декоратор для legacy эндпоинтов.
-
-    Делает 3 вещи:
-    1) warnings.warn() (для разработчиков)
-    2) пишет в логи
-    3) добавляет HTTP headers:
-       - X-Deprecated: <message>
-       - X-Deprecated-Use: <use_instead> (если передано)
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(request, *args, **kwargs):
-            warnings.warn(
-                f"Endpoint {request.path} is deprecated: {message}",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            logger.warning(f"[DEPRECATED] {request.method} {request.path}: {message}")
-
-            resp: Response = func(request, *args, **kwargs)
-            resp["X-Deprecated"] = message
-            if use_instead:
-                resp["X-Deprecated-Use"] = use_instead
-            return resp
-        return wrapper
-    return decorator
-
 
 def _err(code: str, message: str, http_status: int):
     """Единый формат ошибок для billing (чтобы фронт не гадал)."""
@@ -125,7 +89,7 @@ def _free_end_date() -> timezone.datetime:
     Что писать в end_date для FREE подписки.
 
     Важно:
-    - FREE по бизнес-логике “не истекает” (или истекает очень нескоро)
+    - FREE по бизнес-логике "не истекает" (или истекает очень нескоро)
     - но поле end_date нужно, чтобы:
       - не ломались проверки is_expired()
       - не было путаницы в админке
@@ -142,7 +106,7 @@ def _get_or_create_user_subscription(user) -> Subscription:
     Гарантируем, что у пользователя есть Subscription.
 
     Да, у тебя есть сигнал create_free_subscription в models.py,
-    но на практике безопаснее иметь “страховку” на уровне бизнес-логики:
+    но на практике безопаснее иметь "страховку" на уровне бизнес-логики:
     - миграции/сигналы могли не отработать
     - пользователь мог быть создан импортом/скриптом
     """
@@ -158,7 +122,7 @@ def _get_or_create_user_subscription(user) -> Subscription:
         },
     )
 
-    # Если подписка есть, но по какой-то причине FREE и end_date “в прошлом” — вылечим
+    # Если подписка есть, но по какой-то причине FREE и end_date "в прошлом" — вылечим
     if sub.plan.code == "FREE" and sub.end_date and sub.end_date <= timezone.now():
         sub.end_date = _free_end_date()
         sub.is_active = True
@@ -366,7 +330,7 @@ def get_subscription_status(request):
 
 
 # =====================================================================
-# Settings screen endpoints (новые)
+# Settings screen endpoints
 # =====================================================================
 
 @api_view(["GET"])
@@ -379,7 +343,7 @@ def get_subscription_details(request):
     try:
         sub = request.user.subscription
     except Subscription.DoesNotExist:
-        # Нет подписки — возвращаем “как FREE”
+        # Нет подписки — возвращаем "как FREE"
         return Response(
             {
                 "plan": "free",
@@ -488,7 +452,7 @@ def get_payments_history(request):
     GET /api/v1/billing/payments/
     Query: ?limit=10
 
-    “Новая” история (простая, без пагинации страницами).
+    История платежей (простая, без пагинации страницами).
     """
     limit_raw = request.query_params.get("limit", 10)
     try:
@@ -586,7 +550,7 @@ def bind_card_start(request):
     Платёж на 1₽, чтобы сохранить карту для будущих рекуррентных платежей.
 
     Важно:
-    - Это НЕ подписка. Это “технический” платёж, чтобы получить payment_method_id.
+    - Это НЕ подписка. Это "технический" платёж, чтобы получить payment_method_id.
     - Дальше webhook должен сохранить payment_method_id в Subscription.
     """
     return_url = _validate_return_url(request.data.get("return_url"), request)
@@ -721,199 +685,3 @@ def create_test_live_payment(request):
     except Exception as e:
         logger.error(f"Test payment creation error: {e}", exc_info=True)
         return _err("PAYMENT_CREATE_FAILED", "Не удалось создать тестовый платёж.", status.HTTP_502_BAD_GATEWAY)
-
-
-# =====================================================================
-# Legacy endpoints (оставляем, но направляем на новые)
-# =====================================================================
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-@deprecated("This endpoint is deprecated and will be removed in v2.0", use_instead="/api/v1/billing/me/")
-def get_current_plan(request):
-    """
-    GET /api/v1/billing/plan
-    Legacy: возвращаем “текущий план + доступные планы”.
-    """
-    try:
-        sub = request.user.subscription
-    except Subscription.DoesNotExist:
-        return _err("NO_SUBSCRIPTION", "У вас нет активной подписки", status.HTTP_404_NOT_FOUND)
-
-    available = SubscriptionPlan.objects.filter(is_active=True).exclude(code="FREE").order_by("price")
-
-    return Response(
-        {
-            "status": "success",
-            "data": {
-                "subscription": {
-                    "plan_code": sub.plan.code,
-                    "plan_name": sub.plan.display_name,
-                    "expires_at": (sub.end_date.isoformat() if sub.plan.code != "FREE" else None),
-                    "auto_renew": sub.auto_renew,
-                },
-                "available_plans": SubscriptionPlanPublicSerializer(available, many=True).data,
-            },
-        },
-        status=status.HTTP_200_OK,
-    )
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-@deprecated(
-    "This endpoint is deprecated and will be removed in v2.0",
-    use_instead="/api/v1/billing/subscription/autorenew/",
-)
-def toggle_auto_renew(request):
-    """
-    POST /api/v1/billing/auto-renew/toggle
-    Legacy toggle.
-
-    Важно: НЕ мутируем request.data (оно может быть immutable).
-    """
-    try:
-        sub = request.user.subscription
-    except Subscription.DoesNotExist:
-        return _err("NO_SUBSCRIPTION", "У вас нет активной подписки", status.HTTP_404_NOT_FOUND)
-
-    enabled = not bool(sub.auto_renew)
-
-    # Переиспользуем логику нового эндпоинта без подмены request.data
-    serializer = AutoRenewToggleSerializer(data={"enabled": enabled})
-    serializer.is_valid(raise_exception=True)
-    sub.auto_renew = serializer.validated_data["enabled"]
-    sub.save(update_fields=["auto_renew", "updated_at"])
-
-    return get_subscription_details(request)
-
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-@deprecated("This endpoint is deprecated and will be removed in v2.0", use_instead="/api/v1/billing/payments/")
-def get_payment_history(request):
-    """
-    GET /api/v1/billing/payments
-    Legacy paginated history.
-    """
-    payments = Payment.objects.filter(user=request.user).select_related("plan").order_by("-created_at")
-
-    paginator = PageNumberPagination()
-    try:
-        paginator.page_size = int(request.query_params.get("page_size", 20))
-    except (TypeError, ValueError):
-        paginator.page_size = 20
-
-    page = paginator.paginate_queryset(payments, request)
-    serializer = PaymentSerializer(page, many=True)
-
-    return Response(
-        {
-            "status": "success",
-            "data": {
-                "count": payments.count(),
-                "next": paginator.get_next_link(),
-                "previous": paginator.get_previous_link(),
-                "results": serializer.data,
-            },
-        },
-        status=status.HTTP_200_OK,
-    )
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
-@deprecated("Deprecated. Use POST /api/v1/billing/create-payment/", use_instead="/api/v1/billing/create-payment/")
-def create_plus_payment(request):
-    """
-    POST /api/v1/billing/create-plus-payment/
-    Legacy wrapper -> create-payment with legacy plan_code=MONTHLY
-    """
-    plan_code = "MONTHLY"
-    return_url = _validate_return_url(request.data.get("return_url"), request)
-
-    try:
-        payment, confirmation_url = _create_subscription_payment_core(
-            user=request.user,
-            plan_code=plan_code,
-            return_url=return_url,
-            save_payment_method=True,
-        )
-
-        SecurityAuditLogger.log_payment_created(
-            user=request.user,
-            amount=float(payment.amount),
-            plan=plan_code,
-            request=request,
-        )
-
-        return Response(
-            {
-                "payment_id": str(payment.id),
-                "yookassa_payment_id": payment.yookassa_payment_id,
-                "confirmation_url": confirmation_url,
-            },
-            status=status.HTTP_201_CREATED,
-        )
-
-    except Exception as e:
-        logger.error(f"Create plus payment error: {e}", exc_info=True)
-        return _err("PAYMENT_CREATE_FAILED", "Не удалось создать платеж. Попробуйте позже.", status.HTTP_502_BAD_GATEWAY)
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
-@deprecated("Deprecated. Use POST /api/v1/billing/create-payment/", use_instead="/api/v1/billing/create-payment/")
-def subscribe(request):
-    """
-    POST /api/v1/billing/subscribe
-    Legacy endpoint.
-
-    Legacy формат:
-      { "plan": "MONTHLY" | "YEARLY" | "PRO_MONTHLY" | "PRO_YEARLY" ... }
-
-    Мы валидируем вход, затем создаём платёж через универсальное ядро.
-    """
-    serializer = SubscribeSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-    plan_name = serializer.validated_data["plan"]
-
-    return_url = _validate_return_url(request.data.get("return_url"), request)
-
-    try:
-        payment, confirmation_url = _create_subscription_payment_core(
-            user=request.user,
-            plan_code=str(plan_name),
-            return_url=return_url,
-            save_payment_method=True,
-        )
-
-        SecurityAuditLogger.log_payment_created(
-            user=request.user,
-            amount=float(payment.amount),
-            plan=str(plan_name),
-            request=request,
-        )
-
-        return Response(
-            {
-                "status": "success",
-                "message": "Платёж создан. Перейдите по ссылке для оплаты.",
-                "data": {
-                    "payment_id": str(payment.id),
-                    "amount": str(payment.amount),
-                    "confirmation_url": confirmation_url,
-                },
-            },
-            status=status.HTTP_201_CREATED,
-        )
-
-    except SubscriptionPlan.DoesNotExist:
-        return _err("INVALID_PLAN", f"Тарифный план '{plan_name}' не найден", status.HTTP_400_BAD_REQUEST)
-    except ValueError as e:
-        return _err("INVALID_PLAN", str(e), status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        logger.error(f"Subscribe error: {e}", exc_info=True)
-        return _err("PAYMENT_ERROR", "Не удалось создать платёж. Попробуйте позже.", status.HTTP_500_INTERNAL_SERVER_ERROR)
