@@ -676,6 +676,7 @@ CELERY_TASK_TIME_LIMIT = 300  # 5 minutes max per task
 CELERY_TASK_ROUTES = {
     "apps.ai.tasks.*": {"queue": "ai"},
     "apps.billing.tasks.*": {"queue": "billing"},
+    "apps.billing.webhooks.tasks.*": {"queue": "billing"},  # webhook processing
 }
 
 # Enable async AI processing (set to False to use sync mode)

@@ -1,36 +1,15 @@
-"""
-Webhook endpoint для YooKassa.
-
-Задачи этого файла:
-- принять webhook-запрос от YooKassa
-- проверить, что запрос пришёл с разрешённого IP
-- распарсить событие
-- обеспечить ИДЕМПОТЕНТНОСТЬ (одно событие = одна обработка)
-- передать событие в handlers
-- всегда быстро отвечать 200 OK (если запрос валиден)
-
-ВАЖНО:
-- здесь НЕТ бизнес-логики
-- здесь НЕТ работы с подписками напрямую
-- этот файл — "контроллер + firewall"
-
-БЕЗОПАСНОСТЬ (2024-12):
-- Rate limiting: 100 req/hour per IP (WebhookThrottle)
-- IP Allowlist: только IP-адреса YooKassa (см. utils.py)
-- XFF Spoofing Protection: по умолчанию НЕ доверяем X-Forwarded-For
-  (см. WEBHOOK_TRUST_XFF в settings)
-"""
-
 from __future__ import annotations
 
+import ipaddress
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from django.conf import settings
 from django.db import transaction
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import ParseError
 from rest_framework.permissions import AllowAny
@@ -44,255 +23,252 @@ from .utils import is_ip_allowed
 logger = logging.getLogger(__name__)
 
 
+# ============================================================
+# Public entrypoint
+# ============================================================
+
 @csrf_exempt
 @api_view(["POST"])
-@permission_classes([AllowAny])  # Webhook публичный, но защищён IP allowlist
-@throttle_classes([WebhookThrottle])  # [SECURITY] Rate limit: 100 req/hour per IP
+@permission_classes([AllowAny])              # публичный endpoint, защита через IP allowlist
+@throttle_classes([WebhookThrottle])         # 100 req/hour per IP (пример)
 def yookassa_webhook(request):
     """
-    Единственная точка входа для webhook YooKassa.
+    Webhook endpoint для YooKassa.
 
-    URL:
-        POST /api/v1/billing/webhooks/yookassa
+    Контроллер + firewall. Без бизнес-логики подписок.
 
     Поведение:
-    - если IP не разрешён → 403
-    - если payload невалиден → 400
-    - если событие уже обработано → 200 (идемпотентность)
-    - если всё ок → передаём в handlers → 200
-
-    Безопасность:
-    - Rate limit: 100/hour (WebhookThrottle)
-    - IP allowlist (YooKassa IPs only)
-    - XFF доверяется ТОЛЬКО если WEBHOOK_TRUST_XFF=True в settings
+    - IP не разрешён -> 403
+    - payload невалиден -> 400
+    - валидно -> log + enqueue handler -> 200
     """
 
     client_ip = _get_client_ip_secure(request)
 
-    # 1️⃣ Проверка IP (базовая защита)
-    if not is_ip_allowed(client_ip):
+    # 1) Firewall: IP allowlist
+    if not client_ip or not is_ip_allowed(client_ip):
         logger.warning(
-            f"[WEBHOOK_BLOCKED] IP={client_ip} не в allowlist YooKassa. "
-            f"Path={request.path}"
+            "[WEBHOOK_BLOCKED] ip=%s path=%s reason=not_in_allowlist",
+            client_ip, request.path
         )
-        return JsonResponse(
-            {"error": "forbidden"},
-            status=403
-        )
+        return JsonResponse({"error": {"code": "FORBIDDEN"}}, status=403)
 
-    # 2️⃣ Парсинг JSON через DRF request.data
-    content_type = request.META.get("CONTENT_TYPE", "")
-    logger.info(f"[WEBHOOK] Content-Type={content_type}")
-
+    # 2) Парсинг JSON (DRF-safe)
     try:
-        # DRF автоматически парсит JSON и кладёт в request.data
         payload = request.data
-
-        # Проверяем что payload это dict
-        if not isinstance(payload, dict):
-            logger.error(
-                f"[WEBHOOK_ERROR] Payload is not a dict, got {type(payload).__name__}"
-            )
-            return JsonResponse(
-                {
-                    "error": {
-                        "code": "INVALID_JSON",
-                        "message": f"Expected JSON object, got {type(payload).__name__}"
-                    }
-                },
-                status=400
-            )
-
-        logger.info(f"[WEBHOOK] Payload parsed OK, type=dict, keys={len(payload)}")
-
     except ParseError as e:
-        # DRF выбрасывает ParseError если JSON невалиден
-        logger.error(f"[WEBHOOK_ERROR] JSON parse failed: {str(e)}")
+        logger.warning("[WEBHOOK_BAD_JSON] ip=%s err=%s", client_ip, str(e))
         return JsonResponse(
-            {
-                "error": {
-                    "code": "INVALID_JSON",
-                    "message": "Invalid JSON payload"
-                }
-            },
-            status=400
-        )
-    except Exception as e:
-        # Любая другая ошибка парсинга
-        logger.error(f"[WEBHOOK_ERROR] Unexpected parse error: {str(e)}", exc_info=True)
-        return JsonResponse(
-            {
-                "error": {
-                    "code": "INVALID_JSON",
-                    "message": "Invalid JSON payload"
-                }
-            },
-            status=400
+            {"error": {"code": "INVALID_JSON", "message": "Invalid JSON payload"}},
+            status=400,
         )
 
-    # 3️⃣ Валидация структуры payload
-    event_type = payload.get("event")
-    event_object = payload.get("object", {})
-    event_id = event_object.get("id")  # payment_id или refund_id
-
-    if not event_type or not event_id:
-        logger.error(f"[WEBHOOK_ERROR] Malformed payload: missing event or event_id")
+    if not isinstance(payload, dict):
+        logger.warning("[WEBHOOK_BAD_JSON] ip=%s payload_type=%s", client_ip, type(payload).__name__)
         return JsonResponse(
-            {
-                "error": {
-                    "code": "INVALID_PAYLOAD",
-                    "message": "Missing required fields: event, object.id"
-                }
-            },
-            status=400
+            {"error": {"code": "INVALID_JSON", "message": "Expected JSON object"}},
+            status=400,
         )
 
-    # 4️⃣ Идемпотентность по event_id
-    # Один webhook от YooKassa = один WebhookLog
+    # 3) Мини-валидация структуры
+    event_type, obj, obj_id, obj_status = _extract_event_fields(payload)
+    if not event_type or not obj_id:
+        logger.warning(
+            "[WEBHOOK_INVALID_PAYLOAD] ip=%s event=%s obj_id=%s",
+            client_ip, event_type, obj_id
+        )
+        return JsonResponse(
+            {"error": {"code": "INVALID_PAYLOAD", "message": "Missing required fields"}},
+            status=400,
+        )
+
+    # 4) Идемпотентность (правильная): ключ = event_type + object.id + object.status
+    # Почему так: у одного payment_id может быть много событий.
+    idempotency_key = f"{event_type}:{obj_id}:{obj_status or 'unknown'}"
+
+    # 5) Логируем событие и решаем: новое/дубликат
+    now = timezone.now()
+
     with transaction.atomic():
-        webhook_log, created = WebhookLog.objects.select_for_update().get_or_create(
-            event_id=event_id,
+        log, created = WebhookLog.objects.select_for_update().get_or_create(
+            event_id=idempotency_key,  # используем существующее поле как idempotency_key
             defaults={
                 "event_type": event_type,
                 "payment_id": _extract_payment_id(payload),
                 "status": "RECEIVED",
-                "raw_payload": payload,
+                "raw_payload": payload,      # можно оставить, но следи за размером
                 "client_ip": client_ip,
-            }
+                "attempts": 1,
+            },
         )
 
         if not created:
-            # webhook уже был получен ранее
+            # Это повторная доставка того же события (обычно ретрай)
+            # НЕ перетираем SUCCESS/FAILED. Просто фиксируем, что видели ещё раз.
+            log.attempts = (log.attempts or 0) + 1
+            # если есть поле last_seen_at — обнови; если нет — можно обновить processed_at не трогая статус
+            log.processed_at = log.processed_at or now
+            log.save(update_fields=["attempts", "processed_at"])
             logger.info(
-                f"Duplicate YooKassa webhook ignored: event_id={event_id}, status={webhook_log.status}"
+                "[WEBHOOK_DUPLICATE] key=%s status=%s attempts=%s",
+                idempotency_key, log.status, log.attempts
             )
-            webhook_log.status = "DUPLICATE"
-            webhook_log.processed_at = timezone.now()
-            webhook_log.save(update_fields=["status", "processed_at"])
-            return JsonResponse({"status": "ok"})  # ВСЕГДА 200 для YooKassa
+            return JsonResponse({"status": "ok"}, status=200)
 
-        # помечаем, что начали обработку
-        webhook_log.status = "PROCESSING"
-        webhook_log.attempts += 1
-        webhook_log.save(update_fields=["status", "attempts"])
+        # новое событие
+        log.status = "QUEUED"
+        log.save(update_fields=["status"])
 
-    # 4️⃣ Передаём событие в бизнес-обработчик
+    # 6) Быстро отдаём 200 и обрабатываем в фоне (если есть celery task)
+    # Если задачи нет — fallback на синхронную обработку (но это хуже).
+    queued = _enqueue_processing(log_id=log.id, event_type=event_type, payload=payload)
+
+    if not queued:
+        # fallback: синхронно (лучше чем потерять событие)
+        _process_webhook_sync(log_id=log.id, event_type=event_type, payload=payload)
+
+    return JsonResponse({"status": "ok"}, status=200)
+
+
+# ============================================================
+# Processing (async preferred)
+# ============================================================
+
+def _enqueue_processing(*, log_id: int, event_type: str, payload: Dict[str, Any]) -> bool:
+    """
+    Пытаемся отдать обработку в фон.
+    Вернёт True, если задача успешно поставлена.
+    """
     try:
-        handle_yookassa_event(event_type=event_type, payload=payload)
+        # Celery task для асинхронной обработки
+        from apps.billing.webhooks.tasks import process_yookassa_webhook  # type: ignore
 
-        # если всё прошло успешно
-        webhook_log.status = "SUCCESS"
-        webhook_log.processed_at = timezone.now()
-        webhook_log.save(update_fields=["status", "processed_at"])
-
+        # Передаем только log_id - task сам достанет остальное из БД
+        process_yookassa_webhook.delay(log_id)
+        logger.info("[WEBHOOK_QUEUED] log_id=%s event=%s", log_id, event_type)
+        return True
     except Exception as e:
-        # ошибка обработки — webhook считается FAILED,
-        # но YooKassa всё равно получит 200 (иначе будет ретраить)
-        logger.error(
-            f"Webhook processing error for event_id={event_id}: {str(e)}",
-            exc_info=True
+        # Task может не существовать или Celery недоступен — это ок, будем fallback
+        logger.warning(
+            "[WEBHOOK_QUEUE_MISSING] log_id=%s event=%s fallback=sync err=%s",
+            log_id, event_type, str(e)
         )
-        webhook_log.status = "FAILED"
-        webhook_log.error_message = str(e)
-        webhook_log.processed_at = timezone.now()
-        webhook_log.save(update_fields=["status", "error_message", "processed_at"])
-
-    # 5️⃣ Ответ YooKassa
-    # ВАЖНО: всегда 200, если IP и JSON валидны
-    return JsonResponse({"status": "ok"})
-
-
-# ---------------------------------------------------------------------
-# helpers (локальные, не бизнес-логика)
-# ---------------------------------------------------------------------
-
-def _is_trusted_proxy(ip: str) -> bool:
-    """
-    Проверяет, является ли IP адрес доверенным прокси (nginx, docker gateway).
-
-    Поддерживает:
-    - Одиночные IP: "127.0.0.1"
-    - CIDR подсети: "172.23.0.0/16"
-    """
-    import ipaddress
-
-    trusted_proxies = getattr(settings, "WEBHOOK_TRUSTED_PROXIES", ["127.0.0.1"])
-
-    try:
-        ip_obj = ipaddress.ip_address(ip)
-        for proxy in trusted_proxies:
-            try:
-                # Проверяем CIDR подсеть
-                if "/" in proxy:
-                    network = ipaddress.ip_network(proxy, strict=False)
-                    if ip_obj in network:
-                        return True
-                # Проверяем точное совпадение IP
-                elif ip == proxy:
-                    return True
-            except ValueError:
-                logger.warning(f"[WEBHOOK_SECURITY] Invalid proxy IP/CIDR: {proxy}")
-                continue
-    except ValueError:
-        logger.warning(f"[WEBHOOK_SECURITY] Invalid IP address: {ip}")
         return False
 
-    return False
 
-
-def _get_client_ip_secure(request: HttpRequest) -> str | None:
+def _process_webhook_sync(*, log_id: int, event_type: str, payload: Dict[str, Any]) -> None:
     """
-    Безопасное извлечение IP клиента.
-
-    [SECURITY FIX 2024-12-17]:
-    По умолчанию НЕ доверяем X-Forwarded-For, так как его можно подделать.
-    Используем XFF только если:
-    - settings.WEBHOOK_TRUST_XFF == True (явно включено)
-    - И REMOTE_ADDR принадлежит доверенным прокси (settings.WEBHOOK_TRUSTED_PROXIES)
-
-    Если WEBHOOK_TRUST_XFF=False (default) → используем только REMOTE_ADDR.
+    Синхронный fallback. Используй только если фоновой обработки пока нет.
     """
-    remote_addr = request.META.get("REMOTE_ADDR", "")
-    trust_xff = getattr(settings, "WEBHOOK_TRUST_XFF", False)
-
-    if trust_xff:
-        # Проверяем, что запрос пришёл от доверенного прокси
-        if not _is_trusted_proxy(remote_addr):
-            logger.warning(
-                f"[WEBHOOK_SECURITY] X-Forwarded-For ignored: REMOTE_ADDR={remote_addr} "
-                f"not in trusted proxies list"
-            )
-        else:
-            # Доверенный прокси: берём первый IP из XFF
-            xff = request.META.get("HTTP_X_FORWARDED_FOR")
-            if xff:
-                real_ip = xff.split(",")[0].strip()
-                logger.info(
-                    f"[WEBHOOK] Using X-Forwarded-For IP: {real_ip} "
-                    f"(from trusted proxy {remote_addr})"
-                )
-                return real_ip
-
-    # По умолчанию или если XFF отсутствует: используем REMOTE_ADDR
-    # Логируем, если XFF присутствует, но мы его игнорируем
-    if not trust_xff and request.META.get("HTTP_X_FORWARDED_FOR"):
-        logger.warning(
-            f"[WEBHOOK_SECURITY] X-Forwarded-For present but ignored "
-            f"(WEBHOOK_TRUST_XFF=False). Using REMOTE_ADDR={remote_addr}"
+    try:
+        WebhookLog.objects.filter(id=log_id).update(status="PROCESSING")
+        handle_yookassa_event(event_type=event_type, payload=payload)
+        WebhookLog.objects.filter(id=log_id).update(status="SUCCESS", processed_at=timezone.now())
+        logger.info("[WEBHOOK_PROCESSED_SYNC] log_id=%s ok=true", log_id)
+    except Exception as e:
+        WebhookLog.objects.filter(id=log_id).update(
+            status="FAILED",
+            error_message=str(e),
+            processed_at=timezone.now(),
         )
+        logger.error("[WEBHOOK_PROCESSED_SYNC] log_id=%s ok=false err=%s", log_id, str(e), exc_info=True)
 
-    return remote_addr
+
+# ============================================================
+# Helpers (security + parsing)
+# ============================================================
+
+def _extract_event_fields(payload: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any], Optional[str], Optional[str]]:
+    event_type = payload.get("event")
+    obj = payload.get("object") or {}
+    if not isinstance(obj, dict):
+        obj = {}
+    obj_id = obj.get("id")
+    obj_status = obj.get("status")  # у payment есть status
+    return event_type, obj, obj_id, obj_status
 
 
-def _extract_payment_id(payload: Dict[str, Any]) -> str | None:
-    """
-    Извлекает payment_id из payload, если он есть.
-    Нужно для удобной фильтрации логов.
-    """
-    obj = payload.get("object", {})
+def _extract_payment_id(payload: Dict[str, Any]) -> Optional[str]:
+    obj = payload.get("object") or {}
+    if not isinstance(obj, dict):
+        return None
+
+    # YooKassa: object.object = "payment" / "refund"
     if obj.get("object") == "payment":
         return obj.get("id")
     if obj.get("object") == "refund":
         return obj.get("payment_id")
-    return None
+    return obj.get("id")
 
+
+def _get_client_ip_secure(request: HttpRequest) -> Optional[str]:
+    """
+    Безопасное извлечение IP клиента.
+
+    - По умолчанию НЕ доверяем XFF.
+    - Если WEBHOOK_TRUST_XFF=True, то доверяем XFF только когда REMOTE_ADDR в trusted proxies.
+    """
+    remote_addr = request.META.get("REMOTE_ADDR", "") or ""
+    trust_xff = bool(getattr(settings, "WEBHOOK_TRUST_XFF", False))
+
+    # если доверие XFF выключено — просто REMOTE_ADDR
+    if not trust_xff:
+        # логируем только для дебага
+        if request.META.get("HTTP_X_FORWARDED_FOR"):
+            logger.debug(
+                "[WEBHOOK_SECURITY] xff_present_ignored trust_xff=false remote_addr=%s",
+                remote_addr
+            )
+        return remote_addr or None
+
+    # доверие XFF включено — но только если прокси доверенный
+    if not _is_trusted_proxy(remote_addr):
+        logger.warning(
+            "[WEBHOOK_SECURITY] xff_ignored_untrusted_proxy remote_addr=%s",
+            remote_addr
+        )
+        return remote_addr or None
+
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if not xff:
+        return remote_addr or None
+
+    real_ip = xff.split(",")[0].strip()
+    return real_ip or None
+
+
+def _is_trusted_proxy(ip: str) -> bool:
+    """
+    Trusted proxies берём из settings.WEBHOOK_TRUSTED_PROXIES
+
+    Поддержка:
+    - "127.0.0.1"
+    - "172.23.0.0/16"
+    """
+    proxies = getattr(settings, "WEBHOOK_TRUSTED_PROXIES", None)
+    if not proxies:
+        # безопасный дефолт — только localhost
+        proxies = ["127.0.0.1"]
+
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+
+    for item in proxies:
+        try:
+            item = str(item).strip()
+            if not item:
+                continue
+            if "/" in item:
+                net = ipaddress.ip_network(item, strict=False)
+                if ip_obj in net:
+                    return True
+            else:
+                if ip == item:
+                    return True
+        except ValueError:
+            logger.warning("[WEBHOOK_SECURITY] invalid_trusted_proxy=%s", item)
+            continue
+
+    return False

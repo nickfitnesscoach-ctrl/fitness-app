@@ -462,6 +462,7 @@ class WebhookLog(models.Model):
 
     STATUS_CHOICES = [
         ("RECEIVED", "Получен"),
+        ("QUEUED", "В очереди"),
         ("PROCESSING", "Обработка"),
         ("SUCCESS", "Успешно"),
         ("FAILED", "Ошибка"),
