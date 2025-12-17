@@ -1,226 +1,229 @@
 """
-Сериализаторы для billing endpoints.
+billing/serializers.py
+
+DRF serializers для billing.
+
+Зачем этот файл:
+- централизованная и строгая валидация входных данных (чтобы views были тонкими)
+- единые форматы ответов для планов/платежей/подписки
+
+Принципы:
+- plan_code валидируем против БД (SubscriptionPlan)
+- запрещаем создавать платежи для FREE (price <= 0)
+- не доверяем сумме/дням с фронта — это НЕ поля запросов
+
+Важно:
+- в проекте есть legacy поле SubscriptionPlan.name, но SSOT = SubscriptionPlan.code
 """
 
+from __future__ import annotations
+
+from typing import Optional
+
 from rest_framework import serializers
-from .models import SubscriptionPlan, Subscription, Payment, Refund
+
+from .models import Payment, SubscriptionPlan
+
+# ---------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------
+
+def _get_plan_by_code_or_legacy(plan_code: str) -> Optional[SubscriptionPlan]:
+    """
+    Ищем план по:
+    - code (новое поле)
+    - name (legacy fallback)
+    Возвращаем None, если не найден.
+    """
+    try:
+        return SubscriptionPlan.objects.get(code=plan_code, is_active=True)
+    except SubscriptionPlan.DoesNotExist:
+        try:
+            return SubscriptionPlan.objects.get(name=plan_code, is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            return None
 
 
-class SubscriptionPlanSerializer(serializers.ModelSerializer):
-    """Сериализатор для тарифного плана."""
+# ---------------------------------------------------------------------
+# Public Plans
+# ---------------------------------------------------------------------
 
-    features = serializers.SerializerMethodField()
+class SubscriptionPlanPublicSerializer(serializers.ModelSerializer):
+    """
+    Публичный сериализатор тарифов для /billing/plans/
+
+    Отдаём:
+    - code, display_name, price, duration_days
+    - лимиты/фичи для UI
+    """
 
     class Meta:
         model = SubscriptionPlan
         fields = [
-            'name',
-            'display_name',
-            'description',
-            'price',
-            'duration_days',
-            'features',
-            'is_active',
+            "code",
+            "display_name",
+            "price",
+            "duration_days",
+            "daily_photo_limit",
+            "history_days",
+            "ai_recognition",
+            "advanced_stats",
+            "priority_support",
         ]
 
-    def get_features(self, obj):
-        """Возвращает словарь с features."""
-        return obj.get_features_dict()
+
+# ---------------------------------------------------------------------
+# Legacy subscribe serializer (старый endpoint /billing/subscribe)
+# ---------------------------------------------------------------------
+
+class SubscribeSerializer(serializers.Serializer):
+    """
+    Legacy serializer для POST /billing/subscribe
+    Там historically поле называется "plan" (а не plan_code).
+    """
+    plan = serializers.CharField(max_length=50)
+
+    def validate_plan(self, value: str) -> str:
+        plan = _get_plan_by_code_or_legacy(value)
+        if not plan:
+            raise serializers.ValidationError("Тарифный план не найден или выключен.")
+        if plan.price <= 0:
+            raise serializers.ValidationError("Нельзя создать платеж для бесплатного тарифа.")
+        return value
 
 
-class SubscriptionSerializer(serializers.ModelSerializer):
-    """Сериализатор для подписки пользователя."""
+# ---------------------------------------------------------------------
+# Payments
+# ---------------------------------------------------------------------
 
-    plan = SubscriptionPlanSerializer(read_only=True)
-    days_remaining = serializers.IntegerField(read_only=True)
+class CreatePaymentRequestSerializer(serializers.Serializer):
+    """
+    Новый запрос для POST /billing/create-payment/
 
-    class Meta:
-        model = Subscription
-        fields = [
-            'id',
-            'plan',
-            'start_date',
-            'end_date',
-            'is_active',
-            'auto_renew',
-            'days_remaining',
-            'created_at',
-            'updated_at',
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+    Body:
+      {
+        "plan_code": "PRO_MONTHLY" | "PRO_YEARLY" | legacy: "MONTHLY" | "YEARLY",
+        "return_url": "https://..." (опционально)
+      }
+    """
+    plan_code = serializers.CharField(max_length=50)
+    return_url = serializers.URLField(required=False, allow_null=True)
+
+    def validate_plan_code(self, value: str) -> str:
+        plan = _get_plan_by_code_or_legacy(value)
+        if not plan:
+            raise serializers.ValidationError("Тарифный план не найден или выключен.")
+        if plan.price <= 0:
+            raise serializers.ValidationError("Нельзя создать платеж для бесплатного тарифа.")
+        return value
 
 
 class PaymentSerializer(serializers.ModelSerializer):
-    """Сериализатор для платежа."""
+    """
+    Сериализация Payment для legacy /billing/payments (пагинация).
+    """
 
-    plan_name = serializers.CharField(source='plan.display_name', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    plan_code = serializers.SerializerMethodField()
+    plan_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = [
-            'id',
-            'plan_name',
-            'amount',
-            'currency',
-            'status',
-            'status_display',
-            'provider',
-            'is_recurring',
-            'description',
-            'created_at',
-            'paid_at',
+            "id",
+            "amount",
+            "currency",
+            "status",
+            "created_at",
+            "paid_at",
+            "description",
+            "provider",
+            "yookassa_payment_id",
+            "plan_code",
+            "plan_name",
         ]
-        read_only_fields = ['id', 'created_at', 'paid_at']
+
+    def get_plan_code(self, obj: Payment) -> Optional[str]:
+        return obj.plan.code if obj.plan else None
+
+    def get_plan_name(self, obj: Payment) -> Optional[str]:
+        return obj.plan.display_name if obj.plan else None
 
 
-class SubscribeSerializer(serializers.Serializer):
-    """Сериализатор для оформления подписки."""
+# ---------------------------------------------------------------------
+# Auto-renew
+# ---------------------------------------------------------------------
 
-    plan = serializers.ChoiceField(
-        choices=['MONTHLY', 'YEARLY'],
-        help_text='Тип тарифного плана'
-    )
-
-    def validate_plan(self, value):
-        """Проверяет, что план существует и активен."""
-        try:
-            plan = SubscriptionPlan.objects.get(name=value, is_active=True)
-        except SubscriptionPlan.DoesNotExist:
-            raise serializers.ValidationError(f'Тарифный план "{value}" не найден или неактивен.')
-
-        return value
+class AutoRenewToggleSerializer(serializers.Serializer):
+    """
+    POST /billing/subscription/autorenew/
+    Body: { "enabled": true|false }
+    """
+    enabled = serializers.BooleanField()
 
 
-class RefundSerializer(serializers.ModelSerializer):
-    """Сериализатор для возврата."""
+# ---------------------------------------------------------------------
+# Backward-compatible serializers placeholders
+# (Если где-то в проекте остались импорты старых классов,
+#  мы сохраняем их имена как алиасы/простые классы.)
+# ---------------------------------------------------------------------
 
-    payment_id = serializers.UUIDField(source='payment.id', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+# Эти классы фигурировали в старом views.py как импорты.
+# Сейчас они не обязательны, но оставляем для обратной совместимости,
+# чтобы не словить ImportError в других местах проекта.
 
-    class Meta:
-        model = Refund
-        fields = [
-            'id',
-            'payment_id',
-            'amount',
-            'status',
-            'status_display',
-            'reason',
-            'created_at',
-            'completed_at',
-        ]
-        read_only_fields = ['id', 'created_at', 'completed_at']
+class SubscriptionPlanSerializer(SubscriptionPlanPublicSerializer):
+    """Back-compat alias: раньше использовали этот класс."""
+    pass
 
 
-class CurrentPlanResponseSerializer(serializers.Serializer):
-    """Сериализатор для ответа на GET /billing/plan"""
-
-    subscription = SubscriptionSerializer()
-    available_plans = SubscriptionPlanSerializer(many=True)
+class SubscriptionSerializer(serializers.Serializer):
+    """
+    Минимальный сериализатор подписки для legacy /billing/plan endpoint.
+    (Полноценная карточка подписки отдаётся через views.get_subscription_details)
+    """
+    plan_code = serializers.CharField()
+    plan_name = serializers.CharField()
+    expires_at = serializers.CharField(allow_null=True)
+    auto_renew = serializers.BooleanField()
 
 
 class PaymentMethodSerializer(serializers.Serializer):
-    """Сериализатор для информации о способе оплаты."""
+    """
+    Совместимость: простая структура для payment method.
+    """
+    is_attached = serializers.BooleanField()
+    card_mask = serializers.CharField(allow_null=True)
+    card_brand = serializers.CharField(allow_null=True)
 
-    is_attached = serializers.BooleanField(
-        help_text='Привязана ли карта для автопродления'
-    )
-    card_mask = serializers.CharField(
-        allow_null=True,
-        help_text='Маска карты, например "•••• 1234"'
-    )
-    card_brand = serializers.CharField(
-        allow_null=True,
-        help_text='Тип карты: Visa, MasterCard, МИР и т.д.'
-    )
+
+class CurrentPlanResponseSerializer(serializers.Serializer):
+    """Back-compat placeholder."""
+    status = serializers.CharField()
+    data = serializers.DictField()
 
 
 class SubscriptionStatusSerializer(serializers.Serializer):
-    """Сериализатор для полного статуса подписки (GET /billing/subscription/)."""
-
-    plan = serializers.CharField(
-        help_text='Код плана: "free" или "pro"'
-    )
-    plan_display = serializers.CharField(
-        help_text='Отображаемое название плана'
-    )
-    expires_at = serializers.DateField(
-        allow_null=True,
-        help_text='Дата окончания подписки (null для free)'
-    )
-    is_active = serializers.BooleanField(
-        help_text='Активна ли подписка'
-    )
-    autorenew_available = serializers.BooleanField(
-        help_text='Доступно ли автопродление (есть ли привязанная карта)'
-    )
-    autorenew_enabled = serializers.BooleanField(
-        help_text='Включено ли автопродление'
-    )
-    payment_method = PaymentMethodSerializer(
-        help_text='Информация о привязанном способе оплаты'
-    )
+    """Back-compat placeholder for /billing/me/ response."""
+    plan_code = serializers.CharField()
+    plan_name = serializers.CharField()
+    expires_at = serializers.CharField(allow_null=True)
+    is_active = serializers.BooleanField()
+    daily_photo_limit = serializers.IntegerField(allow_null=True)
+    used_today = serializers.IntegerField()
+    remaining_today = serializers.IntegerField(allow_null=True)
+    test_live_payment_available = serializers.BooleanField(required=False)
 
 
-class AutoRenewToggleSerializer(serializers.Serializer):
-    """Сериализатор для включения/отключения автопродления."""
-
-    enabled = serializers.BooleanField(
-        required=True,
-        help_text='Включить (true) или выключить (false) автопродление'
-    )
+class AutoRenewToggleSerializerLegacy(AutoRenewToggleSerializer):
+    """Back-compat alias if старый импорт где-то остался."""
+    pass
 
 
 class PaymentHistoryItemSerializer(serializers.Serializer):
-    """Сериализатор для элемента истории платежей."""
-
-    id = serializers.UUIDField(
-        help_text='ID платежа'
-    )
-    amount = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        help_text='Сумма платежа'
-    )
-    currency = serializers.CharField(
-        help_text='Валюта платежа'
-    )
-    status = serializers.CharField(
-        help_text='Статус платежа в нижнем регистре'
-    )
-    paid_at = serializers.DateTimeField(
-        allow_null=True,
-        help_text='Дата и время оплаты (ISO 8601)'
-    )
-    description = serializers.CharField(
-        help_text='Описание платежа'
-    )
-
-
-class PaymentHistoryResponseSerializer(serializers.Serializer):
-    """Сериализатор для ответа на GET /billing/payments/."""
-
-    results = PaymentHistoryItemSerializer(many=True)
-
-
-class SubscriptionPlanPublicSerializer(serializers.ModelSerializer):
-    """
-    Публичный сериализатор для тарифных планов.
-    Используется в GET /api/v1/billing/plans/ (доступен без авторизации).
-    """
-
-    class Meta:
-        model = SubscriptionPlan
-        fields = [
-            'code',
-            'display_name',
-            'price',
-            'duration_days',
-            'daily_photo_limit',
-            'history_days',
-            'ai_recognition',
-            'advanced_stats',
-            'priority_support',
-        ]
-        read_only_fields = fields  # Все поля только для чтения
+    """Back-compat placeholder (в новом API это формируется в views)."""
+    id = serializers.CharField()
+    amount = serializers.FloatField()
+    currency = serializers.CharField()
+    status = serializers.CharField()
+    paid_at = serializers.CharField(allow_null=True)
+    description = serializers.CharField()

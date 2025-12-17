@@ -1,496 +1,553 @@
 """
-Модели для управления тарифами, подписками и платежами.
+billing/models.py
+
+Модели биллинга: тарифы, подписки, платежи, возвраты, лог webhook.
+
+Важно:
+- Мы НЕ ломаем существующую схему (поля сохранены)
+- При этом наводим порядок в коде, комментариях и безопасности
+
+SSOT:
+- SubscriptionPlan.code — основной идентификатор тарифа
+- SubscriptionPlan.name — legacy (оставлен ради обратной совместимости)
+
+Поток денег:
+- Payment создаётся при старте оплаты
+- Payment становится SUCCEEDED только после webhook (webhooks/handlers.py)
+- Подписка продлевается/активируется после SUCCEEDED webhook
 """
 
-from django.db import models
-from django.conf import settings
-from django.utils import timezone
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.contrib.auth.models import User
-from datetime import timedelta, datetime
+from __future__ import annotations
+
+from datetime import timedelta
 import uuid
 
+from django.conf import settings
+from django.contrib.auth.models import User
+from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.utils import timezone
+
+# ---------------------------------------------------------------------
+# SubscriptionPlan
+# ---------------------------------------------------------------------
 
 class SubscriptionPlan(models.Model):
     """
-    Тарифный план подписки.
-    Администраторы могут создавать и редактировать планы через Django Admin.
+    Тарифный план.
+
+    Админ может управлять тарифами через Django Admin.
+    Для кода используем поле `code` (уникально, SSOT).
+    Поле `name` — legacy, оставлено для старых частей системы.
     """
+
     PLAN_CHOICES = [
-        ('FREE', 'Бесплатный'),
-        ('PRO_MONTHLY', 'PRO месячный'),
-        ('PRO_YEARLY', 'PRO годовой'),
-        ('MONTHLY', 'Месячный (legacy)'),  # Deprecated, use PRO_MONTHLY
-        ('YEARLY', 'Годовой (legacy)'),    # Deprecated, use PRO_YEARLY
+        ("FREE", "Бесплатный"),
+        ("PRO_MONTHLY", "PRO месячный"),
+        ("PRO_YEARLY", "PRO годовой"),
+        ("MONTHLY", "Месячный (legacy)"),
+        ("YEARLY", "Годовой (legacy)"),
     ]
 
-    # System code for programmatic access (unique identifier)
     code = models.CharField(
-        'Системный код',
+        "Системный код",
         max_length=50,
         unique=True,
-        help_text='Уникальный код для API (например: FREE, PRO_MONTHLY, PRO_YEARLY)'
+        help_text="Уникальный код для API: FREE, PRO_MONTHLY, PRO_YEARLY и т.д.",
     )
 
-    # Legacy name field - deprecated, use 'code' instead
+    # Legacy поле (не использовать в новых вызовах)
     name = models.CharField(
-        'Название плана (legacy)',
+        "Название плана (legacy)",
         max_length=50,
         choices=PLAN_CHOICES,
         unique=True,
         blank=True,
         null=True,
-        help_text='DEPRECATED: используйте поле code'
+        help_text="DEPRECATED: используйте поле code",
     )
-    display_name = models.CharField('Отображаемое название', max_length=100)
-    description = models.TextField('Описание', blank=True)
+
+    display_name = models.CharField("Отображаемое название", max_length=100)
+    description = models.TextField("Описание", blank=True)
 
     # Pricing
-    price = models.DecimalField('Цена (₽)', max_digits=10, decimal_places=2, default=0)
-    duration_days = models.IntegerField('Длительность (дней)', default=0)
+    price = models.DecimalField("Цена (₽)", max_digits=10, decimal_places=2, default=0)
+    duration_days = models.IntegerField("Длительность (дней)", default=0)
 
     # Features
     daily_photo_limit = models.IntegerField(
-        'Лимит фото в день',
+        "Лимит фото в день",
         null=True,
         blank=True,
-        help_text='Максимум фото в день. Null = безлимит'
+        help_text="Null = безлимит",
     )
-    # Legacy field - deprecated, use daily_photo_limit
-    max_photos_per_day = models.IntegerField(
-        'Макс. фото в день (legacy)',
-        default=3,
-        help_text='DEPRECATED: используйте daily_photo_limit. -1 = неограниченно'
-    )
-    history_days = models.IntegerField(
-        'Хранение истории (дней)',
-        default=7,
-        help_text='-1 = неограниченно'
-    )
-    ai_recognition = models.BooleanField('AI распознавание', default=True)
-    advanced_stats = models.BooleanField('Расширенная статистика', default=False)
-    priority_support = models.BooleanField('Приоритетная поддержка', default=False)
 
-    # Metadata
-    is_active = models.BooleanField('Активен', default=True)
-    is_test = models.BooleanField(
-        'Тестовый план',
-        default=False,
-        help_text='Тестовый план для проверки live-платежей (только для владельца/админов)'
+    # Legacy поле (оставлено)
+    max_photos_per_day = models.IntegerField(
+        "Макс. фото в день (legacy)",
+        default=3,
+        help_text="DEPRECATED: используйте daily_photo_limit. -1 = неограниченно",
     )
-    created_at = models.DateTimeField('Создан', auto_now_add=True)
-    updated_at = models.DateTimeField('Обновлён', auto_now=True)
+
+    history_days = models.IntegerField(
+        "Хранение истории (дней)",
+        default=7,
+        help_text="-1 = неограниченно",
+    )
+
+    ai_recognition = models.BooleanField("AI распознавание", default=True)
+    advanced_stats = models.BooleanField("Расширенная статистика", default=False)
+    priority_support = models.BooleanField("Приоритетная поддержка", default=False)
+
+    # Flags
+    is_active = models.BooleanField("Активен", default=True)
+    is_test = models.BooleanField(
+        "Тестовый план",
+        default=False,
+        help_text="Тестовый план для проверки live-платежей (только для админов)",
+    )
+
+    created_at = models.DateTimeField("Создан", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлён", auto_now=True)
 
     class Meta:
-        db_table = 'subscription_plans'
-        verbose_name = 'Тарифный план'
-        verbose_name_plural = 'Тарифные планы'
-        ordering = ['price']
+        db_table = "subscription_plans"
+        verbose_name = "Тарифный план"
+        verbose_name_plural = "Тарифные планы"
+        ordering = ["price"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.display_name} - {self.price}₽"
 
-    def get_features_dict(self):
-        """Возвращает словарь с features для API response."""
+    def get_features_dict(self) -> dict:
+        """Удобная форма features для API/UI."""
         return {
-            'daily_photo_limit': self.daily_photo_limit,
-            'max_photos_per_day': self.max_photos_per_day,  # legacy
-            'history_days': self.history_days,
-            'ai_recognition': self.ai_recognition,
-            'advanced_stats': self.advanced_stats,
-            'priority_support': self.priority_support,
+            "daily_photo_limit": self.daily_photo_limit,
+            "max_photos_per_day": self.max_photos_per_day,  # legacy
+            "history_days": self.history_days,
+            "ai_recognition": self.ai_recognition,
+            "advanced_stats": self.advanced_stats,
+            "priority_support": self.priority_support,
         }
 
 
+# ---------------------------------------------------------------------
+# Subscription
+# ---------------------------------------------------------------------
+
 class Subscription(models.Model):
     """
-    Подписка пользователя на тарифный план.
+    Подписка пользователя.
+
+    Важно:
+    - Для FREE подписки мы считаем, что она "не истекает" логически
+      (см. is_expired), но end_date всё равно хранится как поле.
     """
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='subscription',
-        verbose_name='Пользователь'
+        related_name="subscription",
+        verbose_name="Пользователь",
     )
+
     plan = models.ForeignKey(
         SubscriptionPlan,
         on_delete=models.PROTECT,
-        related_name='subscriptions',
-        verbose_name='Тарифный план'
+        related_name="subscriptions",
+        verbose_name="Тарифный план",
     )
 
-    # Dates
-    start_date = models.DateTimeField('Дата начала')
-    end_date = models.DateTimeField('Дата окончания')
+    start_date = models.DateTimeField("Дата начала")
+    end_date = models.DateTimeField("Дата окончания")
 
-    # Status
-    is_active = models.BooleanField('Активна', default=True)
-    auto_renew = models.BooleanField('Автопродление', default=False)
+    is_active = models.BooleanField("Активна", default=True)
+    auto_renew = models.BooleanField("Автопродление", default=False)
 
-    # Payment method (для рекуррентных платежей)
+    # Saved payment method for recurring payments
     yookassa_payment_method_id = models.CharField(
-        'ID способа оплаты ЮKassa',
+        "ID способа оплаты ЮKassa",
         max_length=255,
         blank=True,
         null=True,
-        help_text='Сохранённый способ оплаты для рекуррентных платежей'
+        help_text="Сохранённый способ оплаты для рекуррентных платежей",
     )
+
     card_mask = models.CharField(
-        'Маска карты',
+        "Маска карты",
         max_length=20,
         blank=True,
         null=True,
-        help_text='Последние 4 цифры карты, например "•••• 1234"'
+        help_text='Например: "•••• 1234"',
     )
+
     card_brand = models.CharField(
-        'Тип карты',
+        "Тип карты",
         max_length=50,
         blank=True,
         null=True,
-        help_text='Тип платёжной карты: Visa, MasterCard, МИР и т.д.'
+        help_text="Visa, MasterCard, МИР и т.д.",
     )
 
-    # Metadata
-    created_at = models.DateTimeField('Создана', auto_now_add=True)
-    updated_at = models.DateTimeField('Обновлена', auto_now=True)
+    created_at = models.DateTimeField("Создана", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлена", auto_now=True)
 
     class Meta:
-        db_table = 'subscriptions'
-        verbose_name = 'Подписка'
-        verbose_name_plural = 'Подписки'
-        ordering = ['-created_at']
+        db_table = "subscriptions"
+        verbose_name = "Подписка"
+        verbose_name_plural = "Подписки"
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['is_active', 'end_date']),
+            models.Index(fields=["is_active", "end_date"]),
         ]
 
-    def __str__(self):
-        return f"{self.user.email} - {self.plan.display_name}"
+    def __str__(self) -> str:
+        email = getattr(self.user, "email", None) or str(self.user_id)
+        return f"{email} - {self.plan.display_name}"
 
-    @property
-    def days_remaining(self):
-        """Вычисляет оставшиеся дни подписки."""
-        if self.plan.code == 'FREE':
-            return None
+    def is_expired(self) -> bool:
+        """
+        Истекла ли подписка?
 
-        if not self.is_active:
-            return 0
-
-        now = timezone.now()
-        if self.end_date <= now:
-            return 0
-
-        delta = self.end_date - now
-        return delta.days
-
-    def is_expired(self):
-        """Проверяет, истекла ли подписка."""
-        if self.plan.code == 'FREE':
+        FREE по бизнес-логике НЕ истекает.
+        """
+        if self.plan and self.plan.code == "FREE":
             return False
         return timezone.now() >= self.end_date
 
-    def extend_subscription(self, days):
+    @property
+    def days_remaining(self):
         """
-        Продлевает подписку на указанное количество дней.
-        Если подписка истекла, продлевает от текущего момента.
-        Если активна, добавляет к текущей дате окончания.
+        Сколько дней осталось.
+
+        - FREE → None
+        - inactive → 0
+        - expired → 0
         """
-        from django.db import transaction
+        if self.plan and self.plan.code == "FREE":
+            return None
+        if not self.is_active:
+            return 0
+        if self.is_expired():
+            return 0
+        return max(0, (self.end_date - timezone.now()).days)
 
-        with transaction.atomic():
-            now = timezone.now()
+    def extend_subscription(self, days: int) -> None:
+        """
+        Продлевает подписку.
 
-            if self.is_expired():
-                # Подписка истекла - начинаем с текущего момента
-                self.start_date = now
-                self.end_date = now + timedelta(days=days)
-            else:
-                # Подписка активна - добавляем к существующей
-                self.end_date += timedelta(days=days)
+        - если истекла → продление от сейчас
+        - если активна → добавляем дни к end_date
 
-            self.is_active = True
-            self.save()
+        Важно: это просто "утилита модели".
+        Основная логика продления должна быть в services.activate_or_extend_subscription
+        и вызываться из webhook обработчика.
+        """
+        if days <= 0:
+            return
 
+        now = timezone.now()
+
+        if self.is_expired():
+            self.start_date = now
+            self.end_date = now + timedelta(days=days)
+        else:
+            self.end_date = self.end_date + timedelta(days=days)
+
+        self.is_active = True
+        self.save(update_fields=["start_date", "end_date", "is_active", "updated_at"])
+
+
+# ---------------------------------------------------------------------
+# Payment
+# ---------------------------------------------------------------------
 
 class Payment(models.Model):
     """
     Платёж пользователя.
+
+    IMPORTANT:
+    - Статус SUCCEEDED выставляется только после webhook от YooKassa
+    - payment_method_id сохраняем только если save_payment_method=True
     """
+
     STATUS_CHOICES = [
-        ('PENDING', 'Ожидание оплаты'),
-        ('WAITING_FOR_CAPTURE', 'Ожидание подтверждения'),
-        ('SUCCEEDED', 'Успешно'),
-        ('CANCELED', 'Отменён'),
-        ('FAILED', 'Ошибка'),
-        ('REFUNDED', 'Возврат'),
+        ("PENDING", "Ожидание оплаты"),
+        ("WAITING_FOR_CAPTURE", "Ожидание подтверждения"),
+        ("SUCCEEDED", "Успешно"),
+        ("CANCELED", "Отменён"),
+        ("FAILED", "Ошибка"),
+        ("REFUNDED", "Возврат"),
     ]
 
     PROVIDER_CHOICES = [
-        ('YOOKASSA', 'ЮKassa'),
+        ("YOOKASSA", "ЮKassa"),
     ]
 
-    # IDs
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Relations
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='payments',
-        verbose_name='Пользователь'
+        related_name="payments",
+        verbose_name="Пользователь",
     )
+
     subscription = models.ForeignKey(
         Subscription,
         on_delete=models.SET_NULL,
-        related_name='payments',
-        verbose_name='Подписка',
+        related_name="payments",
+        verbose_name="Подписка",
         null=True,
-        blank=True
+        blank=True,
     )
+
     plan = models.ForeignKey(
         SubscriptionPlan,
         on_delete=models.SET_NULL,
-        related_name='payments',
-        verbose_name='Тарифный план',
+        related_name="payments",
+        verbose_name="Тарифный план",
         null=True,
-        blank=True
+        blank=True,
     )
 
-    # Payment details
-    amount = models.DecimalField('Сумма', max_digits=10, decimal_places=2)
-    currency = models.CharField('Валюта', max_length=3, default='RUB')
-    status = models.CharField(
-        'Статус',
-        max_length=50,
-        choices=STATUS_CHOICES,
-        default='PENDING'
-    )
+    amount = models.DecimalField("Сумма", max_digits=10, decimal_places=2)
+    currency = models.CharField("Валюта", max_length=3, default="RUB")
 
-    # Provider info
-    provider = models.CharField(
-        'Платёжный провайдер',
-        max_length=50,
-        choices=PROVIDER_CHOICES,
-        default='YOOKASSA'
-    )
+    status = models.CharField("Статус", max_length=50, choices=STATUS_CHOICES, default="PENDING")
+
+    provider = models.CharField("Платёжный провайдер", max_length=50, choices=PROVIDER_CHOICES, default="YOOKASSA")
+
     yookassa_payment_id = models.CharField(
-        'ID платежа ЮKassa',
+        "ID платежа ЮKassa",
         max_length=255,
         unique=True,
         null=True,
-        blank=True
+        blank=True,
     )
+
     yookassa_payment_method_id = models.CharField(
-        'ID способа оплаты ЮKassa',
+        "ID способа оплаты ЮKassa",
         max_length=255,
         null=True,
         blank=True,
-        help_text='Для сохранения способа оплаты'
+        help_text="Сохраняется при успешной оплате, если save_payment_method=True",
     )
 
-    # Payment metadata
-    is_recurring = models.BooleanField('Рекуррентный платёж', default=False)
-    save_payment_method = models.BooleanField('Сохранить способ оплаты', default=True)
+    is_recurring = models.BooleanField("Рекуррентный платёж", default=False)
+    save_payment_method = models.BooleanField("Сохранить способ оплаты", default=True)
 
-    # Additional data
-    description = models.TextField('Описание', blank=True)
-    error_message = models.TextField('Сообщение об ошибке', blank=True)
-    metadata = models.JSONField('Дополнительные данные', default=dict, blank=True)
+    description = models.TextField("Описание", blank=True)
+    error_message = models.TextField("Сообщение об ошибке", blank=True)
+    metadata = models.JSONField("Дополнительные данные", default=dict, blank=True)
 
-    # Timestamps
-    created_at = models.DateTimeField('Создан', auto_now_add=True)
-    updated_at = models.DateTimeField('Обновлён', auto_now=True)
-    paid_at = models.DateTimeField('Дата оплаты', null=True, blank=True)
+    created_at = models.DateTimeField("Создан", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлён", auto_now=True)
+    paid_at = models.DateTimeField("Дата оплаты", null=True, blank=True)
+
     webhook_processed_at = models.DateTimeField(
-        'Webhook обработан',
+        "Webhook обработан",
         null=True,
         blank=True,
-        help_text='Время обработки webhook (для idempotency)'
+        help_text="Для идемпотентности: если webhook повторится — мы видим, что уже обработали",
     )
 
     class Meta:
-        db_table = 'payments'
-        verbose_name = 'Платёж'
-        verbose_name_plural = 'Платежи'
-        ordering = ['-created_at']
+        db_table = "payments"
+        verbose_name = "Платёж"
+        verbose_name_plural = "Платежи"
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['-created_at']),
-            models.Index(fields=['status']),
-            models.Index(fields=['yookassa_payment_id']),
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["yookassa_payment_id"]),
         ]
 
-    def __str__(self):
-        return f"{self.user.email} - {self.amount}₽ ({self.get_status_display()})"
+    def __str__(self) -> str:
+        email = getattr(self.user, "email", None) or str(self.user_id)
+        return f"{email} - {self.amount}₽ ({self.status})"
 
-    def mark_as_succeeded(self, payment_method_id=None):
+    def mark_as_succeeded(self, payment_method_id: str | None = None) -> None:
         """Помечает платёж как успешный."""
-        self.status = 'SUCCEEDED'
+        self.status = "SUCCEEDED"
         self.paid_at = timezone.now()
-
         if payment_method_id and self.save_payment_method:
             self.yookassa_payment_method_id = payment_method_id
+        self.save(update_fields=["status", "paid_at", "yookassa_payment_method_id", "updated_at"])
 
-        self.save()
-
-    def mark_as_failed(self, error_message=''):
-        """Помечает платёж как неудачный."""
-        self.status = 'FAILED'
+    def mark_as_failed(self, error_message: str = "") -> None:
+        """Помечает платёж как FAILED."""
+        self.status = "FAILED"
         self.error_message = error_message
-        self.save()
+        self.save(update_fields=["status", "error_message", "updated_at"])
 
-    def mark_as_canceled(self):
-        """Помечает платёж как отменённый."""
-        self.status = 'CANCELED'
-        self.save()
+    def mark_as_canceled(self) -> None:
+        """Помечает платёж как CANCELED."""
+        self.status = "CANCELED"
+        self.save(update_fields=["status", "updated_at"])
 
-    def mark_as_refunded(self):
-        """Помечает платёж как возвращённый."""
-        self.status = 'REFUNDED'
-        self.save()
+    def mark_as_refunded(self) -> None:
+        """Помечает платёж как REFUNDED."""
+        self.status = "REFUNDED"
+        self.save(update_fields=["status", "updated_at"])
 
+
+# ---------------------------------------------------------------------
+# Refund
+# ---------------------------------------------------------------------
 
 class Refund(models.Model):
-    """
-    Возврат средств.
-    """
+    """Возврат средств по платежу."""
+
     STATUS_CHOICES = [
-        ('PENDING', 'В обработке'),
-        ('SUCCEEDED', 'Успешно'),
-        ('CANCELED', 'Отменён'),
+        ("PENDING", "В обработке"),
+        ("SUCCEEDED", "Успешно"),
+        ("CANCELED", "Отменён"),
     ]
 
-    # IDs
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Relations
     payment = models.ForeignKey(
         Payment,
         on_delete=models.CASCADE,
-        related_name='refunds',
-        verbose_name='Платёж'
+        related_name="refunds",
+        verbose_name="Платёж",
     )
 
-    # Refund details
-    amount = models.DecimalField('Сумма возврата', max_digits=10, decimal_places=2)
-    status = models.CharField(
-        'Статус',
-        max_length=50,
-        choices=STATUS_CHOICES,
-        default='PENDING'
-    )
+    amount = models.DecimalField("Сумма возврата", max_digits=10, decimal_places=2)
+    status = models.CharField("Статус", max_length=50, choices=STATUS_CHOICES, default="PENDING")
 
-    # YooKassa info
     yookassa_refund_id = models.CharField(
-        'ID возврата ЮKassa',
+        "ID возврата ЮKassa",
         max_length=255,
         unique=True,
         null=True,
-        blank=True
+        blank=True,
     )
 
-    # Additional data
-    reason = models.TextField('Причина', blank=True)
-    error_message = models.TextField('Сообщение об ошибке', blank=True)
+    reason = models.TextField("Причина", blank=True)
+    error_message = models.TextField("Сообщение об ошибке", blank=True)
 
-    # Timestamps
-    created_at = models.DateTimeField('Создан', auto_now_add=True)
-    updated_at = models.DateTimeField('Обновлён', auto_now=True)
-    completed_at = models.DateTimeField('Дата завершения', null=True, blank=True)
+    created_at = models.DateTimeField("Создан", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлён", auto_now=True)
+    completed_at = models.DateTimeField("Дата завершения", null=True, blank=True)
 
     class Meta:
-        db_table = 'refunds'
-        verbose_name = 'Возврат'
-        verbose_name_plural = 'Возвраты'
-        ordering = ['-created_at']
+        db_table = "refunds"
+        verbose_name = "Возврат"
+        verbose_name_plural = "Возвраты"
+        ordering = ["-created_at"]
 
-    def __str__(self):
-        return f"Возврат {self.amount}₽ для платежа {self.payment.id}"
+    def __str__(self) -> str:
+        return f"Refund {self.amount}₽ for payment {self.payment_id}"
 
+
+# ---------------------------------------------------------------------
+# WebhookLog
+# ---------------------------------------------------------------------
 
 class WebhookLog(models.Model):
     """
-    Лог обработки webhook уведомлений.
-    Используется для отладки и retry логики.
+    Лог входящих webhook.
+
+    Зачем:
+    - дебаг
+    - идемпотентность/защита от дублей
+    - основа для retry (если захочешь)
+
+    Важно:
+    - event_id должен быть уникальным ключом на стороне YooKassa для конкретного события
     """
+
     STATUS_CHOICES = [
-        ('RECEIVED', 'Получен'),
-        ('PROCESSING', 'Обработка'),
-        ('SUCCESS', 'Успешно'),
-        ('FAILED', 'Ошибка'),
-        ('DUPLICATE', 'Дубликат'),
+        ("RECEIVED", "Получен"),
+        ("PROCESSING", "Обработка"),
+        ("SUCCESS", "Успешно"),
+        ("FAILED", "Ошибка"),
+        ("DUPLICATE", "Дубликат"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    # Event info
-    event_type = models.CharField('Тип события', max_length=100)
-    event_id = models.CharField(
-        'ID события YooKassa',
-        max_length=255,
-        db_index=True
-    )
+
+    event_type = models.CharField("Тип события", max_length=100)
+    event_id = models.CharField("ID события YooKassa", max_length=255, db_index=True)
+
     payment_id = models.CharField(
-        'ID платежа YooKassa',
+        "ID платежа YooKassa",
         max_length=255,
         null=True,
         blank=True,
-        db_index=True
+        db_index=True,
     )
-    
-    # Processing info
-    status = models.CharField(
-        'Статус обработки',
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='RECEIVED'
-    )
-    attempts = models.PositiveIntegerField('Попытки обработки', default=0)
-    error_message = models.TextField('Сообщение об ошибке', blank=True)
-    
-    # Request data
-    raw_payload = models.JSONField('Сырые данные webhook', default=dict)
-    client_ip = models.GenericIPAddressField('IP клиента', null=True, blank=True)
-    
-    # Timestamps
-    created_at = models.DateTimeField('Получен', auto_now_add=True)
-    processed_at = models.DateTimeField('Обработан', null=True, blank=True)
+
+    status = models.CharField("Статус обработки", max_length=20, choices=STATUS_CHOICES, default="RECEIVED")
+    attempts = models.PositiveIntegerField("Попытки обработки", default=0)
+    error_message = models.TextField("Сообщение об ошибке", blank=True)
+
+    raw_payload = models.JSONField("Сырые данные webhook", default=dict)
+    client_ip = models.GenericIPAddressField("IP клиента", null=True, blank=True)
+
+    created_at = models.DateTimeField("Получен", auto_now_add=True)
+    processed_at = models.DateTimeField("Обработан", null=True, blank=True)
 
     class Meta:
-        db_table = 'webhook_logs'
-        verbose_name = 'Лог webhook'
-        verbose_name_plural = 'Логи webhook'
-        ordering = ['-created_at']
+        db_table = "webhook_logs"
+        verbose_name = "Лог webhook"
+        verbose_name_plural = "Логи webhook"
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['-created_at']),
-            models.Index(fields=['status']),
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["status"]),
         ]
 
-    def __str__(self):
-        return f"{self.event_type} ({self.status}) - {self.created_at}"
+    def __str__(self) -> str:
+        return f"{self.event_type} ({self.status})"
 
 
+# ---------------------------------------------------------------------
 # Signals
+# ---------------------------------------------------------------------
+
 @receiver(post_save, sender=User)
-def create_free_subscription(sender, instance, created, **kwargs):
+def create_free_subscription(sender, instance: User, created: bool, **kwargs):
     """
-    Automatically create FREE subscription when a new user is created.
-    This ensures every user has a subscription from day one.
+    Автоматически создаём FREE подписку при создании нового пользователя.
+
+    Почему это нужно:
+    - чтобы все части системы могли предполагать, что subscription существует
+    - чтобы не ловить Subscription.DoesNotExist в проде
+
+    Важно:
+    - если FREE план не создан в админке — мы не падаем, а логируем предупреждение
     """
-    if created:
+    if not created:
+        return
+
+    import logging
+    log = logging.getLogger(__name__)
+
+    try:
         try:
-            from django.conf import settings
-            free_plan = SubscriptionPlan.objects.get(name='FREE')
-            Subscription.objects.create(
-                user=instance,
-                plan=free_plan,
-                start_date=timezone.now(),
-                end_date=settings.FREE_SUBSCRIPTION_END_DATE,
-                is_active=True,
-                auto_renew=False
-            )
+            free_plan = SubscriptionPlan.objects.get(code="FREE", is_active=True)
         except SubscriptionPlan.DoesNotExist:
-            # If FREE plan doesn't exist, log warning but don't fail
-            # Admins should create FREE plan via Django Admin
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"FREE subscription plan not found. User {instance.username} created without subscription.")
+            free_plan = SubscriptionPlan.objects.get(name="FREE", is_active=True)
+
+        # end_date берём из settings, если задано, иначе — 10 лет "вперёд"
+        end_date = getattr(settings, "FREE_SUBSCRIPTION_END_DATE", None) or (timezone.now() + timedelta(days=365 * 10))
+
+        Subscription.objects.create(
+            user=instance,
+            plan=free_plan,
+            start_date=timezone.now(),
+            end_date=end_date,
+            is_active=True,
+            auto_renew=False,
+        )
+
+    except SubscriptionPlan.DoesNotExist:
+        log.warning(
+            "FREE subscription plan not found. "
+            "User %s created without subscription. Create FREE plan in Admin.",
+            instance.username,
+        )
