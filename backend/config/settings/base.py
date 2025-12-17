@@ -591,6 +591,23 @@ YOOKASSA_RETURN_URL = os.environ.get("YOOKASSA_RETURN_URL", "https://eatfit24.ru
 # Webhook secret for signature validation (optional)
 YOOKASSA_WEBHOOK_SECRET = os.environ.get("YOOKASSA_WEBHOOK_SECRET", "")
 
+# [SECURITY 2024-12] Webhook XFF Trust
+# Если True — доверяем X-Forwarded-For для определения IP клиента.
+# Ставить True ТОЛЬКО если сервер за trusted reverse proxy (Nginx/Cloudflare).
+# По умолчанию False — безопаснее, используем REMOTE_ADDR.
+WEBHOOK_TRUST_XFF = os.environ.get("WEBHOOK_TRUST_XFF", "false").lower() == "true"
+
+# [SECURITY 2024-12] Allowed return_url domains for payments
+# Защита от open redirect: разрешаем redirect только на эти домены.
+ALLOWED_RETURN_URL_DOMAINS = [
+    domain.strip()
+    for domain in os.environ.get(
+        "ALLOWED_RETURN_URL_DOMAINS",
+        "eatfit24.ru,localhost,127.0.0.1"
+    ).split(",")
+    if domain.strip()
+]
+
 # Billing constants
 BILLING_PLUS_PLAN_CODE = "PLUS"
 BILLING_PLUS_DURATION_DAYS = 30

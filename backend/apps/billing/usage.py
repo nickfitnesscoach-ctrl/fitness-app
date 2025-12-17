@@ -84,6 +84,57 @@ class DailyUsageManager(models.Manager):
         usage.save(update_fields=["photo_ai_requests"])
         return usage
 
+    def check_and_increment_if_allowed(self, user, limit: int | None, amount: int = 1) -> tuple[bool, int]:
+        """
+        [SECURITY FIX 2024-12] Атомарная проверка лимита И инкремент.
+
+        Эта функция решает race condition: без неё 10 параллельных запросов
+        могут все пройти проверку лимита, так как проверка и инкремент — раздельны.
+
+        Args:
+            user: Пользователь
+            limit: Дневной лимит (None = безлимит)
+            amount: На сколько увеличить счётчик (default: 1)
+
+        Returns:
+            tuple[bool, int]: (allowed, current_count)
+            - allowed: True если операция разрешена и счётчик увеличен
+            - current_count: Текущее значение счётчика (после инкремента, если allowed)
+
+        Важно:
+            Если limit=None — всегда разрешаем и увеличиваем.
+            Если current >= limit — отказываем, НЕ увеличиваем.
+        """
+        if amount <= 0:
+            usage = self.get_today(user)
+            return (True, usage.photo_ai_requests)
+
+        today = timezone.now().date()
+
+        with transaction.atomic():
+            # Блокируем строку, чтобы параллельные запросы ждали
+            usage, _ = self.select_for_update().get_or_create(
+                user=user,
+                date=today,
+                defaults={"photo_ai_requests": 0},
+            )
+
+            current_count = usage.photo_ai_requests
+
+            # Если лимит не задан — безлимит
+            if limit is None:
+                self.filter(pk=usage.pk).update(photo_ai_requests=F("photo_ai_requests") + amount)
+                return (True, current_count + amount)
+
+            # Проверяем лимит ВНУТРИ транзакции с блокировкой
+            if current_count >= limit:
+                # Лимит уже достигнут — отказ
+                return (False, current_count)
+
+            # Лимит не достигнут — увеличиваем
+            self.filter(pk=usage.pk).update(photo_ai_requests=F("photo_ai_requests") + amount)
+            return (True, current_count + amount)
+
 
 class DailyUsage(models.Model):
     """

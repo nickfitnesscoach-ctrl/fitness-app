@@ -193,13 +193,20 @@ class AIRecognitionView(APIView):
         meal_type = serializer.validated_data.get('meal_type', 'SNACK')
 
         # Check daily photo limit based on user's subscription plan
+        # [SECURITY FIX 2024-12] Атомарная проверка + инкремент
+        # Раньше проверка и инкремент были отдельны → race condition.
+        # Теперь используем check_and_increment_if_allowed для атомарности.
         plan = get_effective_plan_for_user(request.user)
-        usage = DailyUsage.objects.get_today(request.user)
+        allowed, used_count = DailyUsage.objects.check_and_increment_if_allowed(
+            user=request.user,
+            limit=plan.daily_photo_limit,
+            amount=1
+        )
 
-        if plan.daily_photo_limit is not None and usage.photo_ai_requests >= plan.daily_photo_limit:
+        if not allowed:
             logger.warning(
                 f"User {request.user.username} exceeded daily photo limit. "
-                f"Plan: {plan.name}, Limit: {plan.daily_photo_limit}, Used: {usage.photo_ai_requests}"
+                f"Plan: {plan.name}, Limit: {plan.daily_photo_limit}, Used: {used_count}"
             )
             return Response(
                 {
@@ -207,7 +214,7 @@ class AIRecognitionView(APIView):
                     "detail": f"Превышен дневной лимит {plan.daily_photo_limit} фото. Обновите тариф для безлимитного распознавания.",
                     "current_plan": plan.name,
                     "daily_limit": plan.daily_photo_limit,
-                    "used_today": usage.photo_ai_requests
+                    "used_today": used_count
                 },
                 status=status.HTTP_429_TOO_MANY_REQUESTS
             )

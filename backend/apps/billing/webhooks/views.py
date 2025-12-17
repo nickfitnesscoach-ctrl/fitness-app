@@ -13,6 +13,12 @@ Webhook endpoint для YooKassa.
 - здесь НЕТ бизнес-логики
 - здесь НЕТ работы с подписками напрямую
 - этот файл — "контроллер + firewall"
+
+БЕЗОПАСНОСТЬ (2024-12):
+- Rate limiting: 100 req/hour per IP (WebhookThrottle)
+- IP Allowlist: только IP-адреса YooKassa (см. utils.py)
+- XFF Spoofing Protection: по умолчанию НЕ доверяем X-Forwarded-For
+  (см. WEBHOOK_TRUST_XFF в settings)
 """
 
 from __future__ import annotations
@@ -21,13 +27,16 @@ import json
 import logging
 from typing import Any, Dict
 
+from django.conf import settings
 from django.db import transaction
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny
 
 from apps.billing.models import WebhookLog
+from apps.billing.throttles import WebhookThrottle
 
 from .handlers import handle_yookassa_event
 from .utils import is_ip_allowed
@@ -36,8 +45,10 @@ logger = logging.getLogger(__name__)
 
 
 @csrf_exempt
-@require_POST
-def yookassa_webhook(request: HttpRequest):
+@api_view(["POST"])
+@permission_classes([AllowAny])  # Webhook публичный, но защищён IP allowlist
+@throttle_classes([WebhookThrottle])  # [SECURITY] Rate limit: 100 req/hour per IP
+def yookassa_webhook(request):
     """
     Единственная точка входа для webhook YooKassa.
 
@@ -49,13 +60,21 @@ def yookassa_webhook(request: HttpRequest):
     - если payload невалиден → 400
     - если событие уже обработано → 200 (идемпотентность)
     - если всё ок → передаём в handlers → 200
+
+    Безопасность:
+    - Rate limit: 100/hour (WebhookThrottle)
+    - IP allowlist (YooKassa IPs only)
+    - XFF доверяется ТОЛЬКО если WEBHOOK_TRUST_XFF=True в settings
     """
 
-    client_ip = _get_client_ip(request)
+    client_ip = _get_client_ip_secure(request)
 
     # 1️⃣ Проверка IP (базовая защита)
     if not is_ip_allowed(client_ip):
-        logger.warning(f"Blocked YooKassa webhook from IP {client_ip}")
+        logger.warning(
+            f"[WEBHOOK_BLOCKED] IP={client_ip} не в allowlist YooKassa. "
+            f"Path={request.path}"
+        )
         return JsonResponse(
             {"error": "forbidden"},
             status=403
@@ -141,17 +160,39 @@ def yookassa_webhook(request: HttpRequest):
 # helpers (локальные, не бизнес-логика)
 # ---------------------------------------------------------------------
 
-def _get_client_ip(request: HttpRequest) -> str | None:
+def _get_client_ip_secure(request: HttpRequest) -> str | None:
     """
-    Аккуратно извлекаем IP клиента.
+    Безопасное извлечение IP клиента.
 
-    Используем X-Forwarded-For, если есть (reverse proxy),
-    иначе REMOTE_ADDR.
+    [SECURITY FIX 2024-12]:
+    По умолчанию НЕ доверяем X-Forwarded-For, так как его можно подделать.
+    Используем XFF только если:
+    - settings.WEBHOOK_TRUST_XFF == True (явно включено)
+    - И сервер за доверенным reverse proxy (Nginx/Cloudflare)
+
+    Если WEBHOOK_TRUST_XFF=False (default) → используем только REMOTE_ADDR.
     """
-    xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
+    trust_xff = getattr(settings, "WEBHOOK_TRUST_XFF", False)
+
+    if trust_xff:
+        # Доверенный прокси: берём первый IP из XFF
+        xff = request.META.get("HTTP_X_FORWARDED_FOR")
+        if xff:
+            real_ip = xff.split(",")[0].strip()
+            logger.debug(f"[WEBHOOK] Using X-Forwarded-For IP: {real_ip}")
+            return real_ip
+
+    # По умолчанию или если XFF отсутствует: используем REMOTE_ADDR
+    remote_addr = request.META.get("REMOTE_ADDR")
+
+    # Логируем, если XFF присутствует, но мы его игнорируем
+    if not trust_xff and request.META.get("HTTP_X_FORWARDED_FOR"):
+        logger.warning(
+            f"[WEBHOOK_SECURITY] X-Forwarded-For present but ignored "
+            f"(WEBHOOK_TRUST_XFF=False). Using REMOTE_ADDR={remote_addr}"
+        )
+
+    return remote_addr
 
 
 def _extract_payment_id(payload: Dict[str, Any]) -> str | None:
@@ -165,3 +206,4 @@ def _extract_payment_id(payload: Dict[str, Any]) -> str | None:
     if obj.get("object") == "refund":
         return obj.get("payment_id")
     return None
+

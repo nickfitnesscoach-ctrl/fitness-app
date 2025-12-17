@@ -34,12 +34,16 @@ def _get_plan_by_code_or_legacy(plan_code: str) -> Optional[SubscriptionPlan]:
     - code (новое поле)
     - name (legacy fallback)
     Возвращаем None, если не найден.
+
+    [SECURITY FIX 2024-12]: Исключаем is_test=True планы.
+    Test-планы доступны ТОЛЬКО через admin endpoint (create_test_live_payment).
     """
     try:
-        return SubscriptionPlan.objects.get(code=plan_code, is_active=True)
+        # ВАЖНО: is_test=False блокирует TEST_LIVE и другие тестовые планы
+        return SubscriptionPlan.objects.get(code=plan_code, is_active=True, is_test=False)
     except SubscriptionPlan.DoesNotExist:
         try:
-            return SubscriptionPlan.objects.get(name=plan_code, is_active=True)
+            return SubscriptionPlan.objects.get(name=plan_code, is_active=True, is_test=False)
         except SubscriptionPlan.DoesNotExist:
             return None
 
