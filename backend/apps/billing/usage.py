@@ -163,6 +163,7 @@ class DailyUsage(models.Model):
     class Meta:
         verbose_name = "Ежедневное использование"
         verbose_name_plural = "Ежедневное использование"
+        db_table = "daily_usage"
         unique_together = [["user", "date"]]
         ordering = ["-date"]
         indexes = [
