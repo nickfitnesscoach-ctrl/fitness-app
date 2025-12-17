@@ -134,11 +134,11 @@ class SubscriptionAdmin(admin.ModelAdmin):
         """Красивый бейдж оставшихся дней."""
         days = obj.days_remaining
         if days is None:
-            return format_html('<span style="color:#2b8a3e;font-weight:700;">FREE</span>')
+            return format_html('<span style="color:#2b8a3e;font-weight:700;">FREE</span>', )
         if days <= 0:
-            return format_html('<span style="color:#c92a2a;font-weight:700;">Истекла</span>')
+            return format_html('<span style="color:#c92a2a;font-weight:700;">Истекла</span>', )
         if days < 7:
-            return format_html(f'<span style="color:#e67700;font-weight:700;">{days} дн.</span>')
+            return format_html('<span style="color:#e67700;font-weight:700;">{} дн.</span>', days)
         return f"{days} дн."
     days_left_badge.short_description = "Осталось"
 
@@ -190,7 +190,9 @@ class PaymentAdmin(admin.ModelAdmin):
         }
         color = colors.get(obj.status, "black")
         return format_html(
-            f'<span style="color:{color};font-weight:700;">{obj.get_status_display()}</span>'
+            '<span style="color:{};font-weight:700;">{}</span>',
+            color,
+            obj.get_status_display()
         )
     status_badge.short_description = "Статус"
 
