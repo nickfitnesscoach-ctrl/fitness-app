@@ -1,1135 +1,687 @@
 """
-Views для управления тарифами, подписками и платежами.
+billing/views.py
+
+Billing API Views (DRF function-based).
+
+Задачи файла:
+- Дать фронту стабильный API для: планов, статуса подписки, оплаты, привязки карты, истории платежей
+- Свести логику к понятному "ядру" без дублирования
+
+Принципы безопасности:
+- Никогда не принимаем сумму/цену с фронта — только plan_code
+- Все цены/длительности/лимиты берём только из БД (SubscriptionPlan)
+- Подписка активируется/продлевается ТОЛЬКО после webhook (см. billing/webhooks/*)
 """
 
-from functools import wraps
-import warnings
+from __future__ import annotations
 
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
-from rest_framework.pagination import PageNumberPagination
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from django.db import transaction
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
+from datetime import timedelta
 from decimal import Decimal
 import logging
+from typing import Tuple
+
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 
 from apps.common.audit import SecurityAuditLogger
 
-
-# ============================================================
-# Deprecation decorator for legacy endpoints
-# ============================================================
-
-def deprecated(message, use_instead=None):
-    """
-    Decorator to mark API views as deprecated.
-    
-    Adds:
-    - X-Deprecated header with deprecation message
-    - X-Deprecated-Use header with suggested alternative (if provided)
-    - Logs deprecation warning
-    
-    Args:
-        message: Deprecation message for clients
-        use_instead: Suggested replacement endpoint path
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(request, *args, **kwargs):
-            # Log deprecation warning
-            warnings.warn(
-                f"Endpoint {request.path} is deprecated: {message}",
-                DeprecationWarning,
-                stacklevel=2
-            )
-            logger.warning(
-                f"[DEPRECATED] {request.method} {request.path} called. {message}"
-            )
-            
-            # Call original function
-            response = func(request, *args, **kwargs)
-            
-            # Add deprecation headers
-            response['X-Deprecated'] = message
-            if use_instead:
-                response['X-Deprecated-Use'] = use_instead
-            
-            return response
-        return wrapper
-    return decorator
-
-from .models import SubscriptionPlan, Subscription, Payment, Refund
+from .models import Payment, Subscription, SubscriptionPlan
 from .serializers import (
-    SubscriptionPlanSerializer,
-    SubscriptionSerializer,
-    PaymentSerializer,
-    SubscribeSerializer,
-    CurrentPlanResponseSerializer,
-    SubscriptionStatusSerializer,
-    PaymentMethodSerializer,
     AutoRenewToggleSerializer,
-    PaymentHistoryItemSerializer,
     SubscriptionPlanPublicSerializer,
 )
 from .services import YooKassaService
+from .throttles import PaymentCreationThrottle  # [SECURITY] Rate limiting для платежей
 
 logger = logging.getLogger(__name__)
 
 
-@api_view(['GET'])
+# =====================================================================
+# Helpers (unified errors + safe plan/subscription access)
+# =====================================================================
+
+def _err(code: str, message: str, http_status: int):
+    """Единый формат ошибок для billing (чтобы фронт не гадал)."""
+    return Response({"error": {"code": code, "message": message}}, status=http_status)
+
+
+def _get_free_plan() -> SubscriptionPlan:
+    """
+    Получаем FREE план максимально надёжно.
+
+    SSOT = code, но поддерживаем legacy name на всякий случай.
+    """
+    try:
+        return SubscriptionPlan.objects.get(code="FREE", is_active=True)
+    except SubscriptionPlan.DoesNotExist:
+        try:
+            return SubscriptionPlan.objects.get(name="FREE", is_active=True)
+        except SubscriptionPlan.DoesNotExist as e:
+            raise RuntimeError(
+                "FREE plan не найден. Создай план в админке: code=FREE, price=0."
+            ) from e
+
+
+def _get_plan_by_code_or_legacy(plan_code: str) -> SubscriptionPlan:
+    """
+    Ищем план:
+    1) по code (новая логика)
+    2) fallback по legacy name (старые клиенты/старый фронт)
+    """
+    try:
+        return SubscriptionPlan.objects.get(code=plan_code, is_active=True)
+    except SubscriptionPlan.DoesNotExist:
+        try:
+            plan = SubscriptionPlan.objects.get(name=plan_code, is_active=True)
+            logger.warning(f"Plan found by legacy name='{plan_code}'. Prefer using code.")
+            return plan
+        except SubscriptionPlan.DoesNotExist as e:
+            raise e
+
+
+def _free_end_date() -> timezone.datetime:
+    """
+    Что писать в end_date для FREE подписки.
+
+    Важно:
+    - FREE по бизнес-логике "не истекает" (или истекает очень нескоро)
+    - но поле end_date нужно, чтобы:
+      - не ломались проверки is_expired()
+      - не было путаницы в админке
+      - не падали выборки/индексы/вьюхи
+    """
+    if hasattr(settings, "FREE_SUBSCRIPTION_END_DATE") and settings.FREE_SUBSCRIPTION_END_DATE:
+        return settings.FREE_SUBSCRIPTION_END_DATE
+    # fallback: 10 лет вперёд
+    return timezone.now() + timedelta(days=365 * 10)
+
+
+def _get_or_create_user_subscription(user) -> Subscription:
+    """
+    Гарантируем, что у пользователя есть Subscription.
+
+    Да, у тебя есть сигнал create_free_subscription в models.py,
+    но на практике безопаснее иметь "страховку" на уровне бизнес-логики:
+    - миграции/сигналы могли не отработать
+    - пользователь мог быть создан импортом/скриптом
+    """
+    free_plan = _get_free_plan()
+    sub, _ = Subscription.objects.get_or_create(
+        user=user,
+        defaults={
+            "plan": free_plan,
+            "start_date": timezone.now(),
+            "end_date": _free_end_date(),
+            "is_active": True,
+            "auto_renew": False,
+        },
+    )
+
+    # Если подписка есть, но по какой-то причине FREE и end_date "в прошлом" — вылечим
+    if sub.plan.code == "FREE" and sub.end_date and sub.end_date <= timezone.now():
+        sub.end_date = _free_end_date()
+        sub.is_active = True
+        sub.save(update_fields=["end_date", "is_active", "updated_at"])
+
+    return sub
+
+
+def _build_default_return_url(request) -> str:
+    """
+    Единый дефолтный return_url.
+
+    Приоритет:
+    1) settings.YOOKASSA_RETURN_URL (если задан)
+    2) собрать от текущего домена (fallback для dev)
+    """
+    if getattr(settings, "YOOKASSA_RETURN_URL", None):
+        return settings.YOOKASSA_RETURN_URL
+
+    base = request.build_absolute_uri("/")
+    return base.rstrip("/") + "/payment-success"
+
+
+def _validate_return_url(url: str | None, request) -> str:
+    """
+    [SECURITY FIX 2024-12] Валидация return_url для защиты от open redirect.
+
+    Атака: злоумышленник передаёт return_url=https://evil.com/phishing,
+    пользователь после оплаты попадает на фишинговый сайт.
+
+    Защита: проверяем домен URL против whitelist (ALLOWED_RETURN_URL_DOMAINS).
+
+    Args:
+        url: URL от клиента (может быть None)
+        request: Django request (для fallback)
+
+    Returns:
+        Безопасный return_url (либо переданный, либо default)
+    """
+    from urllib.parse import urlparse
+
+    if not url:
+        return _build_default_return_url(request)
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+
+        if not hostname:
+            logger.warning(f"[SECURITY] return_url без hostname: {url}")
+            return _build_default_return_url(request)
+
+        allowed_domains = getattr(settings, "ALLOWED_RETURN_URL_DOMAINS", ["eatfit24.ru", "localhost"])
+
+        # Проверяем точное совпадение или субдомен
+        is_allowed = any(
+            hostname == domain or hostname.endswith(f".{domain}")
+            for domain in allowed_domains
+        )
+
+        if not is_allowed:
+            logger.warning(
+                f"[SECURITY] return_url заблокирован (домен не в whitelist): {url}. "
+                f"Allowed: {allowed_domains}"
+            )
+            return _build_default_return_url(request)
+
+        return url
+
+    except Exception as e:
+        logger.error(f"[SECURITY] return_url parsing error: {url}, error: {e}")
+        return _build_default_return_url(request)
+
+
+# =====================================================================
+# Core: создание платежа (локально + в YooKassa)
+# =====================================================================
+
+def _create_subscription_payment_core(
+    *,
+    user,
+    plan_code: str,
+    return_url: str,
+    save_payment_method: bool,
+    description_suffix: str = "",
+) -> Tuple[Payment, str]:
+    """
+    Ядро: создаём локальный Payment + создаём платёж в YooKassa.
+
+    Возвращает: (Payment, confirmation_url)
+
+    Важно:
+    - сумма берётся из SubscriptionPlan.price (БД)
+    - return_url должен быть уже готовой строкой (core не строит URL, потому что нет request)
+    - подписка НЕ активируется здесь (это сделает webhook)
+    """
+    plan = _get_plan_by_code_or_legacy(plan_code)
+
+    if plan.price <= 0:
+        raise ValueError("Cannot create payment for FREE plan")
+
+    if not return_url:
+        raise ValueError("return_url is required")
+
+    with transaction.atomic():
+        subscription = _get_or_create_user_subscription(user)
+
+        payment = Payment.objects.create(
+            user=user,
+            subscription=subscription,
+            plan=plan,
+            amount=plan.price,
+            currency="RUB",
+            status="PENDING",
+            provider="YOOKASSA",
+            description=f"Подписка {plan.display_name}{description_suffix}",
+            save_payment_method=save_payment_method,
+            is_recurring=False,
+        )
+
+        yk = YooKassaService()
+        yk_payment = yk.create_payment(
+            amount=plan.price,
+            description=payment.description,
+            return_url=return_url,
+            save_payment_method=save_payment_method,
+            metadata={
+                "payment_id": str(payment.id),
+                "user_id": str(user.id),
+                "plan_code": plan.code,
+            },
+        )
+
+        payment.yookassa_payment_id = yk_payment["id"]
+        payment.save(update_fields=["yookassa_payment_id", "updated_at"])
+
+    return payment, yk_payment["confirmation_url"]
+
+
+# =====================================================================
+# Public endpoints
+# =====================================================================
+
+@api_view(["GET"])
 @permission_classes([AllowAny])
 def get_subscription_plans(request):
     """
     GET /api/v1/billing/plans/
-    Получение списка всех активных тарифных планов (публичный endpoint).
-
-    Response (200):
-        [
-            {
-                "code": "FREE",
-                "display_name": "Бесплатный",
-                "price": 0,
-                "duration_days": 0,
-                "daily_photo_limit": 3,
-                "history_days": 7,
-                "ai_recognition": true,
-                "advanced_stats": false,
-                "priority_support": false
-            },
-            {
-                "code": "PRO_MONTHLY",
-                "display_name": "PRO месяц",
-                "price": 299,
-                "duration_days": 30,
-                "daily_photo_limit": null,
-                "history_days": -1,
-                "ai_recognition": true,
-                "advanced_stats": true,
-                "priority_support": true
-            },
-            {
-                "code": "PRO_YEARLY",
-                "display_name": "PRO год",
-                "price": 2490,
-                "duration_days": 365,
-                "daily_photo_limit": null,
-                "history_days": -1,
-                "ai_recognition": true,
-                "advanced_stats": true,
-                "priority_support": true
-            }
-        ]
-
-    Доступ: AllowAny (публично, без авторизации)
+    Публичный список активных планов (кроме тестовых).
     """
-    # Получаем все активные планы (исключая тестовые)
-    plans = SubscriptionPlan.objects.filter(
-        is_active=True,
-        is_test=False
-    ).order_by('price')
-
+    plans = SubscriptionPlan.objects.filter(is_active=True, is_test=False).order_by("price")
     serializer = SubscriptionPlanPublicSerializer(plans, many=True)
-
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-@deprecated(
-    message="This endpoint is deprecated and will be removed in v2.0",
-    use_instead="/api/v1/billing/me/"
-)
-def get_current_plan(request):
-    """
-    GET /api/v1/billing/plan
-    
-    DEPRECATED: Use GET /api/v1/billing/me/ instead.
-    
-    Получение информации о текущем тарифном плане пользователя.
-    """
-    try:
-        # Получаем подписку пользователя
-        subscription = request.user.subscription
-    except Subscription.DoesNotExist:
-        return Response(
-            {
-                'error': {
-                    'code': 'NO_SUBSCRIPTION',
-                    'message': 'У вас нет активной подписки'
-                }
-            },
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    # Получаем все доступные активные планы (кроме FREE)
-    available_plans = SubscriptionPlan.objects.filter(
-        is_active=True
-    ).exclude(name='FREE')
-
-    response_data = {
-        'subscription': SubscriptionSerializer(subscription).data,
-        'available_plans': SubscriptionPlanSerializer(available_plans, many=True).data
-    }
-
-    return Response({
-        'status': 'success',
-        'data': response_data
-    })
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def subscribe(request):
-    """
-    POST /api/v1/billing/subscribe
-    Оформление новой подписки.
-    """
-    serializer = SubscribeSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-
-    plan_name = serializer.validated_data['plan']
-
-    try:
-        # Получаем план
-        plan = SubscriptionPlan.objects.get(name=plan_name, is_active=True)
-
-        # Создаём платёж с блокировкой подписки для предотвращения race condition
-        with transaction.atomic():
-            # Блокируем подписку пользователя для предотвращения параллельных платежей
-            current_subscription = Subscription.objects.select_for_update().get(user=request.user)
-
-            # Проверяем, что у пользователя нет активного платного плана
-            if current_subscription.plan.code in ['MONTHLY', 'YEARLY', 'PRO_MONTHLY', 'PRO_YEARLY'] and current_subscription.is_active:
-                # Разрешаем докупить время к текущему плану
-                if current_subscription.plan.code != plan_name:
-                    return Response(
-                        {
-                            'error': {
-                                'code': 'ACTIVE_SUBSCRIPTION',
-                                'message': f'У вас уже есть активная подписка "{current_subscription.plan.display_name}". Дождитесь её окончания или отмените автопродление.'
-                            }
-                        },
-                        status=status.HTTP_409_CONFLICT
-                    )
-            # Создаём запись платежа
-            payment = Payment.objects.create(
-                user=request.user,
-                subscription=current_subscription,
-                plan=plan,
-                amount=plan.price,
-                currency='RUB',
-                status='PENDING',
-                provider='YOOKASSA',
-                description=f'Подписка {plan.display_name}',
-                save_payment_method=True,  # Сохраняем способ оплаты для автопродления
-            )
-
-            # Создаём платёж в YooKassa
-            return_url = request.build_absolute_uri('/') + 'payment-success'
-
-            # Initialize YooKassa service (validates credentials)
-            yookassa_service = YooKassaService()
-
-            yookassa_payment = yookassa_service.create_payment(
-                amount=plan.price,
-                description=f'Подписка {plan.display_name}',
-                return_url=return_url,
-                save_payment_method=True,
-                metadata={
-                    'payment_id': str(payment.id),
-                    'user_id': str(request.user.id),
-                    'plan_name': plan_name,
-                }
-            )
-
-            # Обновляем payment_id от YooKassa
-            payment.yookassa_payment_id = yookassa_payment['id']
-            payment.save()
-
-            # SECURITY: Log payment creation
-            SecurityAuditLogger.log_payment_created(
-                user=request.user,
-                amount=float(plan.price),
-                plan=plan_name,
-                request=request
-            )
-
-        return Response({
-            'status': 'success',
-            'message': 'Платёж создан. Перейдите по ссылке для оплаты.',
-            'data': {
-                'payment_id': str(payment.id),
-                'amount': str(plan.price),
-                'confirmation_url': yookassa_payment['confirmation_url'],
-            }
-        }, status=status.HTTP_201_CREATED)
-
-    except SubscriptionPlan.DoesNotExist:
-        return Response(
-            {
-                'error': {
-                    'code': 'INVALID_PLAN',
-                    'message': f'Тарифный план "{plan_name}" не найден'
-                }
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    except Exception as e:
-        logger.error(f"Subscribe error: {str(e)}")
-        return Response(
-            {
-                'error': {
-                    'code': 'PAYMENT_ERROR',
-                    'message': 'Не удалось создать платёж. Попробуйте позже.'
-                }
-            },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@deprecated(
-    message="This endpoint is deprecated and will be removed in v2.0",
-    use_instead="/api/v1/billing/subscription/autorenew/"
-)
-def toggle_auto_renew(request):
-    """
-    POST /api/v1/billing/auto-renew/toggle
-    
-    DEPRECATED: Use POST /api/v1/billing/subscription/autorenew/ instead.
-    
-    Включение/отключение автопродления подписки.
-    """
-    try:
-        subscription = request.user.subscription
-
-        # Проверяем, что это не бесплатный план
-        if subscription.plan.code == 'FREE':
-            return Response(
-                {
-                    'error': {
-                        'code': 'NOT_AVAILABLE_FOR_FREE',
-                        'message': 'Автопродление недоступно для бесплатного плана'
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Проверяем, что есть сохранённый способ оплаты
-        if not subscription.yookassa_payment_method_id:
-            return Response(
-                {
-                    'error': {
-                        'code': 'NO_PAYMENT_METHOD',
-                        'message': 'Для автопродления необходим сохранённый способ оплаты. Оформите новую подписку.'
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Включаем автопродление - проверка валидности payment_method будет при следующем платеже
-        # Если payment_method станет невалидным, рекуррентный платеж не пройдет
-        # и webhook обработчик должен уведомить пользователя
-        subscription.auto_renew = not subscription.auto_renew
-        subscription.save()
-
-        message = 'Автопродление включено' if subscription.auto_renew else 'Автопродление отключено'
-
-        return Response({
-            'status': 'success',
-            'message': message,
-            'data': {
-                'auto_renew': subscription.auto_renew
-            }
-        })
-
-    except Subscription.DoesNotExist:
-        return Response(
-            {
-                'error': {
-                    'code': 'NO_SUBSCRIPTION',
-                    'message': 'У вас нет активной подписки'
-                }
-            },
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_payment_history(request):
-    """
-    GET /api/v1/billing/payments
-    Получение истории платежей пользователя.
-    """
-    payments = Payment.objects.filter(user=request.user).select_related('plan').order_by('-created_at')
-
-    # Пагинация
-    paginator = PageNumberPagination()
-    paginator.page_size = request.query_params.get('page_size', 20)
-    paginated_payments = paginator.paginate_queryset(payments, request)
-
-    serializer = PaymentSerializer(paginated_payments, many=True)
-
-    return Response({
-        'status': 'success',
-        'data': {
-            'count': payments.count(),
-            'next': paginator.get_next_link(),
-            'previous': paginator.get_previous_link(),
-            'results': serializer.data
-        }
-    })
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def create_payment(request):
-    """
-    POST /api/v1/billing/create-payment/
-    Универсальное создание платежа для любого тарифного плана.
-
-    ВАЖНО: Сумма платежа берется с бэкенда из SubscriptionPlan.price,
-    а НЕ из фронтенда. Фронтенд отправляет только plan_code.
-
-    Body:
-        {
-            "plan_code": "PRO_MONTHLY" | "PRO_YEARLY",  // Системный код тарифа
-            "return_url": "https://example.com/success"  // опционально
-        }
-
-    Response (201):
-        {
-            "payment_id": "uuid",
-            "yookassa_payment_id": "...",
-            "confirmation_url": "https://..."
-        }
-
-    Errors:
-        - 400: План не найден, невалиден или FREE
-        - 502: Ошибка создания платежа в YooKassa
-
-    Примеры plan_code:
-        - "PRO_MONTHLY": Месячная подписка PRO (цена берется из БД)
-        - "PRO_YEARLY": Годовая подписка PRO (цена берется из БД)
-        - "MONTHLY", "YEARLY": Legacy коды (поддерживаются для обратной совместимости)
-    """
-    from .services import create_subscription_payment
-
-    # Валидация входных данных
-    plan_code = request.data.get('plan_code')
-    if not plan_code:
-        return Response(
-            {
-                'error': {
-                    'code': 'MISSING_PLAN_CODE',
-                    'message': 'Укажите plan_code в теле запроса'
-                }
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Получаем кастомный return_url из body или используем дефолтный
-    return_url = request.data.get('return_url')
-
-    try:
-        # Создаем платеж
-        payment, confirmation_url = create_subscription_payment(
-            user=request.user,
-            plan_code=plan_code,
-            return_url=return_url
-        )
-
-        # SECURITY: Log payment creation
-        SecurityAuditLogger.log_payment_created(
-            user=request.user,
-            amount=float(payment.amount),
-            plan=plan_code,
-            request=request
-        )
-
-        return Response(
-            {
-                'payment_id': str(payment.id),
-                'yookassa_payment_id': payment.yookassa_payment_id,
-                'confirmation_url': confirmation_url,
-            },
-            status=status.HTTP_201_CREATED
-        )
-
-    except ValueError as e:
-        return Response(
-            {
-                'error': {
-                    'code': 'INVALID_PLAN',
-                    'message': str(e)
-                }
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    except Exception as e:
-        logger.error(f"Create payment error: {str(e)}", exc_info=True)
-        return Response(
-            {
-                'error': {
-                    'code': 'PAYMENT_CREATE_FAILED',
-                    'message': 'Не удалось создать платеж. Попробуйте позже.'
-                }
-            },
-            status=status.HTTP_502_BAD_GATEWAY
-        )
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def bind_card_start(request):
-    """
-    POST /api/v1/billing/bind-card/start/
-    Запуск процесса привязки карты без оплаты подписки.
-
-    Создаёт платёж на 1₽ для сохранения карты для автопродления.
-    Пользователь берётся из контекста авторизации.
-
-    Body (опционально):
-        {
-            "return_url": "https://example.com/success"  // Кастомный URL возврата
-        }
-
-    Response (201):
-        {
-            "confirmation_url": "https://...",
-            "payment_id": "uuid"
-        }
-
-    Errors:
-        - 502: Ошибка создания платежа в YooKassa
-    """
-    from .models import Payment
-    from django.conf import settings
-
-    # Получаем return_url из body или используем дефолтный
-    return_url = request.data.get('return_url') or settings.YOOKASSA_RETURN_URL
-
-    try:
-        # Инициализируем YooKassa сервис
-        yookassa_service = YooKassaService()
-
-        # Создаём платёж на 1₽ для привязки карты
-        payment_result = yookassa_service.create_payment(
-            amount=Decimal('1.00'),
-            description='Привязка карты для автопродления PRO',
-            return_url=return_url,
-            save_payment_method=True,
-            metadata={
-                'user_id': str(request.user.id),
-                'purpose': 'card_binding',
-            }
-        )
-
-        # Сохраняем платёж в БД
-        payment = Payment.objects.create(
-            user=request.user,
-            subscription=request.user.subscription,
-            amount=Decimal('1.00'),
-            currency='RUB',
-            status='PENDING',
-            yookassa_payment_id=payment_result['id'],
-            description='Привязка карты для автопродления PRO',
-            save_payment_method=True,
-            is_recurring=False,
-        )
-
-        # SECURITY: Log card binding attempt
-        SecurityAuditLogger.log_payment_created(
-            user=request.user,
-            amount=1.0,
-            plan='card_binding',
-            request=request
-        )
-
-        logger.info(
-            f"Card binding payment created for user {request.user.id}: "
-            f"payment_id={payment.id}, yookassa_id={payment_result['id']}"
-        )
-
-        return Response(
-            {
-                'confirmation_url': payment_result['confirmation_url'],
-                'payment_id': str(payment.id),
-            },
-            status=status.HTTP_201_CREATED
-        )
-
-    except Exception as e:
-        logger.error(f"Card binding payment creation error: {str(e)}", exc_info=True)
-        return Response(
-            {
-                'detail': 'cannot_create_binding_payment',
-                'error': {
-                    'code': 'BINDING_PAYMENT_CREATE_FAILED',
-                    'message': 'Не удалось создать платёж для привязки карты. Попробуйте позже.'
-                }
-            },
-            status=status.HTTP_502_BAD_GATEWAY
-        )
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def create_test_live_payment(request):
-    """
-    POST /api/v1/billing/create-test-live-payment/
-    Создание ТЕСТОВОГО платежа за 1₽ на боевом магазине YooKassa.
-
-    ДОСТУП: Только для владельца/админов (проверка по TELEGRAM_ADMINS).
-
-    Используется для проверки:
-    - Корректности настройки live credentials
-    - Работы webhooks на боевом магазине
-    - Полного цикла: оплата → webhook → обновление БД → отображение в UI
-
-    Body (опционально):
-        {
-            "return_url": "https://example.com/success"  // Кастомный URL возврата
-        }
-
-    Response (201):
-        {
-            "payment_id": "uuid",
-            "yookassa_payment_id": "...",
-            "confirmation_url": "https://...",
-            "test_mode": true,
-            "amount": "1.00"
-        }
-
-    Errors:
-        - 403: Доступ запрещён (пользователь не является админом)
-        - 404: Тестовый план не найден (запустите миграции)
-        - 502: Ошибка создания платежа в YooKassa
-    """
-    from .services import create_subscription_payment
-    from .models import SubscriptionPlan
-    from django.conf import settings
-
-    # SECURITY: Проверка прав доступа (только админы)
-    telegram_user = getattr(request.user, 'telegram_profile', None)
-    if not telegram_user:
-        return Response(
-            {
-                'error': {
-                    'code': 'FORBIDDEN',
-                    'message': 'Доступ запрещён: пользователь не привязан к Telegram'
-                }
-            },
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', set())
-    is_admin = telegram_user.telegram_id in telegram_admins
-
-    if not is_admin:
-        logger.warning(
-            f"Unauthorized test payment attempt by user {request.user.id} "
-            f"(telegram_id: {telegram_user.telegram_id})"
-        )
-        return Response(
-            {
-                'error': {
-                    'code': 'FORBIDDEN',
-                    'message': 'Доступ запрещён: только для админов'
-                }
-            },
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    # Получаем тестовый план
-    try:
-        test_plan = SubscriptionPlan.objects.get(name='TEST_LIVE', is_test=True)
-    except SubscriptionPlan.DoesNotExist:
-        logger.error("Test plan TEST_LIVE not found. Run migrations first.")
-        return Response(
-            {
-                'error': {
-                    'code': 'TEST_PLAN_NOT_FOUND',
-                    'message': 'Тестовый план не найден. Запустите миграции: python manage.py migrate billing'
-                }
-            },
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    # Получаем кастомный return_url из body или используем дефолтный
-    return_url = request.data.get('return_url')
-
-    try:
-        # Создаем платеж через тестовый план
-        # ВАЖНО: save_payment_method=False, т.к. боевой магазин может не поддерживать рекуррентные платежи
-        payment, confirmation_url = create_subscription_payment(
-            user=request.user,
-            plan_code='TEST_LIVE',
-            return_url=return_url,
-            save_payment_method=False  # Не сохраняем карту для тестового платежа
-        )
-
-        # SECURITY: Log test payment creation
-        SecurityAuditLogger.log_payment_created(
-            user=request.user,
-            amount=float(payment.amount),
-            plan='TEST_LIVE (admin test)',
-            request=request
-        )
-
-        logger.info(
-            f"Test live payment created by admin {request.user.id} "
-            f"(telegram_id: {telegram_user.telegram_id}). "
-            f"Payment ID: {payment.id}, YooKassa Mode: {settings.YOOKASSA_MODE}"
-        )
-
-        return Response(
-            {
-                'payment_id': str(payment.id),
-                'yookassa_payment_id': payment.yookassa_payment_id,
-                'confirmation_url': confirmation_url,
-                'test_mode': True,
-                'amount': str(payment.amount),
-                'yookassa_mode': settings.YOOKASSA_MODE,
-            },
-            status=status.HTTP_201_CREATED
-        )
-
-    except ValueError as e:
-        return Response(
-            {
-                'error': {
-                    'code': 'INVALID_PLAN',
-                    'message': str(e)
-                }
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    except Exception as e:
-        logger.error(f"Test payment creation error: {str(e)}", exc_info=True)
-        return Response(
-            {
-                'error': {
-                    'code': 'PAYMENT_CREATE_FAILED',
-                    'message': f'Не удалось создать тестовый платёж: {str(e)}'
-                }
-            },
-            status=status.HTTP_502_BAD_GATEWAY
-        )
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def create_plus_payment(request):
-    """
-    POST /api/v1/billing/create-plus-payment/
-    Создание платежа для подписки Pro (месячный план MONTHLY).
-
-    Body (опционально):
-        {
-            "return_url": "https://example.com/success"  // Кастомный URL возврата
-        }
-
-    Response:
-        {
-            "payment_id": "uuid",
-            "yookassa_payment_id": "...",
-            "confirmation_url": "https://..."
-        }
-    """
-    from .services import create_monthly_subscription_payment
-
-    # Получаем кастомный return_url из body или используем дефолтный
-    return_url = request.data.get('return_url')
-
-    try:
-        # Создаем платеж
-        payment, confirmation_url = create_monthly_subscription_payment(
-            user=request.user,
-            return_url=return_url
-        )
-
-        # SECURITY: Log payment creation
-        SecurityAuditLogger.log_payment_created(
-            user=request.user,
-            amount=float(payment.amount),
-            plan='MONTHLY',
-            request=request
-        )
-
-        return Response(
-            {
-                'payment_id': str(payment.id),
-                'yookassa_payment_id': payment.yookassa_payment_id,
-                'confirmation_url': confirmation_url,
-            },
-            status=status.HTTP_201_CREATED
-        )
-
-    except ValueError as e:
-        return Response(
-            {
-                'error': {
-                    'code': 'PAYMENT_CREATE_FAILED',
-                    'message': str(e)
-                }
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    except Exception as e:
-        logger.error(f"Create plus payment error: {str(e)}", exc_info=True)
-        return Response(
-            {
-                'error': {
-                    'code': 'PAYMENT_CREATE_FAILED',
-                    'message': 'Не удалось создать платеж. Попробуйте позже.'
-                }
-            },
-            status=status.HTTP_502_BAD_GATEWAY
-        )
-
-
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_subscription_status(request):
     """
     GET /api/v1/billing/me/
-    Получение текущего статуса подписки пользователя с лимитами и использованием.
-
-    Response:
-        {
-            "plan_code": "FREE" | "MONTHLY" | "YEARLY",
-            "plan_name": "Бесплатный" | "Pro Месячный" | "Pro Годовой",
-            "expires_at": "2024-12-31T23:59:59Z" или null для FREE,
-            "is_active": true/false,
-            "daily_photo_limit": 3 или null (безлимит),
-            "used_today": 2,
-            "remaining_today": 1 или null (безлимит),
-            "test_live_payment_available": true/false  // Только для админов в prod режиме
-        }
+    Короткий статус для UI (план, лимиты, использовано сегодня).
     """
     from .services import get_effective_plan_for_user
     from .usage import DailyUsage
 
-    # Получаем действующий план пользователя
     plan = get_effective_plan_for_user(request.user)
 
-    # Получаем использование на сегодня
     usage = DailyUsage.objects.get_today(request.user)
     used_today = usage.photo_ai_requests
 
-    # Вычисляем остаток
     if plan.daily_photo_limit is not None:
         remaining_today = max(0, plan.daily_photo_limit - used_today)
     else:
         remaining_today = None
 
-    # Получаем информацию о подписке (если есть)
+    # Если подписки нет — считаем, что FREE активен
     try:
-        subscription = request.user.subscription
-        is_active = subscription.is_active and not subscription.is_expired()
-        expires_at = subscription.end_date.isoformat() if subscription.plan.code != 'FREE' else None
+        sub = request.user.subscription
+        is_active = sub.is_active and (not sub.is_expired())
+        expires_at = None if plan.code == "FREE" else (sub.end_date.isoformat() if sub.end_date else None)
     except Subscription.DoesNotExist:
-        is_active = True  # FREE план всегда активен
+        is_active = True
         expires_at = None
 
-    # Проверяем, доступна ли кнопка тестового платежа (только для админов в prod режиме)
-    from django.conf import settings
-    test_live_payment_available = False
+    # Кнопка тестового платежа: только админы и только в prod режиме
+    telegram_user = getattr(request.user, "telegram_profile", None)
+    telegram_admins = getattr(settings, "TELEGRAM_ADMINS", set())
+    is_admin = bool(telegram_user and telegram_user.telegram_id in telegram_admins)
+    is_prod_mode = getattr(settings, "YOOKASSA_MODE", "") == "prod"
+    test_live_payment_available = is_admin and is_prod_mode
 
-    telegram_user = getattr(request.user, 'telegram_profile', None)
-    if telegram_user:
-        telegram_admins = getattr(settings, 'TELEGRAM_ADMINS', set())
-        is_admin = telegram_user.telegram_id in telegram_admins
-        is_prod_mode = settings.YOOKASSA_MODE == 'prod'
-        test_live_payment_available = is_admin and is_prod_mode
-
-        # DEBUG logging
-        logger.info(
-            f"[TEST_PAYMENT_BUTTON] user_id={request.user.id}, "
-            f"telegram_id={telegram_user.telegram_id}, "
-            f"telegram_admins={telegram_admins}, "
-            f"is_admin={is_admin}, "
-            f"yookassa_mode={settings.YOOKASSA_MODE}, "
-            f"is_prod_mode={is_prod_mode}, "
-            f"test_live_payment_available={test_live_payment_available}"
-        )
-
-    response_data = {
-        'plan_code': plan.code,
-        'plan_name': plan.display_name,
-        'expires_at': expires_at,
-        'is_active': is_active,
-        'daily_photo_limit': plan.daily_photo_limit,
-        'used_today': used_today,
-        'remaining_today': remaining_today,
-        'test_live_payment_available': test_live_payment_available,
-    }
-
-    return Response(response_data)
+    return Response(
+        {
+            "plan_code": plan.code,
+            "plan_name": plan.display_name,
+            "expires_at": expires_at,
+            "is_active": is_active,
+            "daily_photo_limit": plan.daily_photo_limit,
+            "used_today": used_today,
+            "remaining_today": remaining_today,
+            "test_live_payment_available": test_live_payment_available,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
-# ============================================================
-# NEW ENDPOINTS: Settings screen API
-# ============================================================
+# =====================================================================
+# Settings screen endpoints
+# =====================================================================
 
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_subscription_details(request):
     """
     GET /api/v1/billing/subscription/
-    Получение полной информации о подписке для экрана "Настройки".
-
-    Response:
-        {
-            "plan": "free" | "pro",
-            "plan_display": "Free" | "PRO",
-            "expires_at": "2025-12-26" или null,
-            "is_active": true/false,
-            "autorenew_available": true/false,
-            "autorenew_enabled": true/false,
-            "card_bound": true/false,
-            "payment_method": {
-                "is_attached": true/false,
-                "card_mask": "•••• 1234" или null,
-                "card_brand": "Visa" или null
-            }
-        }
+    Полная карточка подписки для настроек.
     """
     try:
-        subscription = request.user.subscription
+        sub = request.user.subscription
     except Subscription.DoesNotExist:
-        # Если подписки нет, возвращаем FREE план
-        return Response({
-            'plan': 'free',
-            'plan_display': 'Free',
-            'expires_at': None,
-            'is_active': True,
-            'autorenew_available': False,
-            'autorenew_enabled': False,
-            'card_bound': False,
-            'payment_method': {
-                'is_attached': False,
-                'card_mask': None,
-                'card_brand': None
-            }
-        })
+        # Нет подписки — возвращаем "как FREE"
+        return Response(
+            {
+                "plan": "free",
+                "plan_display": "Free",
+                "expires_at": None,
+                "is_active": True,
+                "autorenew_available": False,
+                "autorenew_enabled": False,
+                "card_bound": False,
+                "payment_method": {"is_attached": False, "card_mask": None, "card_brand": None},
+            },
+            status=status.HTTP_200_OK,
+        )
 
-    # Определяем plan (free или pro)
-    plan_code = subscription.plan.code
-    if plan_code == 'FREE':
-        plan = 'free'
-        plan_display = 'Free'
-    else:
-        plan = 'pro'
-        plan_display = 'PRO'
+    is_free = sub.plan.code == "FREE"
+    is_active = sub.is_active and (not sub.is_expired())
 
-    # Определяем expires_at
-    if subscription.plan.code == 'FREE':
-        expires_at = None
-    else:
-        expires_at = subscription.end_date.date() if subscription.end_date else None
+    # В UI FREE не показываем дату окончания
+    expires_at = None if is_free else (sub.end_date.date().isoformat() if sub.end_date else None)
 
-    # Проверяем активность
-    is_active = subscription.is_active and not subscription.is_expired()
+    payment_method_attached = bool(sub.yookassa_payment_method_id)
 
-    # Автопродление доступно, если есть payment_method
-    autorenew_available = bool(subscription.yookassa_payment_method_id)
-
-    # Автопродление включено
-    autorenew_enabled = subscription.auto_renew
-
-    # Информация о способе оплаты
-    payment_method = {
-        'is_attached': bool(subscription.yookassa_payment_method_id),
-        'card_mask': subscription.card_mask,
-        'card_brand': subscription.card_brand
-    }
-
-    response_data = {
-        'plan': plan,
-        'plan_display': plan_display,
-        'expires_at': expires_at,
-        'is_active': is_active,
-        'autorenew_available': autorenew_available,
-        'autorenew_enabled': autorenew_enabled,
-        'card_bound': bool(subscription.yookassa_payment_method_id),  # Explicit card_bound flag
-        'payment_method': payment_method
-    }
-
-    return Response(response_data)
+    return Response(
+        {
+            "plan": "free" if is_free else "pro",
+            "plan_display": "Free" if is_free else "PRO",
+            "expires_at": expires_at,
+            "is_active": is_active,
+            "autorenew_available": (payment_method_attached and not is_free),
+            "autorenew_enabled": (bool(sub.auto_renew) if not is_free else False),
+            "card_bound": payment_method_attached,
+            "payment_method": {
+                "is_attached": payment_method_attached,
+                "card_mask": sub.card_mask,
+                "card_brand": sub.card_brand,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def set_auto_renew(request):
     """
     POST /api/v1/billing/subscription/autorenew/
-    Включение/отключение автопродления.
+    Body: { "enabled": true|false }
 
-    Request Body:
-        {
-            "enabled": true | false
-        }
-
-    Response:
-        Возвращает тот же формат, что и GET /billing/subscription/
+    Важно:
+    - только для платных планов
+    - если включаем — должна быть привязана карта (payment_method)
     """
     serializer = AutoRenewToggleSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-
-    enabled = serializer.validated_data['enabled']
+    enabled = serializer.validated_data["enabled"]
 
     try:
-        subscription = request.user.subscription
-
-        # Проверяем, что это не бесплатный план
-        if subscription.plan.code == 'FREE':
-            return Response(
-                {
-                    'error': {
-                        'code': 'NOT_AVAILABLE_FOR_FREE',
-                        'message': 'Автопродление недоступно для бесплатного плана'
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Если пытаемся включить, проверяем наличие payment_method
-        if enabled and not subscription.yookassa_payment_method_id:
-            return Response(
-                {
-                    'error': {
-                        'code': 'payment_method_required',
-                        'message': 'Для автопродления необходима привязанная карта. Оформите подписку с сохранением карты.'
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Обновляем флаг
-        subscription.auto_renew = enabled
-        subscription.save()
-
-        # Возвращаем обновленные данные подписки
-        return get_subscription_details(request)
-
+        sub = request.user.subscription
     except Subscription.DoesNotExist:
-        return Response(
-            {
-                'error': {
-                    'code': 'NO_SUBSCRIPTION',
-                    'message': 'У вас нет активной подписки'
-                }
-            },
-            status=status.HTTP_404_NOT_FOUND
+        return _err("NO_SUBSCRIPTION", "У вас нет подписки", status.HTTP_404_NOT_FOUND)
+
+    if sub.plan.code == "FREE":
+        return _err("NOT_AVAILABLE_FOR_FREE", "Автопродление недоступно для FREE", status.HTTP_400_BAD_REQUEST)
+
+    if enabled and not sub.yookassa_payment_method_id:
+        return _err(
+            "payment_method_required",
+            "Для автопродления нужна привязанная карта. Оформите подписку с сохранением карты.",
+            status.HTTP_400_BAD_REQUEST,
         )
 
+    sub.auto_renew = enabled
+    sub.save(update_fields=["auto_renew", "updated_at"])
 
-@api_view(['GET'])
+    return get_subscription_details(request)
+
+
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_payment_method_details(request):
     """
     GET /api/v1/billing/payment-method/
-    Получение информации о привязанном способе оплаты.
-
-    Response:
-        {
-            "is_attached": true/false,
-            "card_mask": "•••• 1234" или null,
-            "card_brand": "Visa" или null
-        }
     """
     try:
-        subscription = request.user.subscription
-
-        response_data = {
-            'is_attached': bool(subscription.yookassa_payment_method_id),
-            'card_mask': subscription.card_mask,
-            'card_brand': subscription.card_brand
-        }
-
-        return Response(response_data)
-
+        sub = request.user.subscription
     except Subscription.DoesNotExist:
-        # Если подписки нет, возвращаем пустые данные
-        return Response({
-            'is_attached': False,
-            'card_mask': None,
-            'card_brand': None
-        })
+        return Response(
+            {"is_attached": False, "card_mask": None, "card_brand": None},
+            status=status.HTTP_200_OK,
+        )
+
+    return Response(
+        {
+            "is_attached": bool(sub.yookassa_payment_method_id),
+            "card_mask": sub.card_mask,
+            "card_brand": sub.card_brand,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_payments_history(request):
     """
     GET /api/v1/billing/payments/
-    Получение истории платежей пользователя.
+    Query: ?limit=10
 
-    Query parameters:
-        - limit: int (default: 10) - количество платежей
-
-    Response:
-        {
-            "results": [
-                {
-                    "id": "uuid",
-                    "amount": 299,
-                    "currency": "RUB",
-                    "status": "succeeded",
-                    "paid_at": "2025-02-10T12:34:56Z",
-                    "description": "PRO месяц"
-                },
-                ...
-            ]
-        }
+    История платежей (простая, без пагинации страницами).
     """
-    # Получаем limit из query параметров
-    limit = request.query_params.get('limit', 10)
+    limit_raw = request.query_params.get("limit", 10)
     try:
-        limit = int(limit)
-        if limit < 1:
-            limit = 10
-        if limit > 100:
-            limit = 100
-    except (ValueError, TypeError):
+        limit = int(limit_raw)
+        limit = max(1, min(limit, 100))
+    except (TypeError, ValueError):
         limit = 10
 
-    # Получаем платежи пользователя
-    payments = Payment.objects.filter(
-        user=request.user
-    ).order_by('-created_at')[:limit]
+    payments = Payment.objects.filter(user=request.user).order_by("-created_at")[:limit]
 
-    # Формируем результат
+    status_map = {
+        "PENDING": "pending",
+        "WAITING_FOR_CAPTURE": "pending",
+        "SUCCEEDED": "succeeded",
+        "CANCELED": "canceled",
+        "FAILED": "failed",
+        "REFUNDED": "refunded",
+    }
+
     results = []
-    for payment in payments:
-        # Маппинг статусов в lowercase для фронта
-        status_map = {
-            'PENDING': 'pending',
-            'WAITING_FOR_CAPTURE': 'pending',
-            'SUCCEEDED': 'succeeded',
-            'CANCELED': 'canceled',
-            'FAILED': 'failed',
-            'REFUNDED': 'refunded',
-        }
+    for p in payments:
+        results.append(
+            {
+                "id": str(p.id),
+                "amount": float(p.amount),
+                "currency": p.currency,
+                "status": status_map.get(p.status, str(p.status).lower()),
+                "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+                "description": p.description,
+            }
+        )
 
-        results.append({
-            'id': str(payment.id),
-            'amount': float(payment.amount),
-            'currency': payment.currency,
-            'status': status_map.get(payment.status, payment.status.lower()),
-            'paid_at': payment.paid_at.isoformat() if payment.paid_at else None,
-            'description': payment.description
-        })
+    return Response({"results": results}, status=status.HTTP_200_OK)
 
-    return Response({
-        'results': results
-    })
+
+# =====================================================================
+# Payments endpoints
+# =====================================================================
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
+def create_payment(request):
+    """
+    POST /api/v1/billing/create-payment/
+    Body: { "plan_code": "...", "return_url": "..."? }
+
+    Универсальная точка создания платежа.
+    """
+    plan_code = request.data.get("plan_code")
+    if not plan_code:
+        return _err("MISSING_PLAN_CODE", "Укажите plan_code в теле запроса", status.HTTP_400_BAD_REQUEST)
+
+    return_url = _validate_return_url(request.data.get("return_url"), request)
+
+    try:
+        payment, confirmation_url = _create_subscription_payment_core(
+            user=request.user,
+            plan_code=str(plan_code),
+            return_url=return_url,
+            save_payment_method=True,
+        )
+
+        SecurityAuditLogger.log_payment_created(
+            user=request.user,
+            amount=float(payment.amount),
+            plan=str(plan_code),
+            request=request,
+        )
+
+        return Response(
+            {
+                "payment_id": str(payment.id),
+                "yookassa_payment_id": payment.yookassa_payment_id,
+                "confirmation_url": confirmation_url,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    except SubscriptionPlan.DoesNotExist:
+        return _err("INVALID_PLAN", f"Plan '{plan_code}' not found or inactive", status.HTTP_400_BAD_REQUEST)
+    except ValueError as e:
+        return _err("INVALID_PLAN", str(e), status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Create payment error: {e}", exc_info=True)
+        return _err("PAYMENT_CREATE_FAILED", "Не удалось создать платеж. Попробуйте позже.", status.HTTP_502_BAD_GATEWAY)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
+def bind_card_start(request):
+    """
+    POST /api/v1/billing/bind-card/start/
+    Платёж на 1₽, чтобы сохранить карту для будущих рекуррентных платежей.
+
+    Важно:
+    - Это НЕ подписка. Это "технический" платёж, чтобы получить payment_method_id.
+    - Дальше webhook должен сохранить payment_method_id в Subscription.
+    """
+    return_url = _validate_return_url(request.data.get("return_url"), request)
+
+    try:
+        subscription = _get_or_create_user_subscription(request.user)
+
+        yk = YooKassaService()
+        yk_payment = yk.create_payment(
+            amount=Decimal("1.00"),
+            description="Привязка карты для автопродления PRO",
+            return_url=return_url,
+            save_payment_method=True,
+            metadata={"user_id": str(request.user.id), "purpose": "card_binding"},
+        )
+
+        payment = Payment.objects.create(
+            user=request.user,
+            subscription=subscription,
+            amount=Decimal("1.00"),
+            currency="RUB",
+            status="PENDING",
+            provider="YOOKASSA",
+            description="Привязка карты для автопродления PRO",
+            yookassa_payment_id=yk_payment["id"],
+            save_payment_method=True,
+            is_recurring=False,
+        )
+
+        SecurityAuditLogger.log_payment_created(
+            user=request.user,
+            amount=1.0,
+            plan="card_binding",
+            request=request,
+        )
+
+        return Response(
+            {"confirmation_url": yk_payment["confirmation_url"], "payment_id": str(payment.id)},
+            status=status.HTTP_201_CREATED,
+        )
+
+    except Exception as e:
+        logger.error(f"Card binding payment creation error: {e}", exc_info=True)
+        return _err(
+            "BINDING_PAYMENT_CREATE_FAILED",
+            "Не удалось создать платёж для привязки карты. Попробуйте позже.",
+            status.HTTP_502_BAD_GATEWAY,
+        )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour (admin-only, но throttle всё равно)
+def create_test_live_payment(request):
+    """
+    POST /api/v1/billing/create-test-live-payment/
+    Тестовый платеж на 1₽ на боевом магазине (доступ только админам).
+
+    Условия доступа:
+    - пользователь привязан к Telegram (request.user.telegram_profile)
+    - telegram_id в settings.TELEGRAM_ADMINS
+    - settings.YOOKASSA_MODE == 'prod'
+    """
+    telegram_user = getattr(request.user, "telegram_profile", None)
+    if not telegram_user:
+        return _err("FORBIDDEN", "Доступ запрещён: пользователь не привязан к Telegram", status.HTTP_403_FORBIDDEN)
+
+    telegram_admins = getattr(settings, "TELEGRAM_ADMINS", set())
+    if telegram_user.telegram_id not in telegram_admins:
+        return _err("FORBIDDEN", "Доступ запрещён: только для админов", status.HTTP_403_FORBIDDEN)
+
+    if getattr(settings, "YOOKASSA_MODE", "") != "prod":
+        return _err("FORBIDDEN", "Доступно только в prod режиме", status.HTTP_403_FORBIDDEN)
+
+    return_url = _validate_return_url(request.data.get("return_url"), request)
+
+    # План TEST_LIVE должен быть создан в админке (code=TEST_LIVE, is_test=True)
+    try:
+        test_plan = SubscriptionPlan.objects.get(code="TEST_LIVE", is_test=True, is_active=True)
+    except SubscriptionPlan.DoesNotExist:
+        return _err(
+            "TEST_PLAN_NOT_FOUND",
+            "Тестовый план TEST_LIVE не найден. Создайте plan: code=TEST_LIVE, is_test=True.",
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        subscription = _get_or_create_user_subscription(request.user)
+
+        yk = YooKassaService()
+        yk_payment = yk.create_payment(
+            amount=test_plan.price,
+            description=f"TEST_LIVE payment by admin {request.user.id}",
+            return_url=return_url,
+            save_payment_method=False,
+            metadata={"user_id": str(request.user.id), "purpose": "test_live"},
+        )
+
+        payment = Payment.objects.create(
+            user=request.user,
+            subscription=subscription,
+            plan=test_plan,
+            amount=test_plan.price,
+            currency="RUB",
+            status="PENDING",
+            provider="YOOKASSA",
+            description="TEST_LIVE payment",
+            yookassa_payment_id=yk_payment["id"],
+            save_payment_method=False,
+            is_recurring=False,
+        )
+
+        SecurityAuditLogger.log_payment_created(
+            user=request.user,
+            amount=float(payment.amount),
+            plan="TEST_LIVE (admin test)",
+            request=request,
+        )
+
+        return Response(
+            {
+                "payment_id": str(payment.id),
+                "yookassa_payment_id": payment.yookassa_payment_id,
+                "confirmation_url": yk_payment["confirmation_url"],
+                "test_mode": True,
+                "amount": str(payment.amount),
+                "yookassa_mode": getattr(settings, "YOOKASSA_MODE", ""),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    except Exception as e:
+        logger.error(f"Test payment creation error: {e}", exc_info=True)
+        return _err("PAYMENT_CREATE_FAILED", "Не удалось создать тестовый платёж.", status.HTTP_502_BAD_GATEWAY)

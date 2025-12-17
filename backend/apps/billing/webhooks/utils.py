@@ -1,60 +1,91 @@
 """
-Utility functions for YooKassa webhooks.
+Утилиты для webhook YooKassa.
+
+Задачи этого файла:
+1) IP allowlist (разрешаем webhook только с IP YooKassa)
+2) безопасное извлечение IP из Django request (если нужно отдельно)
+3) маленькие helper'ы без бизнес-логики
+
+Почему это важно:
+- webhook — публичная точка входа.
+- без IP allowlist любой сможет постучаться и пытаться подделать события.
+- allowlist не даёт 100% криптографической защиты, но это сильный базовый слой.
 """
 
+from __future__ import annotations
+
 import ipaddress
-import logging
+from typing import Optional
 
-from django.conf import settings
+from django.http import HttpRequest
 
-logger = logging.getLogger(__name__)
-
-# YooKassa official IP addresses for webhook notifications
+# ---------------------------------------------------------------------
+# YooKassa IP ranges
+# ---------------------------------------------------------------------
+# Официальные диапазоны IP YooKassa периодически могут меняться.
+# Если YooKassa перестала доставлять webhook:
+# - проверь актуальность диапазонов на стороне YooKassa
+# - обнови список, перезапусти backend
+#
+# Важно: мы храним как строки, потом парсим в ip_network.
 YOOKASSA_IP_RANGES = [
-    '185.71.76.0/27',
-    '185.71.77.0/27',
-    '77.75.153.0/25',
-    '77.75.154.128/25',
-    '2a02:5180::/32',
+    # IPv4
+    "185.71.76.0/27",
+    "185.71.77.0/27",
+    "77.75.153.0/25",
+    "77.75.156.11/32",
+    "77.75.156.35/32",
+    "77.75.154.128/25",
+    "2a02:5180::/32",  # IPv6 (одним блоком; оставлено как есть)
 ]
 
 
-def is_ip_allowed(client_ip: str) -> bool:
-    """
-    Check if client IP is in YooKassa whitelist.
+# ---------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------
 
-    Args:
-        client_ip: IP address string
-
-    Returns:
-        bool: True if IP is allowed, False otherwise
+def is_ip_allowed(ip: Optional[str]) -> bool:
     """
-    # Allow localhost for development
-    if getattr(settings, 'DEBUG', False) and client_ip in ['127.0.0.1', 'localhost', '::1']:
-        return True
+    Проверяет, что IP клиента входит в разрешённые диапазоны YooKassa.
+
+    Возвращает:
+    - True: если IP валиден и попадает в хотя бы один диапазон
+    - False: если IP отсутствует/невалиден/не в allowlist
+    """
+    if not ip:
+        return False
 
     try:
-        client_addr = ipaddress.ip_address(client_ip)
-
-        for ip_range in YOOKASSA_IP_RANGES:
-            network = ipaddress.ip_network(ip_range, strict=False)
-            if client_addr in network:
-                return True
-
-        return False
+        client_ip = ipaddress.ip_address(ip)
     except ValueError:
-        logger.error(f"Invalid IP address format: {client_ip}")
+        # Например пришло что-то не похожее на IP
         return False
 
+    for cidr in YOOKASSA_IP_RANGES:
+        try:
+            if client_ip in ipaddress.ip_network(cidr):
+                return True
+        except ValueError:
+            # Если в списке случайно появится битый CIDR — не падаем
+            continue
 
-def get_client_ip(request) -> str:
+    return False
+
+
+def get_client_ip(request: HttpRequest) -> Optional[str]:
     """
-    Extract client IP from request.
-    
-    Handles X-Real-IP and X-Forwarded-For headers from proxy.
+    Достаём IP клиента из request.
+
+    Логика:
+    - если есть X-Forwarded-For → берём первый IP (самый левый)
+    - иначе REMOTE_ADDR
+
+    Примечание:
+    - X-Forwarded-For корректен только если ты доверяешь своему reverse proxy
+      (nginx / traefik / cloudflare). Иначе заголовок можно подделать.
+    - в нашей схеме это вспомогательная функция; основная защита — allowlist.
     """
-    return (
-        request.META.get('HTTP_X_REAL_IP') or
-        request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or
-        request.META.get('REMOTE_ADDR')
-    )
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")

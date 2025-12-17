@@ -1,34 +1,71 @@
 """
-Throttling (rate limiting) classes for billing and webhook endpoints.
+billing/throttles.py
 
-Protects against DoS attacks and webhook flooding.
+Throttle (rate limiting) для чувствительных endpoints биллинга.
+
+Зачем это нужно:
+- защита от спама и DoS
+- ограничение злоупотреблений "создать платёж" (можно устроить нагрузку/мусор в БД)
+- защита webhook endpoint от флудинга
+
+Как это работает в DRF:
+- throttle смотрит "ключ" (user или IP)
+- считает запросы за окно времени
+- если превышено — возвращает 429 Too Many Requests
+
+ВАЖНО:
+- Webhook должен быть доступен YooKassa, но не должен быть "дырой"
+- Для webhook мы лимитим по IP
+- Для create-payment лучше лимитить по user (если авторизован), иначе по IP
 """
 
-from rest_framework.throttling import AnonRateThrottle
+from __future__ import annotations
+
+from rest_framework.throttling import SimpleRateThrottle
 
 
-class WebhookThrottle(AnonRateThrottle):
+class WebhookThrottle(SimpleRateThrottle):
     """
-    Throttle for webhook endpoints.
+    Throttle для webhook endpoint.
 
-    Limits: 100 webhook calls per hour per IP address.
-    This prevents webhook flooding and DoS attacks while allowing
-    legitimate payment processing bursts.
+    Ключ: IP адрес.
+    Rate можно переопределить в settings.py в REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].
 
-    YooKassa typically sends 1-3 webhooks per payment (waiting_for_capture,
-    succeeded, or canceled), so 100/hour allows ~30 payments/hour which is
-    reasonable for most applications.
+    По умолчанию: 100/hour
     """
-    rate = '100/hour'
-    scope = 'webhook'
+    scope = "billing_webhook"
+    rate = "100/hour"
+
+    def get_cache_key(self, request, view):
+        # Берём IP из DRF механизма (учитывает прокси при корректной настройке)
+        ident = self.get_ident(request)
+        if not ident:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
-class PaymentCreationThrottle(AnonRateThrottle):
+class PaymentCreationThrottle(SimpleRateThrottle):
     """
-    Throttle for payment creation endpoint.
+    Throttle для endpoint создания платежа.
 
-    Limits: 20 payment creations per hour per IP.
-    Prevents abuse of payment system.
+    Логика ключа:
+    - если пользователь авторизован → лимит по user_id (честнее)
+    - иначе → лимит по IP
+
+    По умолчанию: 20/hour
     """
-    rate = '20/hour'
-    scope = 'payment_creation'
+    scope = "billing_create_payment"
+    rate = "20/hour"
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, "user", None)
+
+        if user and user.is_authenticated:
+            ident = f"user:{user.id}"
+        else:
+            ident = self.get_ident(request)
+
+        if not ident:
+            return None
+
+        return self.cache_format % {"scope": self.scope, "ident": ident}
