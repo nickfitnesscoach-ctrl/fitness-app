@@ -81,14 +81,11 @@ export const api = {
     getTaskStatus: ai.getTaskStatus,
 
     // Billing
-    getSubscriptionPlan: billing.getSubscriptionPlan,
     getSubscriptionPlans: billing.getSubscriptionPlans,
     getBillingMe: billing.getBillingMe,
     getSubscriptionDetails: billing.getSubscriptionDetails,
     createPayment: billing.createPayment,
     createTestLivePayment: billing.createTestLivePayment,
-    cancelSubscription: billing.cancelSubscription,
-    resumeSubscription: billing.resumeSubscription,
     setAutoRenew: billing.setAutoRenew,
     getPaymentMethod: billing.getPaymentMethod,
     bindCard: billing.bindCard,

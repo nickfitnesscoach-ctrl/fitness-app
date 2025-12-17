@@ -1,118 +1,88 @@
-# Billing (папка `billing/`) — простыми словами
+# Billing
 
-Эта папка отвечает за **тарифы, подписки, оплаты и лимиты** в EatFit24.
+Система биллинга EatFit24: подписки, платежи, лимиты, интеграция с YooKassa.
 
-## Что делает биллинг
-- Показывает доступные тарифы (Free / Pro).
-- Хранит у пользователя текущий тариф и дату окончания.
-- Создаёт платеж в YooKassa (переадресует пользователя на оплату).
-- Получает webhook от YooKassa и **только после этого** подтверждает оплату и продлевает подписку.
-- Следит за лимитами (например, сколько AI-фото использовано сегодня).
-- Делает автопродление (рекуррентные платежи) через команды/cron.
+## Что делает Billing
 
----
+- Управляет тарифами (FREE / PRO)
+- Хранит подписки пользователей
+- Создаёт платежи в YooKassa
+- Обрабатывает webhook и продлевает подписки
+- Контролирует дневные лимиты AI-запросов
+- Выполняет автопродление по cron
 
-## Главные правила безопасности (важно)
-1) **Цена не приходит с фронта.**  
-   Фронт отправляет только `plan_code`, а цена берётся из БД (`SubscriptionPlan.price`).
+## Архитектура (карта)
 
-2) **Оплата считается успешной только после webhook.**  
-   Если фронт сказал “успех” — это не считается. Истина — webhook от YooKassa.
+```
+billing/
+├── models.py        # Модели: источник истины
+├── views.py         # API для фронтенда
+├── services.py      # YooKassaService + бизнес-логика
+├── usage.py         # Дневные лимиты (DailyUsage)
+├── throttles.py     # Rate limiting
+├── urls.py          # Маршруты API
+├── webhooks/        # Обработка webhook YooKassa
+└── management/      # Фоновые команды
+```
 
-3) **Лимиты и счётчики атомарные.**  
-   В `usage.py` всё сделано так, чтобы два параллельных запроса не “сломали” счётчик.
+## Ключевые принципы
 
----
+| Принцип | Описание |
+|---------|----------|
+| ❌ **Сумма не от клиента** | Цена берётся только из `SubscriptionPlan.price` |
+| ✅ **Webhook = истина** | Платёж успешен только после webhook |
+| ✅ **YooKassaService** | Единственный клиент YooKassa |
+| ✅ **Атомарные лимиты** | `check_and_increment_if_allowed()` |
+| ✅ **IP allowlist** | Webhook только с IP YooKassa |
 
-## Как устроена папка (карта файлов)
+## ⚠️ Запрещено
 
-### 1) API (что дергает фронт)
-- `urls.py` — маршруты API биллинга.
-- `views.py` — DRF views: планы, статус подписки, создание платежа, привязка карты и т.д.
-- `serializers.py` — валидация входных данных и форматы ответов.
+- Принимать сумму платежа с фронтенда
+- Считать платёж успешным без webhook
+- Создавать второй клиент YooKassa
+- Менять подписку вне webhook handlers
+- Добавлять оплату без webhook-подтверждения
+- Возвращать legacy endpoints
 
-### 2) Бизнес-логика (ядро)
-- `services.py` — “мозг” биллинга:
-  - создание платежа (в связке с YooKassa)
-  - получение эффективного тарифа пользователя (Free / Pro)
-  - продление подписки
-  - кеш тарифа и его инвалидация
+## Документация
 
-### 3) Webhooks (истина оплаты)
-Папка: `webhooks/`
-- `webhooks/views.py` — входная точка webhook (`yookassa_webhook`)
-- `webhooks/handlers.py` — обработка событий (payment.succeeded и т.д.)
-- `webhooks/utils.py` — безопасность: IP allowlist, извлечение IP, вспомогательные функции
-- `webhooks/__init__.py` — удобный экспорт функций/констант
+Подробная документация в `docs/`:
 
-> Важно: webhook — это единственное место, где мы реально переводим платеж в “успешный” и обновляем подписку.
+| Документ | Описание |
+|----------|----------|
+| [docs/architecture.md](./docs/architecture.md) | Архитектура модуля |
+| [docs/payment-flow.md](./docs/payment-flow.md) | Поток платежа |
+| [docs/subscription-lifecycle.md](./docs/subscription-lifecycle.md) | Жизненный цикл подписки |
+| [docs/webhooks.md](./docs/webhooks.md) | Обработка webhook |
+| [docs/security.md](./docs/security.md) | Безопасность |
+| [docs/limits-and-usage.md](./docs/limits-and-usage.md) | Лимиты и использование |
+| [docs/operations.md](./docs/operations.md) | Эксплуатация |
+| [docs/legacy-history.md](./docs/legacy-history.md) | История legacy |
+| [docs/glossary.md](./docs/glossary.md) | Глоссарий |
 
-### 4) YooKassa клиенты
-- `services.py` содержит `YooKassaService` (SDK-клиент).
-- `yookassa_client.py` — низкоуровневый HTTP-клиент через `requests` (legacy/альтернативный путь).  
-  Удалять можно только после полной миграции всех вызовов на один клиент.
+## Быстрый старт
 
-### 5) Лимиты и защита от спама
-- `usage.py` — дневной счётчик использования (например, AI-запросов).
-- `throttles.py` — DRF throttling (защита API от частых запросов), отдельно от бизнес-лимитов.
+1. Прочти [docs/architecture.md](./docs/architecture.md) — понять структуру
+2. Прочти [docs/payment-flow.md](./docs/payment-flow.md) — понять flow денег
+3. Прочти [docs/security.md](./docs/security.md) — понять ограничения
 
-### 6) Модели и админка
-- `models.py` — таблицы:
-  - `SubscriptionPlan` (тариф)
-  - `Subscription` (подписка пользователя)
-  - `Payment` (платёж)
-  - `Refund` (возврат)
-  - `WebhookLog` (лог webhook)
-- `admin.py` — управление через Django Admin
-- `apps.py` — конфиг приложения
+## Поток платежа (коротко)
 
-### 7) Management commands (фоновые задачи)
-Папка: `management/commands/`
-- `cleanup_expired_subscriptions.py` — чистит/обновляет истёкшие подписки (обслуживание данных)
-- `process_recurring_payments.py` — пытается выполнить рекуррентные платежи (автопродление)
+```
+1. GET /billing/plans/           → список планов
+2. POST /billing/create-payment/ → создание платежа
+3. Redirect → YooKassa           → оплата
+4. POST /webhooks/yookassa       → подтверждение
+5. GET /billing/me/              → обновлённый статус
+```
 
-Обычно эти команды запускаются по cron/планировщику.
+## Troubleshooting
 
-### 8) Тесты
-- `tests.py`, `test_limits.py` — проверки критичных сценариев (если используются).
+| Проблема | Куда смотреть |
+|----------|---------------|
+| Платёж прошёл, подписка не обновилась | `WebhookLog`, `Payment.webhook_processed_at` |
+| Лимиты не работают | `DailyUsage`, `SubscriptionPlan.daily_photo_limit` |
+| Webhook возвращает 403 | IP allowlist, `WEBHOOK_TRUST_XFF` |
+| Автопродление не работает | `Subscription.auto_renew`, `yookassa_payment_method_id` |
 
----
-
-## Как проходит оплата (коротко, по шагам)
-1) Фронт запрашивает планы: `GET /billing/plans/`
-2) Пользователь выбирает тариф → фронт отправляет `POST /billing/create-payment/` с `plan_code`
-3) Бэкенд создаёт Payment + создаёт платёж в YooKassa → отдаёт `confirmation_url`
-4) Пользователь оплачивает на стороне YooKassa
-5) YooKassa присылает webhook на `POST /billing/webhooks/yookassa`
-6) Webhook handler:
-   - валидирует источник (IP / данные)
-   - отмечает Payment успешным
-   - продлевает подписку
-   - сохраняет способ оплаты (если нужно для автопродления)
-
----
-
-## Что можно удалять, а что нельзя
-✅ Можно удалить, если больше нигде не импортируется:
-- legacy `billing/webhooks.py` (файл-прокладка), если webhooks уже в папке `webhooks/`
-
-❌ Нельзя удалять без миграции:
-- `yookassa_client.py` — пока в проекте есть код, который его использует
-
----
-
-## Быстрые подсказки для отладки
-- Оплата “прошла”, а подписка не обновилась → смотри:
-  - логи webhook (`WebhookLog`)
-  - обработчики `webhooks/handlers.py`
-  - дошёл ли запрос до URL webhook
-- Лимиты “съехали” → смотри `usage.py` и фактические записи `DailyUsage`
-- Слишком много запросов → проверь `throttles.py` и настройки DRF throttle rates
-
----
-
-## Куда смотреть в первую очередь (если ты новичок)
-1) `views.py` — какие эндпоинты есть
-2) `services.py` — как реально создаётся платёж и меняется подписка
-3) `webhooks/handlers.py` — что происходит при payment.succeeded
-4) `models.py` — какие данные хранятся
+Подробнее: [docs/operations.md](./docs/operations.md)

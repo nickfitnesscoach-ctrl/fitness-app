@@ -4,39 +4,26 @@
  * Handles subscriptions, payments, and billing status.
  */
 
-import { 
-    fetchWithTimeout, 
-    fetchWithRetry, 
+import {
+    fetchWithTimeout,
+    fetchWithRetry,
     getHeaders,
     log
 } from './client';
 import { URLS } from './urls';
-import type { 
-    BillingMe, 
-    CreatePaymentRequest, 
-    CreatePaymentResponse, 
-    SubscriptionDetails, 
-    PaymentMethod, 
+import type {
+    BillingMe,
+    CreatePaymentRequest,
+    CreatePaymentResponse,
+    SubscriptionDetails,
+    PaymentMethod,
     PaymentHistory,
-    SubscriptionPlan 
+    SubscriptionPlan
 } from '../../types/billing';
 
 // ============================================================
 // Subscription Status
 // ============================================================
-
-export const getSubscriptionPlan = async () => {
-    try {
-        const response = await fetchWithTimeout(URLS.plan, {
-            headers: getHeaders(),
-        });
-        if (!response.ok) throw new Error('Failed to fetch plan');
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching plan:', error);
-        return null;
-    }
-};
 
 export const getSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
     try {
@@ -155,46 +142,6 @@ export const createTestLivePayment = async () => {
 // ============================================================
 // Subscription Management
 // ============================================================
-
-export const cancelSubscription = async () => {
-    log('Canceling subscription auto-renew');
-    try {
-        const response = await fetchWithRetry(URLS.cancelSubscription, {
-            method: 'POST',
-            headers: getHeaders(),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || 'Failed to cancel subscription');
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error canceling subscription:', error);
-        throw error;
-    }
-};
-
-export const resumeSubscription = async () => {
-    log('Resuming subscription auto-renew');
-    try {
-        const response = await fetchWithRetry(URLS.resumeSubscription, {
-            method: 'POST',
-            headers: getHeaders(),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || 'Failed to resume subscription');
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error resuming subscription:', error);
-        throw error;
-    }
-};
 
 export const setAutoRenew = async (enabled: boolean): Promise<SubscriptionDetails> => {
     log(`Setting auto-renew: ${enabled}`);

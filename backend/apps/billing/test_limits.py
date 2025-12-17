@@ -173,14 +173,13 @@ class CreateUniversalPaymentTestCase(TestCase):
             is_active=True,
         )
 
-    @patch("apps.billing.yookassa_client.YooKassaClient.create_payment")
+    @patch("apps.billing.services.YooKassaService.create_payment")
     def test_create_monthly_payment(self, mock_create_payment):
+        # YooKassaService.create_payment returns normalized dict
         mock_create_payment.return_value = {
             "id": "test-monthly-payment",
             "status": "pending",
-            "amount": {"value": "299.00", "currency": "RUB"},
-            "confirmation": {"type": "redirect", "confirmation_url": "https://yookassa.ru/payments/test"},
-            "metadata": {},
+            "confirmation_url": "https://yookassa.ru/payments/test",
         }
 
         self.client.force_authenticate(user=self.user)
