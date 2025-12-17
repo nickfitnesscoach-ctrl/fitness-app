@@ -27,7 +27,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -42,6 +42,7 @@ from .serializers import (
     SubscriptionPlanPublicSerializer,
 )
 from .services import YooKassaService
+from .throttles import PaymentCreationThrottle  # [SECURITY] Rate limiting для платежей
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,57 @@ def _build_default_return_url(request) -> str:
 
     base = request.build_absolute_uri("/")
     return base.rstrip("/") + "/payment-success"
+
+
+def _validate_return_url(url: str | None, request) -> str:
+    """
+    [SECURITY FIX 2024-12] Валидация return_url для защиты от open redirect.
+
+    Атака: злоумышленник передаёт return_url=https://evil.com/phishing,
+    пользователь после оплаты попадает на фишинговый сайт.
+
+    Защита: проверяем домен URL против whitelist (ALLOWED_RETURN_URL_DOMAINS).
+
+    Args:
+        url: URL от клиента (может быть None)
+        request: Django request (для fallback)
+
+    Returns:
+        Безопасный return_url (либо переданный, либо default)
+    """
+    from urllib.parse import urlparse
+
+    if not url:
+        return _build_default_return_url(request)
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+
+        if not hostname:
+            logger.warning(f"[SECURITY] return_url без hostname: {url}")
+            return _build_default_return_url(request)
+
+        allowed_domains = getattr(settings, "ALLOWED_RETURN_URL_DOMAINS", ["eatfit24.ru", "localhost"])
+
+        # Проверяем точное совпадение или субдомен
+        is_allowed = any(
+            hostname == domain or hostname.endswith(f".{domain}")
+            for domain in allowed_domains
+        )
+
+        if not is_allowed:
+            logger.warning(
+                f"[SECURITY] return_url заблокирован (домен не в whitelist): {url}. "
+                f"Allowed: {allowed_domains}"
+            )
+            return _build_default_return_url(request)
+
+        return url
+
+    except Exception as e:
+        logger.error(f"[SECURITY] return_url parsing error: {url}, error: {e}")
+        return _build_default_return_url(request)
 
 
 # =====================================================================
@@ -478,6 +530,7 @@ def get_payments_history(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
 def create_payment(request):
     """
     POST /api/v1/billing/create-payment/
@@ -489,7 +542,7 @@ def create_payment(request):
     if not plan_code:
         return _err("MISSING_PLAN_CODE", "Укажите plan_code в теле запроса", status.HTTP_400_BAD_REQUEST)
 
-    return_url = request.data.get("return_url") or _build_default_return_url(request)
+    return_url = _validate_return_url(request.data.get("return_url"), request)
 
     try:
         payment, confirmation_url = _create_subscription_payment_core(
@@ -526,6 +579,7 @@ def create_payment(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
 def bind_card_start(request):
     """
     POST /api/v1/billing/bind-card/start/
@@ -535,7 +589,7 @@ def bind_card_start(request):
     - Это НЕ подписка. Это “технический” платёж, чтобы получить payment_method_id.
     - Дальше webhook должен сохранить payment_method_id в Subscription.
     """
-    return_url = request.data.get("return_url") or _build_default_return_url(request)
+    return_url = _validate_return_url(request.data.get("return_url"), request)
 
     try:
         subscription = _get_or_create_user_subscription(request.user)
@@ -585,6 +639,7 @@ def bind_card_start(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour (admin-only, но throttle всё равно)
 def create_test_live_payment(request):
     """
     POST /api/v1/billing/create-test-live-payment/
@@ -606,7 +661,7 @@ def create_test_live_payment(request):
     if getattr(settings, "YOOKASSA_MODE", "") != "prod":
         return _err("FORBIDDEN", "Доступно только в prod режиме", status.HTTP_403_FORBIDDEN)
 
-    return_url = request.data.get("return_url") or _build_default_return_url(request)
+    return_url = _validate_return_url(request.data.get("return_url"), request)
 
     # План TEST_LIVE должен быть создан в админке (code=TEST_LIVE, is_test=True)
     try:
@@ -768,6 +823,7 @@ def get_payment_history(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
 @deprecated("Deprecated. Use POST /api/v1/billing/create-payment/", use_instead="/api/v1/billing/create-payment/")
 def create_plus_payment(request):
     """
@@ -775,7 +831,7 @@ def create_plus_payment(request):
     Legacy wrapper -> create-payment with legacy plan_code=MONTHLY
     """
     plan_code = "MONTHLY"
-    return_url = request.data.get("return_url") or _build_default_return_url(request)
+    return_url = _validate_return_url(request.data.get("return_url"), request)
 
     try:
         payment, confirmation_url = _create_subscription_payment_core(
@@ -808,6 +864,7 @@ def create_plus_payment(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PaymentCreationThrottle])  # [SECURITY] 20 req/hour
 @deprecated("Deprecated. Use POST /api/v1/billing/create-payment/", use_instead="/api/v1/billing/create-payment/")
 def subscribe(request):
     """
@@ -823,7 +880,7 @@ def subscribe(request):
     serializer.is_valid(raise_exception=True)
     plan_name = serializer.validated_data["plan"]
 
-    return_url = request.data.get("return_url") or _build_default_return_url(request)
+    return_url = _validate_return_url(request.data.get("return_url"), request)
 
     try:
         payment, confirmation_url = _create_subscription_payment_core(

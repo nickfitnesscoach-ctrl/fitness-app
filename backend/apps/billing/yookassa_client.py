@@ -1,11 +1,21 @@
 """
 YooKassa API клиент без использования SDK.
 Прямая работа через requests для полного контроля над запросами.
+
+[DEPRECATED 2024-12]
+Этот клиент оставлен для обратной совместимости.
+Для новых интеграций используйте YooKassaService из services.py.
+
+Причины:
+- services.py использует официальный SDK с лучшей поддержкой
+- Два клиента создают путаницу и требуют двойного обслуживания
+- В будущих версиях этот файл будет удалён
 """
 
 import base64
 import uuid
 import logging
+import warnings
 import requests
 from decimal import Decimal
 from typing import Dict, Optional
@@ -21,9 +31,12 @@ class PaymentCreateError(Exception):
 
 class YooKassaClient:
     """
-    Клиент для работы с YooKassa API через requests (без SDK).
+    [DEPRECATED] Клиент для работы с YooKassa API через requests (без SDK).
 
-    Используется для создания платежей и получения информации о них.
+    ⚠️ ВНИМАНИЕ: Этот класс deprecated. 
+    Используйте YooKassaService из billing/services.py.
+
+    Оставлен для обратной совместимости с существующим кодом.
     """
 
     API_URL = "https://api.yookassa.ru/v3"
