@@ -24,7 +24,14 @@ import { IS_DEV } from '../../config/env';
  * FALSE when:
  * - Production build (ALWAYS)
  */
-export const IS_DEBUG = IS_DEV;
+export const IS_DEBUG = IS_DEV || (
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+);
+
+if (typeof window !== 'undefined') {
+  console.log('[Debug Config] Checking debug mode:', { IS_DEV, isDebug: IS_DEBUG, hostname: window.location.hostname });
+}
 
 /**
  * Debug user configuration for mock Telegram API

@@ -6,12 +6,12 @@ from .base import *  # noqa
 import os
 
 
-DEBUG = False
+DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-# SECURITY: Disable Debug Mode in production
-# This prevents X-Debug-Mode header from authenticating debug users
-DEBUG_MODE_ENABLED = False
-WEBAPP_DEBUG_MODE_ENABLED = False
+# SECURITY: Disable Debug Mode in production by default
+# This allows X-Debug-Mode header only if explicitly enabled in env
+DEBUG_MODE_ENABLED = os.environ.get("DEBUG_MODE_ENABLED", "False") == "True"
+WEBAPP_DEBUG_MODE_ENABLED = os.environ.get("DEBUG_MODE_ENABLED", "False") == "True"
 
 # Hosts - load from environment
 # SECURITY: Empty ALLOWED_HOSTS will cause Django to reject all requests

@@ -10,6 +10,7 @@
 import { fetchWithRetry, log } from './client';
 import { URLS } from './urls';
 import type { TrainerPanelAuthResponse, AuthResponse } from './types';
+import { buildTelegramHeaders } from '../../lib/telegram';
 
 // ============================================================
 // Authentication
@@ -22,6 +23,7 @@ export const authenticate = async (initData: string): Promise<AuthResponse> => {
         const response = await fetchWithRetry(URLS.auth, {
             method: 'POST',
             headers: {
+                ...buildTelegramHeaders(),
                 'Content-Type': 'application/json',
                 'X-Telegram-Init-Data': initData,
             },

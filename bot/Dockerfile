@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # Копируем файл зависимостей
@@ -24,7 +25,7 @@ RUN mkdir -p logs
 
 # Копируем и делаем исполняемым entrypoint скрипт
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN dos2unix /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Используем ENTRYPOINT для запуска
 ENTRYPOINT ["/entrypoint.sh"]

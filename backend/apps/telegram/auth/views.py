@@ -161,6 +161,18 @@ def telegram_auth(request):
     authenticator = TelegramWebAppAuthentication()
 
     try:
+        # Debug auth check
+        if _is_debug_allowed():
+            debug_auth = DebugModeAuthentication()
+            result = debug_auth.authenticate(request)
+            if result:
+                return Response(TelegramAuthSerializer({
+                    "access": "debug_access_token", # Mock token or generated one
+                    "refresh": "debug_refresh_token",
+                    "user": result[0].telegram_profile,
+                    "is_admin": True,
+                }).data, status=status.HTTP_200_OK)
+
         result = authenticator.authenticate(request)
         if not result:
             return Response({"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED)
