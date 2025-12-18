@@ -2,73 +2,63 @@
 
 ## Обзор
 
-Billing — критический модуль, работающий с деньгами. Применяется многоуровневая защита.
+Модуль billing обрабатывает финансовые данные. Здесь описаны меры безопасности.
+
+---
 
 ## Принципы
 
-### 1. Цена из БД, не от клиента
+| Принцип | Реализация |
+|---------|------------|
+| **Цена из БД** | Сумма платежа берётся из `SubscriptionPlan.price`, не от клиента |
+| **Webhook-first** | Подписка активируется только после webhook от YooKassa |
+| **IP allowlist** | Webhook принимаются только с IP YooKassa |
+| **Rate limiting** | Ограничение запросов на создание платежей |
+| **Идемпотентность** | Защита от повторной обработки webhook |
+
+---
+
+## Защита платежей
+
+### 1. Цена из БД (предотвращение fraud)
 
 ```python
-# ❌ НИКОГДА
+# ❌ НЕЛЬЗЯ — принимать цену с фронта
 amount = request.data.get("amount")
 
-# ✅ ВСЕГДА
+# ✅ ПРАВИЛЬНО — брать из БД
 plan = SubscriptionPlan.objects.get(code=plan_code)
 amount = plan.price
 ```
 
-### 2. Webhook = источник истины
+### 2. Валидация return_url (защита от open redirect)
 
 ```python
-# ❌ НЕЛЬЗЯ доверять фронту
-if frontend_says_success:
-    subscription.extend()
+ALLOWED_DOMAINS = ["app.eatfit24.ru", "eatfit24.ru"]
 
-# ✅ ТОЛЬКО после webhook
-def _handle_payment_succeeded(payload):
-    payment.mark_as_succeeded()
-    activate_or_extend_subscription(...)
+def _validate_return_url(url, request):
+    """Проверяет, что URL в whitelist."""
+    parsed = urlparse(url)
+    if parsed.netloc not in ALLOWED_DOMAINS:
+        return _build_default_return_url(request)
+    return url
 ```
 
-### 3. Атомарные лимиты
+### 3. Rate limiting
 
-```python
-# ❌ Race condition
-if usage.count < limit:
-    usage.count += 1
+| Endpoint | Лимит | Класс |
+|----------|-------|-------|
+| `create-payment/` | 10/hour per user | `PaymentCreationThrottle` |
+| `bind-card/start/` | 10/hour per user | `PaymentCreationThrottle` |
+| `webhooks/yookassa` | 100/hour per IP | `WebhookThrottle` |
 
-# ✅ Атомарно
-allowed, new_count = DailyUsage.objects.check_and_increment_if_allowed(
-    user=user, limit=limit, amount=1
-)
-```
+---
 
-## Rate Limiting (Throttling)
+## Защита Webhook
 
-### PaymentCreationThrottle
+### IP Allowlist
 
-- **Scope:** `billing_create_payment`
-- **Rate:** 20/hour
-- **Key:** user_id (авторизован) или IP
-
-Защищает от:
-- Спама платежей
-- DoS на создание Payment
-- Мусора в БД
-
-### WebhookThrottle
-
-- **Scope:** `billing_webhook`
-- **Rate:** 100/hour
-- **Key:** IP адрес
-
-Защищает от:
-- Флудинга webhook endpoint
-- Попыток перебора
-
-## IP Allowlist (Webhooks)
-
-Webhook принимается **только** с IP YooKassa:
+Webhook принимаются только с официальных IP YooKassa:
 
 ```python
 YOOKASSA_IP_RANGES = [
@@ -78,91 +68,65 @@ YOOKASSA_IP_RANGES = [
     "77.75.156.11/32",
     "77.75.156.35/32",
     "77.75.154.128/25",
-    "2a02:5180::/32",
+    "2a02:5180::/32",  # IPv6
 ]
 ```
 
-### XFF Spoofing Protection
-
-По умолчанию `WEBHOOK_TRUST_XFF=False`:
-- Используется `REMOTE_ADDR`
-- X-Forwarded-For игнорируется
-
-Если за reverse proxy (Nginx):
-```
-WEBHOOK_TRUST_XFF=True
-```
-
-## Return URL Validation
-
-Защита от Open Redirect:
+### XFF Protection
 
 ```python
-ALLOWED_RETURN_URL_DOMAINS = ["eatfit24.ru", "app.eatfit24.ru"]
+# settings
+WEBHOOK_TRUST_XFF = False  # по умолчанию не доверяем X-Forwarded-For
+
+# Если за reverse proxy (nginx):
+# WEBHOOK_TRUST_PROXIES = ["10.0.0.1"]  # IP прокси
 ```
 
-Если `return_url` не в whitelist — используется дефолтный.
+### Идемпотентность
 
-## Test Plans Protection
+Защита от повторной обработки:
 
-Тестовые планы (`is_test=True`) недоступны через обычный API:
-
-```python
-plans = SubscriptionPlan.objects.filter(is_active=True, is_test=False)
-```
-
-Только через специальный endpoint для админов.
-
-## Идемпотентность
-
-### Webhook deduplication
-
-1. `WebhookLog.event_id` — логируем каждое событие
+1. `WebhookLog.event_id` — уникальный ID события
 2. `Payment.webhook_processed_at` — метка обработки
 3. Проверка статуса перед изменением
 
-### Payment creation
-
-UUID idempotency_key при создании платежа в YooKassa.
-
-## Настройки безопасности
-
 ```python
-# settings.py
-
-# Доверять X-Forwarded-For в webhooks
-WEBHOOK_TRUST_XFF = False
-
-# Разрешённые домены для return_url
-ALLOWED_RETURN_URL_DOMAINS = ["eatfit24.ru", "app.eatfit24.ru"]
-
-# Дефолтный return_url
-YOOKASSA_RETURN_URL = "https://app.eatfit24.ru/subscription"
-
-# Throttle rates
-REST_FRAMEWORK = {
-    "DEFAULT_THROTTLE_RATES": {
-        "billing_create_payment": "20/hour",
-        "billing_webhook": "100/hour",
-    }
-}
+if payment.status in ("SUCCEEDED", "REFUNDED"):
+    logger.info("Already processed, skipping")
+    return
 ```
 
-## Чеклист безопасности
+---
 
-| Проверка | Статус |
-|----------|--------|
-| Цена из БД | ✅ |
-| Webhook валидация IP | ✅ |
-| XFF spoofing защита | ✅ |
-| Rate limiting | ✅ |
-| Атомарные лимиты | ✅ |
-| Return URL whitelist | ✅ |
-| Test plans фильтрация | ✅ |
-| Идемпотентность | ✅ |
+## Атомарность лимитов
 
-## Оставшиеся рекомендации
+### Race condition protection
 
-1. **HMAC-проверка webhook** — YooKassa поддерживает подписи
-2. **unique=True на WebhookLog.event_id** — DB-level защита от дублей
-3. **Тесты на throttling** — автоматическая проверка
+```python
+@transaction.atomic
+def increment_usage(user, date, feature):
+    usage, _ = DailyUsage.objects.select_for_update().get_or_create(...)
+    usage.count = F('count') + 1
+    usage.save()
+```
+
+---
+
+## Admin-only endpoints
+
+| Endpoint | Проверка |
+|----------|----------|
+| `create-test-live-payment/` | `user.is_staff` |
+
+---
+
+## Чек-лист безопасности
+
+- [x] Цена берётся из БД, не от клиента
+- [x] return_url валидируется по whitelist
+- [x] Webhook проверяет IP
+- [x] Rate limiting на платежах
+- [x] Идемпотентность webhook
+- [x] XFF protection по умолчанию
+- [x] Атомарные операции с лимитами
+- [x] Тестовые планы скрыты от обычных пользователей

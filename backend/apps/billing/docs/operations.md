@@ -1,195 +1,179 @@
 # Эксплуатация Billing
 
-## Management Commands
+## Celery Tasks
 
-### cleanup_expired_subscriptions
+### Очередь `billing`
 
-**Назначение:** Переводит истёкшие платные подписки на FREE.
+Billing использует отдельную Celery очередь для изоляции от AI задач.
 
-**Запуск:**
-```bash
-python manage.py cleanup_expired_subscriptions
+```python
+# celery worker для billing
+celery -A config.celery_app worker -Q billing --loglevel=info
 ```
 
-**Параметры:**
-- `--dry-run` — показать, что будет сделано, без изменений
-- `--batch-size=100` — размер батча обработки
-- `--grace-days=0` — дополнительные дни после истечения
+### Задачи
 
-**Что делает:**
-1. Находит подписки с `end_date < now()` и `plan ≠ FREE`
-2. Переводит на план FREE
-3. Отключает `auto_renew`
-4. Сохраняет `is_active = True`
+| Task | Описание | Schedule |
+|------|----------|----------|
+| `process_yookassa_webhook` | Обработка webhook | По событию |
+| `retry_stuck_webhooks` | Повтор зависших webhook | Каждые 5 мин |
+| `alert_failed_webhooks` | Alert о failed webhook | Каждые 15 мин |
+| `cleanup_pending_payments` | Очистка PENDING >24ч | Каждый час |
 
-**Рекомендуемое расписание:** Ежедневно в 00:05
+### Celery Beat конфиг
 
-```cron
-5 0 * * * cd /app && python manage.py cleanup_expired_subscriptions
+```python
+CELERY_BEAT_SCHEDULE = {
+    'retry-stuck-webhooks': {
+        'task': 'apps.billing.webhooks.tasks.retry_stuck_webhooks',
+        'schedule': crontab(minute='*/5'),
+    },
+    'alert-failed-webhooks': {
+        'task': 'apps.billing.webhooks.tasks.alert_failed_webhooks',
+        'schedule': crontab(minute='*/15'),
+    },
+    'cleanup-pending-payments': {
+        'task': 'apps.billing.webhooks.tasks.cleanup_pending_payments',
+        'schedule': crontab(minute=0),  # каждый час
+    },
+}
 ```
 
 ---
 
+## Management Commands
+
 ### process_recurring_payments
 
-**Назначение:** Создаёт рекуррентные платежи для подписок с автопродлением.
+Обработка автопродлений подписок:
 
-**Запуск:**
 ```bash
 python manage.py process_recurring_payments
 ```
 
-**Параметры:**
-- `--dry-run` — показать, что будет сделано
-- `--days-before=3` — за сколько дней до истечения создавать платёж
+### cleanup_expired_subscriptions
 
-**Что делает:**
-1. Находит подписки: `auto_renew=True`, истекают в ближайшие N дней
-2. Для каждой создаёт рекуррентный платёж в YooKassa
-3. Использует сохранённый `payment_method_id`
-4. Логирует результат
+Перевод истёкших подписок на FREE:
 
-**Рекомендуемое расписание:** Ежедневно в 10:00
-
-```cron
-0 10 * * * cd /app && python manage.py process_recurring_payments --days-before=3
+```bash
+python manage.py cleanup_expired_subscriptions
 ```
 
 ---
 
 ## Мониторинг
 
-### Ключевые метрики
-
-| Метрика | Источник | Алерт |
-|---------|----------|-------|
-| Успешные платежи | `Payment.status=SUCCEEDED` | — |
-| Неудачные платежи | `Payment.status=FAILED` | > 10% от общего |
-| Webhook ошибки | `WebhookLog.status=FAILED` | Любые |
-| Истёкшие подписки | `Subscription` где `end_date < now` | > 100 необработанных |
-
 ### Логи
 
-```python
-# Ключевые логгеры
-logging.getLogger("apps.billing.views")
-logging.getLogger("apps.billing.services")
-logging.getLogger("apps.billing.webhooks")
+```bash
+# Все billing логи
+docker logs eatfit24-backend-1 2>&1 | grep "\[BILLING\]"
+
+# Webhook логи
+docker logs eatfit24-celery-worker-1 2>&1 | grep "\[WEBHOOK"
 ```
 
-### Алерты
+### Проверка webhook доставки
 
-1. **Webhook не доходят** — нет новых `WebhookLog` за час при активных платежах
-2. **Массовые отказы** — > 10 платежей FAILED за час
-3. **Автопродление не работает** — нет рекуррентных платежей неделю
+```sql
+-- Последние 10 webhook
+SELECT event_type, status, created_at 
+FROM webhook_logs 
+ORDER BY created_at DESC 
+LIMIT 10;
+
+-- Failed за последний час
+SELECT COUNT(*) 
+FROM webhook_logs 
+WHERE status = 'FAILED' 
+AND created_at > NOW() - INTERVAL '1 hour';
+```
+
+### Проверка платежей
+
+```sql
+-- PENDING платежи старше часа (возможно проблема)
+SELECT id, amount, created_at 
+FROM payments 
+WHERE status = 'PENDING' 
+AND created_at < NOW() - INTERVAL '1 hour';
+```
 
 ---
 
 ## Troubleshooting
 
-### Платёж прошёл, подписка не продлилась
+### Платёж прошёл, подписка не обновилась
 
-1. Проверь `Payment`:
-   ```sql
-   SELECT * FROM payments WHERE yookassa_payment_id = 'xxx';
-   ```
-   - `status` должен быть `SUCCEEDED`
-   - `webhook_processed_at` должен быть заполнен
+1. Проверь `webhook_logs` — дошёл ли webhook?
+2. Проверь `payments.webhook_processed_at` — обработан?
+3. Проверь логи celery worker — есть ли ошибки?
+4. Проверь IP — разрешён ли в allowlist?
 
-2. Проверь `WebhookLog`:
-   ```sql
-   SELECT * FROM webhook_logs WHERE payment_id = 'xxx' ORDER BY created_at DESC;
-   ```
-   - `status` должен быть `SUCCESS`
-
-3. Проверь логи:
-   ```bash
-   grep "payment.succeeded" /var/log/app/*.log | grep "xxx"
-   ```
-
-### Webhook возвращает 403
-
-1. IP не в allowlist — обновить `YOOKASSA_IP_RANGES`
-2. XFF spoofing — проверить `WEBHOOK_TRUST_XFF`
-
-### Рекуррентный платёж не создаётся
-
-1. Проверь `Subscription.auto_renew` — должен быть `True`
-2. Проверь `Subscription.yookassa_payment_method_id` — должен быть заполнен
-3. Проверь логи команды:
-   ```bash
-   python manage.py process_recurring_payments --dry-run
-   ```
-
-### Лимиты не работают
-
-1. Проверь `DailyUsage`:
-   ```sql
-   SELECT * FROM billing_dailyusage WHERE user_id = X AND date = CURDATE();
-   ```
-
-2. Проверь `SubscriptionPlan.daily_photo_limit`:
-   ```sql
-   SELECT code, daily_photo_limit FROM subscription_plans;
-   ```
-
----
-
-## Резервное копирование
-
-**Критические таблицы:**
-- `subscription_plans` — тарифы
-- `subscriptions` — подписки пользователей
-- `payments` — платежи
-
-**Резервное копирование:**
-```bash
-pg_dump -t subscription_plans -t subscriptions -t payments > billing_backup.sql
+```sql
+SELECT * FROM webhook_logs 
+WHERE payment_id = 'xxx' 
+ORDER BY created_at DESC;
 ```
 
----
+### Webhook не доходит
 
-## Обновление IP YooKassa
+1. Проверь URL в настройках YooKassa
+2. Проверь firewall/nginx — пропускает ли POST?
+3. Проверь IP allowlist — не изменился ли?
 
-Если YooKassa изменит IP-диапазоны:
+### Recurring 403 Forbidden
 
-1. Обнови `webhooks/utils.py`:
-   ```python
-   YOOKASSA_IP_RANGES = [
-       # новые диапазоны
-   ]
-   ```
+**Причина:** recurring не активирован в YooKassa
 
-2. Перезапусти backend:
-   ```bash
-   docker-compose restart backend
-   ```
-
-3. Проверь, что webhooks доходят
+**Решение:**
+1. Активировать recurring в кабинете YooKassa
+2. Установить `BILLING_RECURRING_ENABLED=true`
+3. Перезапустить backend
 
 ---
 
-## Полезные команды
+## Telegram Алерты
 
-```bash
-# Статус подписок
-python manage.py shell -c "
-from apps.billing.models import Subscription
-print('Active PRO:', Subscription.objects.filter(plan__code__startswith='PRO', is_active=True).count())
-print('Expired:', Subscription.objects.filter(end_date__lt=timezone.now()).exclude(plan__code='FREE').count())
-"
+### Настройка
 
-# Последние платежи
-python manage.py shell -c "
-from apps.billing.models import Payment
-for p in Payment.objects.order_by('-created_at')[:10]:
-    print(f'{p.created_at} | {p.status} | {p.amount}₽ | {p.user.email}')
-"
-
-# Последние webhooks
-python manage.py shell -c "
-from apps.billing.models import WebhookLog
-for w in WebhookLog.objects.order_by('-created_at')[:10]:
-    print(f'{w.created_at} | {w.event_type} | {w.status}')
-"
+```env
+TELEGRAM_BOT_TOKEN=your-bot-token
+TELEGRAM_ADMINS=123456789,987654321
 ```
+
+### Какие алерты приходят
+
+| Событие | Сообщение |
+|---------|-----------|
+| Новая PRO подписка | 🎉 НОВАЯ ПОДПИСКА PRO |
+| Failed webhooks | 🚨 BILLING ALERT |
+| Много отменённых платежей | ⚠️ BILLING CLEANUP |
+
+---
+
+## Переключатель Recurring
+
+### Текущий статус
+
+Проверить:
+```bash
+docker exec eatfit24-backend-1 python -c "from django.conf import settings; print(settings.BILLING_RECURRING_ENABLED)"
+```
+
+### Как переключить
+
+1. Изменить в `.env`:
+   ```env
+   BILLING_RECURRING_ENABLED=true  # или false
+   ```
+
+2. Перезапустить:
+   ```bash
+   docker compose restart backend celery-worker
+   ```
+
+| Режим | save_payment_method | Автопродление |
+|-------|---------------------|---------------|
+| `true` | ✅ да | ✅ доступно |
+| `false` | ❌ нет | ❌ недоступно |

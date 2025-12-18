@@ -13,10 +13,8 @@
 | [security.md](./security.md) | Безопасность |
 | [limits-and-usage.md](./limits-and-usage.md) | Лимиты и использование |
 | [operations.md](./operations.md) | Эксплуатация |
-| [**RECURRING_SWITCH.md**](./RECURRING_SWITCH.md) | **⚠️ Переключатель recurring/one-time** |
-| [**KNOWN_LIMITATIONS.md**](./KNOWN_LIMITATIONS.md) | **⚠️ Известные ограничения** |
-| [legacy-history.md](./legacy-history.md) | История legacy |
-| [glossary.md](./glossary.md) | Глоссарий |
+
+---
 
 ## Быстрый старт
 
@@ -24,31 +22,121 @@
 2. Прочитай [payment-flow.md](./payment-flow.md) — понять flow денег
 3. Прочитай [security.md](./security.md) — понять ограничения
 
+---
+
+## Структура модуля
+
+```
+billing/
+├── models.py          # SubscriptionPlan, Subscription, Payment, Refund, WebhookLog
+├── views.py           # API endpoints
+├── services.py        # YooKassaService + бизнес-логика
+├── notifications.py   # Telegram-уведомления о подписках
+├── usage.py           # Дневные лимиты (DailyUsage)
+├── throttles.py       # Rate limiting
+├── serializers.py     # Валидация и форматирование
+├── urls.py            # Маршруты API
+├── admin.py           # Django Admin
+├── webhooks/          # Обработка webhook YooKassa
+│   ├── views.py       # Приём webhook
+│   ├── handlers.py    # Бизнес-логика событий
+│   ├── tasks.py       # Celery tasks
+│   └── utils.py       # IP allowlist
+└── management/commands/
+    ├── process_recurring_payments.py
+    └── cleanup_expired_subscriptions.py
+```
+
+---
+
 ## Ключевые принципы
 
-- **Webhook = источник истины** — платёж успешен только после webhook
-- **Цена из БД** — сумма никогда не приходит с фронта
-- **Атомарные лимиты** — защита от race condition
-- **YooKassaService** — единственный клиент YooKassa
+| Принцип | Описание |
+|---------|----------|
+| **Webhook = источник истины** | Платёж успешен только после webhook |
+| **Цена из БД** | Сумма никогда не приходит с фронта |
+| **YooKassaService** | Единственный клиент YooKassa |
+| **Атомарные лимиты** | Защита от race condition |
 
-## ⚠️ Важные ограничения (2025-12-17)
+---
 
-### Recurring платежи: контролируются флагом `BILLING_RECURRING_ENABLED`
+## API Endpoints
 
-**Текущий статус:** `BILLING_RECURRING_ENABLED=false` (ONE_TIME режим)
+| Endpoint | Метод | Назначение |
+|----------|-------|------------|
+| `/billing/plans/` | GET | Список активных планов |
+| `/billing/me/` | GET | Статус подписки и лимиты |
+| `/billing/create-payment/` | POST | Создание платежа |
+| `/billing/subscription/` | GET | Детали подписки |
+| `/billing/subscription/autorenew/` | POST | Настройка автопродления |
+| `/billing/payment-method/` | GET | Информация о карте |
+| `/billing/payments/` | GET | История платежей |
+| `/billing/bind-card/start/` | POST | Привязка карты |
+| `/billing/webhooks/yookassa` | POST | Webhook YooKassa |
 
-**Причина:** YooKassa возвращает 403 Forbidden при `save_payment_method=true` (recurring не активирован на аккаунте)
+---
 
-**Что это значит:**
-- ✅ Единоразовые платежи работают
-- ❌ Автопродление подписок недоступно
-- ❌ Привязка карты недоступна
+## Модели
 
-**Как включить обратно:**
+| Модель | Назначение |
+|--------|------------|
+| `SubscriptionPlan` | Тарифные планы (FREE, PRO_MONTHLY, PRO_YEARLY) |
+| `Subscription` | Подписка пользователя (1:1 с User) |
+| `Payment` | Платёж (PENDING → SUCCEEDED/CANCELED) |
+| `Refund` | Возврат средств |
+| `WebhookLog` | Лог входящих webhook |
+
+---
+
+## Конфигурация
+
+### Переменные окружения
+
+| Переменная | Описание |
+|------------|----------|
+| `YOOKASSA_SHOP_ID` | ID магазина YooKassa |
+| `YOOKASSA_SECRET_KEY` | Секретный ключ YooKassa |
+| `YOOKASSA_RETURN_URL` | URL возврата после оплаты |
+| `BILLING_RECURRING_ENABLED` | `true` / `false` — режим recurring платежей |
+| `TELEGRAM_BOT_TOKEN` | Токен бота для уведомлений |
+| `TELEGRAM_ADMINS` | ID админов для уведомлений |
+
+### Recurring платежи
+
+> ⚠️ **Важно:** `BILLING_RECURRING_ENABLED` контролирует режим работы
+
+| Режим | `save_payment_method` | Автопродление | Привязка карты |
+|-------|----------------------|---------------|----------------|
+| `true` | ✅ включено | ✅ доступно | ✅ доступна |
+| `false` | ❌ выключено | ❌ недоступно | ❌ недоступна |
+
+**Как включить recurring:**
 1. Активировать recurring в личном кабинете YooKassa
-2. Изменить `BILLING_RECURRING_ENABLED=true` в `/opt/EatFit24/.env`
+2. Установить `BILLING_RECURRING_ENABLED=true`
 3. Перезапустить: `docker compose restart backend celery-worker`
 
-**Документация:**
-- [RECURRING_SWITCH.md](./RECURRING_SWITCH.md) — полная инструкция
-- [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) — все ограничения
+---
+
+## Уведомления
+
+При успешной оплате PRO подписки админам отправляется Telegram-уведомление:
+
+```
+🎉 НОВАЯ ПОДПИСКА PRO
+━━━━━━━━━━━━━━━━━━
+👤 Имя: {full_name}
+🆔 Telegram ID: {tg_id}
+📧 Username: @{username}
+━━━━━━━━━━━━━━━━━━
+💎 Тариф: PRO Месячный/Годовой
+💰 Сумма: {price} ₽
+📅 Подписка до: {end_date}
+
+[👤 Открыть профиль в Telegram]
+```
+
+---
+
+## Дата обновления
+
+**2025-12-18** — Консолидация документации, добавление notifications.py

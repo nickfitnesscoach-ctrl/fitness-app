@@ -1,147 +1,140 @@
 # Жизненный цикл подписки
 
-## Модель Subscription
+## Обзор
 
-Каждый пользователь имеет **ровно одну** подписку (OneToOne с User).
+Каждый пользователь имеет ровно **одну подписку** (1:1 с User).
 
-```python
-class Subscription(models.Model):
-    user = models.OneToOneField(User, ...)
-    plan = models.ForeignKey(SubscriptionPlan, ...)
-    start_date = models.DateTimeField()
-    end_date = models.DateTimeField()
-    is_active = models.BooleanField(default=True)
-    auto_renew = models.BooleanField(default=False)
-    yookassa_payment_method_id = models.CharField(...)  # для автопродления
-    card_mask = models.CharField(...)  # "•••• 1234"
-    card_brand = models.CharField(...)  # "Visa"
-```
+При регистрации автоматически создаётся FREE подписка.
+
+---
 
 ## Состояния
 
-```mermaid
-stateDiagram-v2
-    [*] --> FREE: Регистрация
-    FREE --> PRO: Успешный платёж
-    PRO --> FREE: Истечение срока
-    PRO --> PRO: Продление/автопродление
+```
+[Регистрация] → FREE (активно)
+           ↓
+[Оплата PRO] → PRO_MONTHLY/PRO_YEARLY (активно)
+           ↓
+[Истечение] → PRO (неактивно) → [cleanup] → FREE
+           или
+[Автопродление] → PRO (продлено)
 ```
 
-### FREE (бесплатный)
+---
 
-- Создаётся автоматически при регистрации (сигнал `post_save`)
-- `end_date` = 10 лет вперёд (условно бесконечно)
-- `is_expired()` всегда возвращает `False` для FREE
-- Лимиты определяются `SubscriptionPlan.daily_photo_limit`
+## Тарифные планы
 
-### PRO (платный)
+| Code | Название | Цена | Длительность | Лимит фото |
+|------|----------|------|--------------|------------|
+| `FREE` | Бесплатный | 0 ₽ | ∞ | 3/день |
+| `PRO_MONTHLY` | PRO месячный | 299 ₽ | 30 дней | ∞ |
+| `PRO_YEARLY` | PRO годовой | 1990 ₽ | 365 дней | ∞ |
 
-- Активируется после успешного webhook
-- `end_date` = текущая дата + `plan.duration_days`
-- При истечении → переход на FREE
+---
 
-## Переходы
+## Модель Subscription
 
-### Регистрация → FREE
+| Поле | Описание |
+|------|----------|
+| `user` | OneToOne с User |
+| `plan` | FK на SubscriptionPlan |
+| `start_date` | Начало подписки |
+| `end_date` | Окончание подписки |
+| `is_active` | Активна ли |
+| `auto_renew` | Автопродление |
+| `yookassa_payment_method_id` | Сохранённая карта |
+| `card_mask` | •••• 1234 |
+| `card_brand` | Visa/MasterCard/МИР |
+
+---
+
+## Методы модели
+
+### is_expired()
 
 ```python
-# models.py: сигнал post_save(User)
+def is_expired(self) -> bool:
+    """FREE никогда не истекает."""
+    if self.plan.code == "FREE":
+        return False
+    return timezone.now() >= self.end_date
+```
+
+### days_remaining (property)
+
+```python
+@property
+def days_remaining(self):
+    """FREE → None, expired → 0."""
+    if self.plan.code == "FREE":
+        return None
+    if not self.is_active or self.is_expired():
+        return 0
+    return max(0, (self.end_date - timezone.now()).days)
+```
+
+---
+
+## Активация подписки
+
+При успешном webhook вызывается:
+
+```python
+activate_or_extend_subscription(
+    user=payment.user,
+    plan_code=plan.code,
+    duration_days=plan.duration_days,
+)
+```
+
+**Логика:**
+- Если подписка истекла → новый период от `now()`
+- Если активна → добавляем дни к `end_date`
+
+---
+
+## Автопродление
+
+### Условия
+
+1. `auto_renew=True`
+2. `yookassa_payment_method_id` сохранён
+3. `BILLING_RECURRING_ENABLED=true`
+
+### Процесс
+
+1. Command `process_recurring_payments` запускается по cron
+2. Находит подписки истекающие в ближайшие N дней
+3. Создаёт рекуррентный платёж через `YooKassaService`
+4. Webhook обрабатывается как обычный платёж
+
+---
+
+## Сигналы
+
+### create_free_subscription
+
+При создании User автоматически создаётся FREE подписка:
+
+```python
 @receiver(post_save, sender=User)
 def create_free_subscription(sender, instance, created, **kwargs):
     if created:
-        free_plan = SubscriptionPlan.objects.get(code="FREE")
         Subscription.objects.create(
             user=instance,
             plan=free_plan,
             start_date=now(),
             end_date=now() + timedelta(days=365*10),
+            is_active=True,
         )
 ```
 
-### FREE → PRO (покупка)
+---
 
-```python
-# services.py: после webhook payment.succeeded
-def activate_or_extend_subscription(*, user, plan_code, duration_days):
-    subscription = ensure_subscription_exists(user)
-    plan = get_plan_by_code_or_legacy(plan_code)
-    
-    if subscription.is_expired():
-        subscription.start_date = now()
-        subscription.end_date = now() + timedelta(days=duration_days)
-    else:
-        subscription.end_date += timedelta(days=duration_days)
-    
-    subscription.plan = plan
-    subscription.is_active = True
-    subscription.save()
-```
+## API Endpoints
 
-### PRO → PRO (продление)
-
-Если подписка ещё активна:
-- `end_date` += `duration_days`
-- План остаётся/меняется
-
-### PRO → FREE (истечение)
-
-Management command `cleanup_expired_subscriptions`:
-```bash
-python manage.py cleanup_expired_subscriptions
-```
-
-Переводит истёкшие подписки на FREE:
-- `plan = FREE`
-- `auto_renew = False`
-- `is_active = True`
-
-## Автопродление
-
-### Включение
-
-```
-POST /api/v1/billing/subscription/autorenew/
-{"enabled": true}
-```
-
-Требования:
-- План ≠ FREE
-- Есть сохранённый `payment_method_id`
-
-### Процесс
-
-1. `process_recurring_payments` запускается по cron
-2. Находит подписки: `auto_renew=True`, истекают в ближайшие N дней
-3. Создаёт рекуррентный платёж через YooKassa API
-4. Webhook обрабатывает результат
-
-### Отключение
-
-```
-POST /api/v1/billing/subscription/autorenew/
-{"enabled": false}
-```
-
-## Проверка истечения
-
-```python
-def is_expired(self) -> bool:
-    if self.plan.code == "FREE":
-        return False  # FREE никогда не истекает
-    return timezone.now() >= self.end_date
-
-@property
-def days_remaining(self):
-    if self.plan.code == "FREE":
-        return None  # безлимит
-    if self.is_expired():
-        return 0
-    return (self.end_date - timezone.now()).days
-```
-
-## Кеширование
-
-Эффективный план пользователя кешируется:
-- Ключ: `user_plan:{user_id}`
-- Инвалидация: после любого изменения подписки
-- Используется для быстрой проверки лимитов
+| Endpoint | Описание |
+|----------|----------|
+| `GET /billing/me/` | Короткий статус (план, лимиты) |
+| `GET /billing/subscription/` | Полная карточка |
+| `POST /billing/subscription/autorenew/` | Вкл/выкл автопродление |

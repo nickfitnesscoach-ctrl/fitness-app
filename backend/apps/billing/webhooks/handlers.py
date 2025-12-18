@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from apps.billing.models import Payment, Refund, SubscriptionPlan
 from apps.billing.services import activate_or_extend_subscription, invalidate_user_plan_cache
+from apps.billing.notifications import send_pro_subscription_notification
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,20 @@ def _handle_payment_succeeded(payload: Dict[str, Any]) -> None:
 
         # 4) Кэш плана пользователя — в ноль
         invalidate_user_plan_cache(payment.user_id)
+
+        # 5) Отправляем уведомление админам о новой PRO подписке
+        # Уведомление отправляется только для платных планов (не FREE)
+        if plan.code != "FREE" and plan.price > 0:
+            try:
+                send_pro_subscription_notification(
+                    subscription=subscription,
+                    plan=plan,
+                )
+            except Exception as notify_err:
+                # Ошибка уведомления не должна ломать основной процесс
+                logger.warning(
+                    f"[payment.succeeded] Не удалось отправить уведомление: {notify_err}"
+                )
 
         logger.info(
             f"[payment.succeeded] ok: payment_id={payment.id}, yk_id={yk_payment_id}, "

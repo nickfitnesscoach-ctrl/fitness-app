@@ -2,175 +2,146 @@
 
 ## Обзор
 
-Система лимитов контролирует использование AI-функций в зависимости от плана подписки.
+Система лимитов контролирует количество AI-анализов фото в день.
 
-## Модель DailyUsage
-
-```python
-class DailyUsage(models.Model):
-    user = models.ForeignKey(User, ...)
-    date = models.DateField(default=today)
-    photo_ai_requests = models.PositiveIntegerField(default=0)
-```
-
-Уникальность: `(user, date)` — одна запись на пользователя в день.
+---
 
 ## Лимиты по планам
 
-| План | `daily_photo_limit` | Поведение |
-|------|---------------------|-----------|
-| FREE | 3 | Максимум 3 фото в день |
-| PRO_MONTHLY | `null` | Безлимит |
-| PRO_YEARLY | `null` | Безлимит |
+| План | Лимит фото/день | История |
+|------|-----------------|---------|
+| `FREE` | 3 | 7 дней |
+| `PRO_MONTHLY` | ∞ (null) | ∞ |
+| `PRO_YEARLY` | ∞ (null) | ∞ |
 
-`null` = безлимит.
+---
 
-## Проверка лимита
+## Модуль usage.py
 
-### Атомарная проверка + инкремент
+### DailyUsage
+
+Хранит использование по дням:
 
 ```python
-allowed, current_count = DailyUsage.objects.check_and_increment_if_allowed(
-    user=user,
-    limit=plan.daily_photo_limit,
-    amount=1
-)
-
-if not allowed:
-    return Response({"error": "daily_limit_reached"}, status=429)
+class DailyUsage(models.Model):
+    user = ForeignKey(User)
+    date = DateField()
+    photo_analyses = IntegerField(default=0)
 ```
 
-**Важно:** Проверка и инкремент происходят **атомарно** в одной транзакции с блокировкой строки.
+### Ключевые функции
 
-### Почему атомарно?
+```python
+# Получить использование за сегодня
+get_today_usage(user) -> int
 
-Race condition без атомарности:
-```
-Request 1: check (count=2, limit=3) → OK
-Request 2: check (count=2, limit=3) → OK
-Request 1: increment (count=3)
-Request 2: increment (count=4)  # Превышение!
-```
+# Инкрементировать использование
+increment_usage(user) -> int
 
-С атомарностью:
-```
-Request 1: lock + check + increment (count=3) → OK
-Request 2: wait... lock + check (count=3, limit=3) → REJECT
+# Проверить, можно ли ещё
+can_analyze_photo(user) -> bool
+
+# Оставшиеся анализы
+remaining_analyses(user) -> int | None  # None = безлимит
 ```
 
-## API
+---
 
-### Получение статуса
+## Атомарность
 
+Защита от race condition:
+
+```python
+@transaction.atomic
+def increment_usage(user):
+    usage, _ = DailyUsage.objects.select_for_update().get_or_create(
+        user=user,
+        date=date.today(),
+    )
+    usage.photo_analyses = F('photo_analyses') + 1
+    usage.save()
 ```
-GET /api/v1/billing/me/
-```
+
+---
+
+## API Response
+
+### GET /billing/me/
 
 ```json
 {
   "plan_code": "FREE",
+  "plan_name": "Бесплатный",
+  "is_active": true,
+  "end_date": null,
   "daily_photo_limit": 3,
   "used_today": 2,
   "remaining_today": 1
 }
 ```
 
-### Проверка перед операцией
+Для PRO:
+
+```json
+{
+  "plan_code": "PRO_MONTHLY",
+  "plan_name": "PRO месячный",
+  "is_active": true,
+  "end_date": "2025-01-18",
+  "daily_photo_limit": null,
+  "used_today": 15,
+  "remaining_today": null
+}
+```
+
+---
+
+## Проверка в коде
+
+### AI модуль
 
 ```python
-# В views/services где нужна проверка лимита
-from apps.billing.usage import DailyUsage
+from apps.billing.usage import can_analyze_photo, increment_usage
 
-def some_ai_operation(request):
-    subscription = request.user.subscription
-    limit = subscription.plan.daily_photo_limit
+def analyze_food_photo(user, photo):
+    if not can_analyze_photo(user):
+        raise LimitExceededError("Daily limit reached")
     
-    allowed, count = DailyUsage.objects.check_and_increment_if_allowed(
-        user=request.user,
-        limit=limit,
-        amount=1
-    )
-    
-    if not allowed:
-        return Response({
-            "error": "DAILY_LIMIT_REACHED",
-            "limit": limit,
-            "used": count
-        }, status=429)
-    
-    # Продолжаем операцию...
+    result = ai_service.analyze(photo)
+    increment_usage(user)
+    return result
 ```
 
-## Методы DailyUsageManager
+---
 
-### get_today(user)
+## Кеширование
 
-Получает или создаёт запись на сегодня.
-
-```python
-usage = DailyUsage.objects.get_today(user)
-print(usage.photo_ai_requests)  # 5
-```
-
-### increment_photo_ai_requests(user, amount=1)
-
-Увеличивает счётчик атомарно (без проверки лимита).
+Для оптимизации КБЖУ-лимитов используется кеш плана:
 
 ```python
-usage = DailyUsage.objects.increment_photo_ai_requests(user, amount=1)
-```
+CACHE_KEY = f"user_plan:{user_id}"
+CACHE_TTL = 300  # 5 минут
 
-### check_and_increment_if_allowed(user, limit, amount=1)
+def get_user_plan_cached(user_id):
+    cached = cache.get(CACHE_KEY)
+    if cached:
+        return cached
+    plan = Subscription.objects.get(user_id=user_id).plan
+    cache.set(CACHE_KEY, plan, CACHE_TTL)
+    return plan
 
-Атомарная проверка + инкремент.
-
-```python
-allowed, count = DailyUsage.objects.check_and_increment_if_allowed(
-    user=user,
-    limit=3,  # None = безлимит
-    amount=1
-)
-```
-
-### reset_today(user)
-
-Обнуляет счётчик (для тестов/админки).
-
-```python
-DailyUsage.objects.reset_today(user)
-```
-
-## Кеширование лимитов
-
-Эффективный план кешируется:
-```python
-cache_key = f"user_plan:{user.id}"
+def invalidate_user_plan_cache(user_id):
+    cache.delete(CACHE_KEY)
 ```
 
 Инвалидация происходит при:
-- Изменении подписки
-- Продлении подписки
-- Смене плана
+- Успешном webhook (`handlers.py`)
+- Изменении подписки через admin
 
-## Связь с биллингом
+---
 
-```
-SubscriptionPlan.daily_photo_limit
-        ↓
-Subscription.plan
-        ↓
-DailyUsage.check_and_increment_if_allowed(limit=plan.daily_photo_limit)
-```
+## Сброс лимитов
 
-## Troubleshooting
+Лимиты сбрасываются автоматически каждый день (по дате `DailyUsage.date`).
 
-### Лимит "съехал"
-
-1. Проверь `DailyUsage` для пользователя на сегодня
-2. Проверь `Subscription.plan.daily_photo_limit`
-3. Проверь кеш плана
-
-### Всегда "лимит достигнут"
-
-1. Проверь, не `0` ли `daily_photo_limit` (вместо `null`)
-2. Проверь дату в `DailyUsage` — может быть не сегодня
+Часовой пояс: берётся из `Profile.timezone` или `settings.TIME_ZONE`.

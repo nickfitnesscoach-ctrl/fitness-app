@@ -3,11 +3,18 @@
 ## Обзор
 
 Платёж в EatFit24 — это **webhook-first** процесс:
-1. Фронт инициирует платёж
-2. Бэкенд создаёт платёж в YooKassa
-3. Пользователь оплачивает на стороне YooKassa
-4. YooKassa присылает webhook
-5. **Только после webhook** подписка обновляется
+
+```
+1. Фронт → POST /billing/create-payment/
+2. Бэкенд → создаёт Payment + вызывает YooKassa
+3. Пользователь → оплачивает на YooKassa
+4. YooKassa → POST /billing/webhooks/yookassa
+5. Бэкенд → обновляет подписку + отправляет уведомление
+```
+
+> ⚠️ **Важно:** подписка обновляется ТОЛЬКО после webhook!
+
+---
 
 ## Шаги
 
@@ -16,8 +23,6 @@
 ```
 GET /api/v1/billing/plans/
 ```
-
-Возвращает активные планы (без `is_test=True`):
 
 ```json
 [
@@ -35,20 +40,16 @@ GET /api/v1/billing/plans/
 
 ```
 POST /api/v1/billing/create-payment/
-Content-Type: application/json
-
 {
-  "plan_code": "PRO_MONTHLY",
-  "return_url": "https://app.eatfit24.ru/subscription"  // optional
+  "plan_code": "PRO_MONTHLY"
 }
 ```
 
-**Бэкенд делает:**
+**Бэкенд:**
 1. Проверяет `plan_code` в БД
 2. Берёт `price` **из БД** (не от клиента!)
-3. Создаёт локальный `Payment` со статусом `PENDING`
+3. Создаёт `Payment` со статусом `PENDING`
 4. Вызывает `YooKassaService.create_payment()`
-5. Возвращает `confirmation_url`
 
 ```json
 {
@@ -60,10 +61,8 @@ Content-Type: application/json
 ### 3. Оплата пользователем
 
 Фронт редиректит на `confirmation_url`.
-Пользователь вводит данные карты на YooKassa.
-После оплаты — возврат на `return_url`.
 
-> ⚠️ Возврат на `return_url` **не означает успех платежа!**
+> ⚠️ Возврат на `return_url` **НЕ означает успех платежа!**
 
 ### 4. Webhook от YooKassa
 
@@ -71,38 +70,20 @@ Content-Type: application/json
 POST /api/v1/billing/webhooks/yookassa
 ```
 
-YooKassa присылает событие:
-
-```json
-{
-  "type": "notification",
-  "event": "payment.succeeded",
-  "object": {
-    "id": "yookassa-payment-id",
-    "status": "succeeded",
-    "payment_method": {
-      "id": "pm_...",
-      "card": {
-        "last4": "1234",
-        "card_type": "Visa"
-      }
-    }
-  }
-}
-```
-
-**Бэкенд делает:**
+**Бэкенд:**
 1. Проверяет IP (allowlist YooKassa)
-2. Проверяет идемпотентность (WebhookLog)
-3. Находит `Payment` по `yookassa_payment_id`
-4. Помечает `Payment.status = SUCCEEDED`
-5. Вызывает `activate_or_extend_subscription()`
-6. Сохраняет `payment_method_id` для автопродления
-7. Инвалидирует кеш плана
+2. Логирует в `WebhookLog`
+3. Ставит Celery task на обработку
+4. Возвращает 200 OK
+
+**Celery task:**
+1. Находит `Payment` по `yookassa_payment_id`
+2. Помечает `Payment.status = SUCCEEDED`
+3. Вызывает `activate_or_extend_subscription()`
+4. Отправляет Telegram-уведомление админам
+5. Инвалидирует кеш плана
 
 ### 5. Проверка статуса
-
-Фронт после возврата проверяет:
 
 ```
 GET /api/v1/billing/me/
@@ -113,11 +94,11 @@ GET /api/v1/billing/me/
   "plan_code": "PRO_MONTHLY",
   "plan_name": "PRO месячный",
   "is_active": true,
-  "end_date": "2025-01-17T14:00:00Z",
-  "daily_photo_limit": null,
-  "used_today": 5
+  "end_date": "2025-01-17T14:00:00Z"
 }
 ```
+
+---
 
 ## Статусы Payment
 
@@ -128,19 +109,22 @@ PENDING → WAITING_FOR_CAPTURE (редко)
 SUCCEEDED → REFUNDED (webhook refund.succeeded)
 ```
 
-## Принципы
+---
+
+## Правила
 
 | ❌ Нельзя | ✅ Нужно |
 |----------|---------|
 | Принимать сумму с фронта | Брать цену из `SubscriptionPlan.price` |
-| Считать платёж успешным по return_url | Ждать webhook |
+| Считать успешным по return_url | Ждать webhook |
 | Менять подписку без webhook | Обновлять только в handlers.py |
-| Доверять `confirmation_url` статусу | Проверять `Payment.status` |
+
+---
 
 ## Автопродление
 
-Если `save_payment_method=True`:
-1. При успешном платеже сохраняется `payment_method_id`
-2. Management command `process_recurring_payments` использует его
-3. Создаётся рекуррентный платёж без участия пользователя
-4. Webhook обрабатывается так же
+Если `BILLING_RECURRING_ENABLED=true`:
+
+1. При оплате сохраняется `payment_method_id`
+2. Command `process_recurring_payments` создаёт рекуррентный платёж
+3. Webhook обрабатывается так же
