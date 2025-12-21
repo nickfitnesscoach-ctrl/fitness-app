@@ -177,3 +177,65 @@ docker exec eatfit24-backend-1 python -c "from django.conf import settings; prin
 |-------|---------------------|---------------|
 | `true` | ✅ да | ✅ доступно |
 | `false` | ❌ нет | ❌ недоступно |
+
+---
+
+## 🆘 "Деньги списались, PRO нет"
+
+### Алгоритм диагностики
+
+1. **Найти платёж по email/Telegram ID:**
+
+```sql
+SELECT p.id, p.status, p.amount, p.created_at, p.webhook_processed_at
+FROM billing_payment p
+JOIN users_user u ON p.user_id = u.id
+WHERE u.email = 'user@example.com'
+ORDER BY p.created_at DESC
+LIMIT 5;
+```
+
+2. **Проверить webhook:**
+
+```sql
+SELECT * FROM billing_webhooklog
+WHERE raw_payload::text LIKE '%payment_id_from_step_1%'
+ORDER BY created_at DESC;
+```
+
+3. **Возможные причины:**
+
+| Симптом | Причина | Решение |
+|---------|---------|---------|
+| Payment PENDING | Webhook не дошёл | Проверить YooKassa / IP |
+| Webhook FAILED | Ошибка обработки | Проверить логи Celery |
+| Webhook SUCCESS, но подписка FREE | Bug в handlers.py | Ручной фикс |
+| Нет Payment | Пользователь не завершил | Нет действий |
+
+4. **Ручное исправление (крайний случай):**
+
+```python
+# Django shell
+from apps.billing.services import activate_or_extend_subscription
+from apps.users.models import User
+
+user = User.objects.get(email='user@example.com')
+activate_or_extend_subscription(user, 'PRO_MONTHLY', 30)
+```
+
+---
+
+## Команда reconcile_payments
+
+```bash
+# Проверка расхождений между YooKassa и БД
+python manage.py reconcile_payments
+
+# С фиксом (осторожно!)
+python manage.py reconcile_payments --fix
+
+# За конкретный период
+python manage.py reconcile_payments --since 2025-12-01
+```
+
+> ⚠️ Эта команда пока не реализована. TODO: создать при необходимости.

@@ -130,3 +130,38 @@ def increment_usage(user, date, feature):
 - [x] XFF protection по умолчанию
 - [x] Атомарные операции с лимитами
 - [x] Тестовые планы скрыты от обычных пользователей
+
+---
+
+## Что делать, если YooKassa шлёт мусор
+
+### Сценарии "мусора"
+
+| Проблема | Как обрабатываем |
+|----------|------------------|
+| Неизвестный `event_type` | Логируем, возвращаем 200 OK |
+| Отсутствует `object.id` | Логируем ошибку, 200 OK |
+| `payment_id` не найден в БД | Логируем warning, 200 OK |
+| Дублирующий webhook | Идемпотентность — пропускаем |
+| Невалидный JSON | 400 Bad Request |
+| IP не в allowlist | 403 Forbidden, логируем |
+
+### Принцип
+
+> ⚠️ ВСЕГДА возвращай 200 OK (кроме 400/403), иначе YooKassa будет ретраить.
+
+---
+
+## Чек-лист продакшн деплоя биллинга
+
+- [ ] `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` заданы (production)
+- [ ] `BILLING_RECURRING_ENABLED` = true/false (осознанно)
+- [ ] Webhook URL зарегистрирован в кабинете YooKassa
+- [ ] IP allowlist актуален (проверить https://yookassa.ru/developers/api)
+- [ ] Rate limiting включён (`PaymentCreationThrottle`, `WebhookThrottle`)
+- [ ] XFF protection = `WEBHOOK_TRUST_XFF=false` (или настроен прокси)
+- [ ] Celery worker запущен с очередью `-Q billing`
+- [ ] Celery beat запущен (для retry_stuck_webhooks)
+- [ ] `TELEGRAM_ADMINS` настроен для алертов
+- [ ] Тестовый платёж прошёл успешно
+- [ ] Проверена идемпотентность (повторный webhook не дублирует)
