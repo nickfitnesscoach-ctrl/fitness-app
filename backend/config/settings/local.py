@@ -10,7 +10,12 @@ local.py — настройки для разработки на своём ко
 
 from __future__ import annotations
 
+import os
 from . import base
+
+# SECRET_KEY для локальной разработки
+# В CI будет браться из переменной окружения, в dev можно использовать дефолтный
+SECRET_KEY = os.environ.get("SECRET_KEY") or os.environ.get("DJANGO_SECRET_KEY") or "local-dev-secret-key-change-in-production"
 
 # В локальной разработке мы явно включаем DEBUG
 DEBUG = True

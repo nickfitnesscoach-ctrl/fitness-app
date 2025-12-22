@@ -14,6 +14,10 @@ import os
 
 from .base import *  # noqa
 
+# SECRET_KEY validation for production
+if not SECRET_KEY:  # noqa: F405
+    raise ValueError("SECRET_KEY must be set in production environment")
+
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
 # В проде обязательно указывать домены
