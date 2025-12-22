@@ -17,3 +17,8 @@ gunicorn>=21.2
 celery>=5.3
 redis>=5.0
 django-redis>=5.4
+requests>=2.31
+# Testing
+pytest>=8.0
+pytest-django>=4.5
+

@@ -1,39 +1,28 @@
 """
-AI Proxy Client for EatFit24.
+client.py — HTTP клиент для внутреннего сервиса AI Proxy.
 
-This module provides a synchronous HTTP client for interacting with the EatFit24 AI Proxy service.
-The AI Proxy is an internal service that wraps OpenRouter API calls for food recognition.
+Простыми словами:
+- AI Proxy — отдельный микросервис, который распознаёт еду по фото.
+- Этот файл отвечает только за:
+  1) собрать HTTP запрос (multipart/form-data)
+  2) добавить секрет (X-API-Key)
+  3) поставить безопасные таймауты
+  4) разобрать ответ (JSON)
+  5) превратить HTTP ошибки в понятные Python-исключения
 
-Security:
-- API key authentication (X-API-Key header)
-- Internal service (Tailscale VPN only)
-- 30 second timeout for AI processing
-
-Usage:
-    from apps.ai_proxy.client import AIProxyClient
-    from apps.ai_proxy.utils import parse_data_url
-
-    client = AIProxyClient()
-
-    # Parse data URL to bytes
-    image_bytes, content_type = parse_data_url(data_url)
-
-    # Send file via multipart/form-data
-    result = client.recognize_food(
-        image_bytes=image_bytes,
-        content_type=content_type,
-        user_comment="Grilled chicken with rice",
-        locale="ru"
-    )
+ВАЖНО (P0):
+- НЕЛЬЗЯ делать огромные таймауты (типа 130 секунд) в sync HTTP.
+- Мы вызываем AI Proxy из Celery (фон), поэтому таймаут 40 сек суммарно — ок.
 """
 
-import logging
-import time
-from typing import Dict, Optional
+from __future__ import annotations
 
-import httpx
+from dataclasses import dataclass
+import logging
+from typing import Any, Dict, Optional
+
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+import requests
 
 from .exceptions import (
     AIProxyAuthenticationError,
@@ -41,258 +30,174 @@ from .exceptions import (
     AIProxyTimeoutError,
     AIProxyValidationError,
 )
+from .utils import join_url, safe_json_loads
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Конфигурация клиента
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AIProxyConfig:
+    """
+    Настройки подключения к AI Proxy.
+
+    Простыми словами:
+    - url: куда отправляем запрос
+    - secret: ключ доступа (передаём через X-API-Key)
+    """
+
+    url: str
+    secret: str
+
+    @staticmethod
+    def from_django_settings() -> "AIProxyConfig":
+        # Берём из config/settings/*.py (у тебя это уже есть в base.py)
+        url = getattr(settings, "AI_PROXY_URL", "") or ""
+        secret = getattr(settings, "AI_PROXY_SECRET", "") or ""
+
+        if not url:
+            raise AIProxyServerError("AI_PROXY_URL не задан в настройках Django")
+        if not secret:
+            raise AIProxyAuthenticationError("AI_PROXY_SECRET не задан в настройках Django")
+
+        return AIProxyConfig(url=url, secret=secret)
+
+
+# ---------------------------------------------------------------------------
+# Клиент
+# ---------------------------------------------------------------------------
+
+
 class AIProxyClient:
     """
-    Synchronous HTTP client for EatFit24 AI Proxy service.
+    Низкоуровневый HTTP клиент.
 
-    This client handles:
-    - API key authentication
-    - Request timeout (30s)
-    - Error handling (401, 422, 500, timeout)
-    - Response validation
-    - Logging
-
-    Raises:
-        AIProxyAuthenticationError: Invalid or missing API key (401)
-        AIProxyValidationError: Invalid request body (422)
-        AIProxyServerError: AI service error (500)
-        AIProxyTimeoutError: Request timeout (>30s)
+    Использовать напрямую можно, но обычно вызывается через:
+    AIProxyService -> AIProxyClient
     """
 
-    def __init__(self):
-        """
-        Initialize AI Proxy client with settings validation.
+    # Реальный endpoint AI Proxy (из твоего FastAPI кода)
+    _RECOGNIZE_PATH = "/api/v1/ai/recognize-food"
 
-        Raises:
-            ImproperlyConfigured: If required settings are missing
-        """
-        # Validate settings
-        self.api_url = getattr(settings, "AI_PROXY_URL", None)
-        self.api_key = getattr(settings, "AI_PROXY_SECRET", None)
+    def __init__(
+        self,
+        config: Optional[AIProxyConfig] = None,
+        *,
+        connect_timeout_s: float = 5.0,
+        read_timeout_s: float = 35.0,
+    ) -> None:
+        self._config = config or AIProxyConfig.from_django_settings()
+        self._timeout = (connect_timeout_s, read_timeout_s)
 
-        if not self.api_url:
-            raise ImproperlyConfigured(
-                "AI_PROXY_URL is not set in settings. "
-                "Add it to your .env file (e.g., AI_PROXY_URL=http://100.84.210.65:8001)"
-            )
+        # requests.Session — чуть быстрее и проще (keep-alive)
+        self._session = requests.Session()
 
-        if not self.api_key:
-            raise ImproperlyConfigured(
-                "AI_PROXY_SECRET is not set in settings. "
-                "Add it to your .env file (e.g., AI_PROXY_SECRET=your-secret-key)"
-            )
+        # Секрет кладём только в заголовок. В логи никогда не выводим.
+        self._default_headers = {
+            "Accept": "application/json",
+            "X-API-Key": self._config.secret,
+        }
 
-        # Remove trailing slash from URL
-        self.api_url = self.api_url.rstrip("/")
-
-        # Initialize HTTP client with timeout
-        # Temporarily increased to 130s to allow OpenRouter (120s) to respond
-        # TODO: Implement async processing for production
-        self.timeout = 130.0  # 130 seconds
-        self.client = httpx.Client(timeout=self.timeout)
-
-        logger.info(
-            f"AI Proxy client initialized. URL: {self.api_url}, "
-            f"Key prefix: {self.api_key[:8]}..., Timeout: {self.timeout}s"
-        )
+    def _build_url(self, path: str) -> str:
+        return join_url(self._config.url, path)
 
     def recognize_food(
         self,
+        *,
         image_bytes: bytes,
         content_type: str,
-        user_comment: Optional[str] = None,
+        user_comment: str = "",
         locale: str = "ru",
-    ) -> Dict:
+        request_id: str = "",
+    ) -> Dict[str, Any]:
         """
-        Recognize food items from image bytes via multipart/form-data.
+        Отправляет фото в AI Proxy и возвращает сырой JSON dict.
 
-        Args:
-            image_bytes: Raw image bytes (JPEG or PNG)
-            content_type: MIME type of the image (e.g., 'image/jpeg', 'image/png')
-            user_comment: Optional user comment about the food
-            locale: Language code (default: "ru")
-
-        Returns:
-            Dict with structure (as returned by AI Proxy):
-            {
-                "items": [
-                    {
-                        "name": "Куриная грудка гриль",
-                        "grams": 150.0,
-                        "kcal": 165,
-                        "protein": 31.0,
-                        "fat": 3.6,
-                        "carbs": 0.0
-                    }
-                ],
-                "total": {
-                    "kcal": 165,
-                    "protein": 31.0,
-                    "fat": 3.6,
-                    "carbs": 0.0
-                },
-                "model_notes": "High protein meal, low fat"  # optional
-            }
-
-        Raises:
-            AIProxyAuthenticationError: Invalid API key (401)
-            AIProxyValidationError: Invalid request (422)
-            AIProxyServerError: AI service error (500)
-            AIProxyTimeoutError: Request timeout
+        Вход:
+        - image_bytes: байты изображения
+        - content_type: "image/jpeg" / "image/png"
+        - user_comment: опционально
+        - locale: "ru"/"en"
+        - request_id: пробрасываем для трассировки (X-Request-ID)
         """
-        endpoint = f"{self.api_url}/api/v1/ai/recognize-food"
+        if not image_bytes:
+            raise AIProxyValidationError("Пустое изображение (image_bytes пустой)")
 
-        # Prepare headers (no Content-Type, httpx will set it for multipart)
-        headers = {
-            "X-API-Key": self.api_key,
-        }
+        url = self._build_url(self._RECOGNIZE_PATH)
 
-        # Prepare multipart files
+        headers = dict(self._default_headers)
+        if request_id:
+            # AI Proxy middleware читает X-Request-ID и добавляет его в ответ
+            headers["X-Request-ID"] = request_id
+
+        # multipart/form-data:
+        # image — файл, user_comment/locale — поля формы
         files = {
-            "image": ("image", image_bytes, content_type or "application/octet-stream")
+            "image": ("image", image_bytes, content_type),
         }
-
-        # Prepare form data
         data = {
             "locale": locale or "ru",
         }
-
         if user_comment:
             data["user_comment"] = user_comment
 
-        # Log request (log size and type, not the actual bytes)
-        image_size_kb = len(image_bytes) / 1024
-        logger.info(
-            f"AI Proxy request START: endpoint={endpoint}, "
-            f"image_size={image_size_kb:.1f}KB, content_type={content_type}, "
-            f"comment={user_comment!r}, locale={locale}, timeout={self.timeout}s"
-        )
-
-        # Measure request time
-        start_time = time.time()
-
         try:
-            # Make HTTP POST request with multipart/form-data
-            response = self.client.post(
-                endpoint,
+            resp = self._session.post(
+                url,
                 headers=headers,
                 files=files,
                 data=data,
+                timeout=self._timeout,
+            )
+        except requests.Timeout as e:
+            # Таймаут — временная проблема (ретраим в Celery)
+            raise AIProxyTimeoutError(f"AI Proxy timeout: {e}") from e
+        except requests.RequestException as e:
+            # Сеть/соединение — временная проблема (ретраим)
+            raise AIProxyServerError(f"AI Proxy network error: {e}") from e
+
+        # Пытаемся разобрать JSON (AI Proxy возвращает JSON)
+        body_text = resp.text or ""
+        payload, preview = safe_json_loads(body_text)
+
+        # ------------------------------------------------------------
+        # Карта ошибок (важно для retry policy)
+        # ------------------------------------------------------------
+        status = resp.status_code
+
+        # 401/403 — секрет неверный/нет доступа (ретраи бессмысленны)
+        if status in (401, 403):
+            detail = payload.get("detail") if isinstance(payload, dict) else None
+            raise AIProxyAuthenticationError(
+                f"AI Proxy auth error {status}: {detail or preview or 'unauthorized'}"
             )
 
-            elapsed_time = time.time() - start_time
-
-            logger.info(
-                "AI proxy response: status=%s body=%s", response.status_code, response.text[:500]
+        # 400/413/422/429 — ошибки запроса (ретраи бессмысленны)
+        if status in (400, 413, 422, 429):
+            detail = payload.get("detail") if isinstance(payload, dict) else None
+            raise AIProxyValidationError(
+                f"AI Proxy validation error {status}: {detail or preview or 'bad request'}"
             )
 
-            # Handle different status codes
-            if response.status_code == 200:
-                result = response.json()
-
-                items_count = len(result.get("items", []))
-                total_calories = result.get("total", {}).get("kcal", 0)
-
-                logger.info(
-                    f"AI Proxy SUCCESS: {items_count} items found, "
-                    f"total {total_calories} kcal, elapsed_time={elapsed_time:.2f}s"
-                )
-
-                return result
-
-            elif response.status_code == 401:
-                error_detail = response.json().get("detail", "Invalid or missing API key")
-                logger.error(
-                    f"AI Proxy authentication failed: {error_detail}. "
-                    f"Key prefix: {self.api_key[:8]}..., elapsed_time={elapsed_time:.2f}s"
-                )
-                raise AIProxyAuthenticationError(
-                    f"AI Proxy authentication failed: {error_detail}"
-                )
-
-            elif response.status_code == 422:
-                try:
-                    error_json = response.json()
-                except Exception:
-                    error_json = {}
-                error_detail = error_json.get("detail", response.text or "Validation error")
-                logger.error(
-                    f"AI Proxy validation error: {error_detail}, "
-                    f"elapsed_time={elapsed_time:.2f}s"
-                )
-                raise AIProxyValidationError(
-                    f"AI Proxy validation error: {error_detail}"
-                )
-
-            elif response.status_code == 400:
-                try:
-                    error_json = response.json()
-                except Exception:
-                    error_json = {}
-                error_detail = error_json.get("detail", response.text or "Bad request")
-                error_code = error_json.get("error") or error_json.get("code")
-                logger.error(
-                    f"AI Proxy bad request: {error_detail}, code={error_code}, "
-                    f"elapsed_time={elapsed_time:.2f}s"
-                )
-
-                if error_code in {"INVALID_IMAGE", "MISSING_IMAGE", "UNSUPPORTED_IMAGE", "INVALID_FILE", "INVALID_IMAGE_FORMAT"}:
-                    raise AIProxyValidationError(
-                        f"AI Proxy bad request: {error_detail}"
-                    )
-
-                raise AIProxyServerError(
-                    f"AI Proxy bad request (non-image issue): {error_detail}"
-                )
-
-            elif response.status_code == 500:
-                error_detail = response.json().get("detail", "Internal server error")
-                logger.error(
-                    f"AI Proxy server error: {error_detail}, "
-                    f"elapsed_time={elapsed_time:.2f}s"
-                )
-                raise AIProxyServerError(
-                    f"AI Proxy server error: {error_detail}"
-                )
-
-            else:
-                # Unexpected status code
-                logger.error(
-                    f"AI Proxy unexpected status {response.status_code}: {response.text[:200]}, "
-                    f"elapsed_time={elapsed_time:.2f}s"
-                )
-                raise AIProxyServerError(
-                    f"AI Proxy returned unexpected status {response.status_code}"
-                )
-
-        except httpx.TimeoutException as e:
-            elapsed_time = time.time() - start_time
-            logger.error(
-                f"AI Proxy TIMEOUT after {self.timeout}s: {e}, "
-                f"elapsed_time={elapsed_time:.2f}s"
-            )
-            raise AIProxyTimeoutError(
-                f"AI Proxy request timed out after {self.timeout} seconds"
-            )
-
-        except httpx.HTTPError as e:
-            elapsed_time = time.time() - start_time
-            # Network errors, connection errors, etc.
-            logger.error(
-                f"AI Proxy HTTP error: {type(e).__name__}: {e}, "
-                f"elapsed_time={elapsed_time:.2f}s"
-            )
+        # 5xx — проблема сервера AI Proxy (ретраим)
+        if 500 <= status <= 599:
+            detail = payload.get("detail") if isinstance(payload, dict) else None
             raise AIProxyServerError(
-                f"AI Proxy connection error: {type(e).__name__}: {e}"
+                f"AI Proxy server error {status}: {detail or preview or 'server error'}"
             )
 
-    def __del__(self):
-        """Close HTTP client on cleanup."""
-        try:
-            self.client.close()
-        except Exception:
-            pass
+        # Любой другой неожиданный статус — считаем серверной проблемой (лучше ретраить ограниченно)
+        if status < 200 or status >= 300:
+            raise AIProxyServerError(
+                f"AI Proxy unexpected status {status}: {preview or body_text[:200]}"
+            )
+
+        # Успех: payload должен быть dict
+        if not payload:
+            raise AIProxyServerError("AI Proxy returned empty or non-object JSON response")
+
+        return payload

@@ -78,7 +78,10 @@
       "Bash(else echo \"backend/.env not found\")",
       "Bash(timeout 30 python manage.py test:*)",
       "Bash(openssl rand:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(if [ -f db.sqlite3 ])",
+      "Bash(then echo \"Found db.sqlite3\")",
+      "Bash(else echo \"db.sqlite3 not found\")"
     ],
     "deny": [],
     "ask": []

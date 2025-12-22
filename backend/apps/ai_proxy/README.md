@@ -1,357 +1,202 @@
-# AI Proxy Integration
+# AI Proxy (apps/ai_proxy)
 
-Интеграция с внутренним сервисом AI Proxy для распознавания еды.
+Этот модуль — “мост” между Django backend и внутренним сервисом **AI Proxy**, который распознаёт еду на фото.
 
-## Описание
+## Зачем он нужен
 
-AI Proxy — это внутренний микросервис EatFit24, который оборачивает вызовы к OpenRouter API для распознавания еды на фотографиях.
+AI Proxy позволяет:
 
-### Преимущества использования AI Proxy:
+1) **Спрятать ключи провайдеров** (OpenRouter и т.п.) — они живут только в AI Proxy  
+2) **Централизовать вызовы** (логирование, метрики, лимиты, единый формат)  
+3) **Изолировать доступ** — AI Proxy доступен только внутри инфраструктуры (например, через Tailscale)
 
-1. **Централизация**: Один сервис управляет всеми вызовами к OpenRouter
-2. **Безопасность**: API ключи OpenRouter хранятся только в AI Proxy
-3. **Мониторинг**: Логирование и метрики в одном месте
-4. **Изоляция**: AI Proxy доступен только через Tailscale VPN
+---
+
+## Главное правило (P0)
+
+**Django HTTP-ручки НЕ ждут распознавание.**  
+Долгая работа выполняется **только в Celery**.
+
+Почему:
+- иначе один запрос будет держать gunicorn worker секунды/минуты → очередь → деградация → DoS по воркерам.
+
+---
+
+## Как устроен поток данных
+
+Client (MiniApp/Web)
+-> Django API (/api/v1/ai/recognize/)
+-> создаём Meal
+-> ставим Celery task
+-> отдаём 202 + task_id
+-> Client polling (/api/v1/ai/task/<task_id>/)
+-> SUCCESS -> отдаём результат
+
+yaml
+Копировать код
+
+А внутри Celery:
+
+Celery task (apps.ai.tasks)
+-> AIProxyService (apps.ai_proxy.service)
+-> AIProxyClient (apps.ai_proxy.client) [HTTP запрос]
+-> adapter.normalize_proxy_response() [приведение формата]
+-> compute_totals()
+-> сохранить в БД: meal.items (FoodItem)
+
+yaml
+Копировать код
+
+---
 
 ## Структура модуля
 
-```
 apps/ai_proxy/
-├── __init__.py
-├── apps.py              # Django app config
-├── client.py            # HTTP клиент для AI Proxy
-├── service.py           # Сервис-обертка для интеграции
-├── adapter.py           # Адаптер ответов AI Proxy -> legacy формат
-├── exceptions.py        # Кастомные исключения
-├── utils.py             # Утилиты (парсинг data URL)
-└── README.md            # Документация
-```
+├── init.py # публичные экспорты
+├── client.py # HTTP клиент (таймауты, статусы, ошибки)
+├── service.py # “одна кнопка” recognize_food()
+├── adapter.py # нормализация ответа AI Proxy -> единый формат
+├── exceptions.py # типы ошибок (auth/validation/timeout/server)
+├── utils.py # простые утилиты (join_url, safe_json_loads и т.д.)
+└── README.md # этот файл
 
-## Настройка
+yaml
+Копировать код
 
-### 1. Переменные окружения
+---
 
-Добавьте в `.env`:
+## Настройка (ENV)
 
-```bash
-# AI Proxy Configuration
-AI_PROXY_URL=http://100.84.210.65:8001
-AI_PROXY_SECRET=your-secret-key-here
-```
+Нужно 2 переменные окружения:
 
-### 2. Установка зависимостей
-
-```bash
-pip install httpx>=0.27.0
-```
-
-## Использование
-
-### Базовый пример
-
-```python
-from apps.ai_proxy.service import AIProxyRecognitionService
-
-# Инициализация сервиса
-service = AIProxyRecognitionService()
-
-# Распознавание еды
-result = service.recognize_food(
-    image_data_url="data:image/jpeg;base64,/9j/4AAQ...",
-    user_comment="Куриная грудка с рисом",
-)
-
-# Результат в legacy формате
-print(result)
-# {
-#     "recognized_items": [
-#         {
-#             "name": "Куриная грудка гриль",
-#             "confidence": 0.95,
-#             "estimated_weight": 150,
-#             "calories": 165,
-#             "protein": 31.0,
-#             "fat": 3.6,
-#             "carbohydrates": 0.0
-#         }
-#     ]
-# }
-```
-
-### Обработка ошибок
-
-```python
-from apps.ai_proxy.service import AIProxyRecognitionService
-from apps.ai_proxy.exceptions import (
-    AIProxyAuthenticationError,
-    AIProxyServerError,
-    AIProxyTimeoutError,
-)
-
-service = AIProxyRecognitionService()
-
-try:
-    result = service.recognize_food(image_data_url="...")
-except AIProxyAuthenticationError:
-    # Неверный API ключ (401)
-    print("Проверьте AI_PROXY_SECRET")
-except AIProxyTimeoutError:
-    # Таймаут (>30s)
-    print("AI Proxy не отвечает")
-except AIProxyServerError as e:
-    # Ошибка сервера (500) или сетевая ошибка
-    print(f"Ошибка AI Proxy: {e}")
-```
-
-## API клиента
-
-### AIProxyClient
-
-Низкоуровневый HTTP клиент для прямых вызовов к AI Proxy.
-
-```python
-from apps.ai_proxy.client import AIProxyClient
-from apps.ai_proxy.utils import parse_data_url
-
-client = AIProxyClient()
-
-# Парсинг data URL в bytes
-data_url = "data:image/jpeg;base64,/9j/4AAQ..."
-image_bytes, content_type = parse_data_url(data_url)
-
-# Отправка файла через multipart/form-data
-response = client.recognize_food(
-    image_bytes=image_bytes,
-    content_type=content_type,
-    user_comment="3 сэндвича с сыром",
-    locale="ru"
-)
-
-# Ответ в нативном формате AI Proxy
-print(response)
-# {
-#     "items": [
-#         {
-#             "food_name_ru": "Сэндвич с сыром",
-#             "food_name_en": "Cheese Sandwich",
-#             "portion_weight_g": 450.0,  # 3x150g
-#             "calories": 750,
-#             "protein_g": 30.0,
-#             "fat_g": 25.0,
-#             "carbs_g": 90.0
-#         }
-#     ],
-#     "total": {
-#         "calories": 750,
-#         "protein_g": 30.0,
-#         "fat_g": 25.0,
-#         "carbs_g": 90.0
-#     },
-#     "model_notes": "High carb meal"
-# }
-```
-
-### Утилиты
-
-#### parse_data_url
-
-Парсинг data URL в байты:
-
-```python
-from apps.ai_proxy.utils import parse_data_url
-
-# Парсинг data URL
-data_url = "data:image/jpeg;base64,/9j/4AAQ..."
-image_bytes, content_type = parse_data_url(data_url)
-
-print(f"Content Type: {content_type}")  # "image/jpeg"
-print(f"Size: {len(image_bytes)} bytes")  # 12345 bytes
-
-# Валидация:
-# - Формат data URL
-# - Content type (только JPEG/PNG)
-# - Base64 декодирование
-# - Минимальный размер (50 bytes)
-```
-
-## Формат данных
-
-### Архитектура обработки изображений
-
-```
-Client (Mini-app) → Django → AI Proxy
-     JSON           JSON→     multipart/
-  data URL         bytes     form-data
-```
-
-**Важно:**
-- Внешний API Django (`/api/v1/ai/recognize/`) принимает JSON с data URL
-- Django декодирует data URL → bytes
-- Django отправляет в AI Proxy файл через `multipart/form-data`
-
-### Входные данные Django API
-
-```python
-# POST /api/v1/ai/recognize/
-{
-    "image": str,        # data URL: "data:image/jpeg;base64,..."
-    "comment": str,      # Опционально: комментарий пользователя
-}
-```
-
-### Входные данные AI Proxy (multipart/form-data)
-
-```
-POST /api/v1/ai/recognize-food
-Content-Type: multipart/form-data
-
-Fields:
-- image: file (binary, JPEG/PNG)
-- user_comment: string (optional)
-- locale: string (default: "ru")
-```
-
-### Выходные данные (AI Proxy формат)
-
-```python
-{
-    "items": [
-        {
-            "food_name_ru": str,
-            "food_name_en": str,
-            "portion_weight_g": float,
-            "calories": int,
-            "protein_g": float,
-            "fat_g": float,
-            "carbs_g": float
-        }
-    ],
-    "total": {
-        "calories": int,
-        "protein_g": float,
-        "fat_g": float,
-        "carbs_g": float
-    },
-    "model_notes": str  # Опционально
-}
-```
-
-### Legacy формат (после адаптера)
-
-```python
-{
-    "recognized_items": [
-        {
-            "name": str,
-            "confidence": float,
-            "estimated_weight": int,
-            "calories": int,
-            "protein": float,
-            "fat": float,
-            "carbohydrates": float
-        }
-    ]
-}
-```
-
-## Исключения
-
-- `AIProxyError` — базовое исключение
-- `AIProxyAuthenticationError` — ошибка авторизации (401)
-- `AIProxyValidationError` — ошибка валидации запроса (422)
-- `AIProxyServerError` — ошибка сервера (500) или сетевая ошибка
-- `AIProxyTimeoutError` — таймаут запроса (>30s)
-
-## Логирование
-
-Модуль использует стандартный Python logger:
-
-```python
-import logging
-
-logger = logging.getLogger(__name__)
-```
-
-Уровни логирования:
-- `INFO` — успешные запросы, базовая информация
-- `WARNING` — повторные попытки, нестандартное поведение
-- `ERROR` — ошибки API, таймауты, сетевые проблемы
-- `DEBUG` — детальная информация о запросах/ответах
-
-## Миграция со старого кода
-
-### Было (OpenRouter напрямую):
-
-```python
-from apps.ai.services import AIRecognitionService
-
-service = AIRecognitionService()
-result = service.recognize_food(
-    image_data_url="data:image/jpeg;base64,...",
-    user_description="Описание"
-)
-```
-
-### Стало (через AI Proxy):
-
-```python
-from apps.ai_proxy.service import AIProxyRecognitionService
-
-service = AIProxyRecognitionService()
-result = service.recognize_food(
-    image_data_url="data:image/jpeg;base64,...",
-    user_comment="Описание"  # Теперь называется comment
-)
-```
-
-Формат ответа остался тот же (legacy формат).
-
-## Тестирование
-
-```bash
-# Установка зависимостей
-pip install -r requirements.txt
-
-# Проверка подключения
-python manage.py shell
-
->>> from apps.ai_proxy.client import AIProxyClient
->>> client = AIProxyClient()
->>> # Если ошибок нет, то настройки корректны
-```
-
-## Безопасность
-
-- AI Proxy доступен только через Tailscale VPN
-- API ключ передается через заголовок `X-API-Key`
-- Таймаут 30 секунд для защиты от зависших запросов
-- Валидация всех входных данных на стороне AI Proxy
-
-## Troubleshooting
-
-### Ошибка: "AI_PROXY_URL is not set"
-
-Проверьте `.env`:
 ```bash
 AI_PROXY_URL=http://100.84.210.65:8001
-```
+AI_PROXY_SECRET=your-secret-here
+Где используются
+AI_PROXY_URL — базовый URL AI Proxy
 
-### Ошибка: "Authentication failed (401)"
+AI_PROXY_SECRET — секрет для авторизации Django → AI Proxy
 
-Проверьте `AI_PROXY_SECRET` в `.env`.
+Таймауты (P0)
+В AIProxyClient используются таймауты:
 
-### Ошибка: "Connection timeout"
+connect_timeout: 5s
 
-1. Проверьте подключение к Tailscale
-2. Убедитесь, что AI Proxy сервис запущен
-3. Проверьте файрвол
+read_timeout: 35s
 
-### Ошибка: "Server error (500)"
+Итого: примерно до 40 секунд.
 
-Проверьте логи AI Proxy сервиса для деталей.
+Почему так:
 
-## См. также
+долгие ответы AI должны происходить не в sync HTTP, а в фоне (Celery)
 
-- [API Documentation](../../../docs/API_DOCS.md) — полная документация AI Proxy API
-- [Django REST Framework](https://www.django-rest-framework.org/)
-- [httpx Documentation](https://www.python-httpx.org/)
+130 секунд — плохая идея: даёт зависание и убивает пропускную способность
+
+Авторизация
+Django → AI Proxy передаёт секрет в заголовке:
+
+Authorization: Bearer <AI_PROXY_SECRET>
+
+Важно: секрет никогда не логируем.
+
+Публичное API модуля
+1) AIProxyService (рекомендуется)
+python
+Копировать код
+from apps.ai_proxy import AIProxyService
+
+service = AIProxyService()
+
+result = service.recognize_food(
+    image_bytes=b"...",
+    content_type="image/jpeg",
+    user_comment="Курица с рисом",
+    locale="ru",
+    request_id="abc123",
+)
+
+print(result.items)   # список нормализованных items
+print(result.totals)  # суммарные КБЖУ
+print(result.meta)    # мета-информация (request_id, модель и т.д.)
+Формат items (нормализованный)
+json
+Копировать код
+{
+  "items": [
+    {
+      "name": "Курица",
+      "grams": 150,
+      "calories": 250.0,
+      "protein": 35.0,
+      "fat": 8.0,
+      "carbohydrates": 0.0,
+      "confidence": 0.92
+    }
+  ]
+}
+Гарантии:
+
+grams >= 1
+
+числа не None
+
+алиасы приводятся: kcal -> calories, carbs -> carbohydrates
+
+Ошибки (исключения)
+AIProxyValidationError — неправильные данные (не ретраим)
+
+AIProxyAuthenticationError — секрет/доступ (не ретраим)
+
+AIProxyTimeoutError — таймаут (ретраим)
+
+AIProxyServerError — 5xx/сеть/неожиданный ответ (ретраим)
+
+Что НЕ использовать
+Не ставить большие таймауты типа 120–130 секунд
+
+Не вызывать AI Proxy из sync HTTP-ручек в проде
+
+Не хранить ключи провайдеров в Django
+
+Troubleshooting
+“AI_PROXY_URL не задан”
+Проверь env и настройки config/settings/*.py.
+
+“unauthorized/forbidden”
+Проверь AI_PROXY_SECRET.
+
+“timeout”
+AI Proxy реально жив?
+
+есть доступ по сети (Tailscale/Firewall)?
+
+AI Proxy не перегружен?
+
+См. также
+apps/ai/tasks.py — где вызывается AIProxyService
+
+apps/ai/views.py — async API + polling
+
+markdown
+Копировать код
+
+---
+
+## Что я **сразу** вижу как проблемы в твоём старом README (и мы это исправили)
+- Там указаны **httpx** зависимости — в нашем коде **requests** (и нам это ок; проще)  
+- Там указан заголовок `X-API-Key`, а мы сделали **Authorization Bearer** (единый стандарт)  
+- Там endpoint указан `/api/v1/ai/recognize-food`, а в нашем client сейчас **`/v1/recognize`**  
+  → это **надо синхронизировать** с реальным AI Proxy API.
+
+### Чтобы не гадать: что мне нужно от тебя дальше (1 файл)
+Скинь **доку/код AI Proxy сервиса** (его роуты): где у него реально endpoint распознавания.
+Если не хочешь — просто скажи “endpoint такой-то”, например:
+- `/api/v1/ai/recognize-food`
+или
+- `/v1/recognize`
+
+И я сразу поправлю `client.py` на 100% точно.
+
+---
+
+Дальше по “AI” мы идём в `apps/ai_proxy/apps.py` (если он у тебя есть) **или** сразу делаем финальную скле

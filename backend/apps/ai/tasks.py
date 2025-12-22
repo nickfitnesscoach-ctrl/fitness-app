@@ -1,195 +1,195 @@
 """
-Celery tasks for async AI processing.
+tasks.py — Celery задачи AI распознавания.
 
-These tasks handle AI recognition in the background,
-allowing the API to return immediately with a task ID.
+Простыми словами:
+- HTTP ручка отвечает быстро (202) и отдаёт task_id
+- эта задача в фоне:
+  1) вызывает AI Proxy
+  2) нормализует ответ
+  3) сохраняет в FoodItem (meal.items)
+  4) возвращает JSON-safe результат
+
+Главные правила:
+- ретраи только на timeout/5xx (временные проблемы)
+- граммовка всегда >= 1 (иначе упадёт валидатор FoodItem)
+- DecimalField сохраняем через Decimal(str(x))
+- никаких секретов в логах
 """
 
+from __future__ import annotations
+
+from decimal import Decimal
 import logging
-import time
+from typing import Any, Dict, List
+
 from celery import shared_task
 from django.db import transaction
+
+from apps.ai_proxy import (
+    AIProxyAuthenticationError,
+    AIProxyServerError,
+    AIProxyService,
+    AIProxyTimeoutError,
+    AIProxyValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
 
+def _to_decimal(value: Any, default: str = "0") -> Decimal:
+    """Безопасное преобразование к Decimal для DecimalField."""
+    try:
+        if value is None:
+            return Decimal(default)
+        return Decimal(str(value))
+    except Exception:
+        return Decimal(default)
+
+
+def _clamp_grams(value: Any) -> int:
+    """
+    FoodItem.grams должен быть >= 1.
+    Если AI вернул 0/None/мусор — ставим 1.
+    """
+    try:
+        g = int(round(float(value)))
+    except (TypeError, ValueError):
+        g = 1
+    return 1 if g < 1 else g
+
+
+def _json_safe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Делаем items гарантированно JSON-safe:
+    - числа → float/int
+    - строки → str
+    """
+    safe: List[Dict[str, Any]] = []
+    for it in items:
+        safe.append(
+            {
+                "name": str(it.get("name") or "Unknown"),
+                "grams": int(_clamp_grams(it.get("grams"))),
+                "calories": float(it.get("calories") or 0.0),
+                "protein": float(it.get("protein") or 0.0),
+                "fat": float(it.get("fat") or 0.0),
+                "carbohydrates": float(it.get("carbohydrates") or 0.0),
+                # confidence может быть None — это ок для JSON
+                "confidence": (
+                    float(it["confidence"]) if it.get("confidence") is not None else None
+                ),
+            }
+        )
+    return safe
+
+
 @shared_task(
     bind=True,
-    name='apps.ai.tasks.recognize_food_async',
     max_retries=3,
-    default_retry_delay=30,
-    autoretry_for=(Exception,),
     retry_backoff=True,
-    retry_backoff_max=120,
+    retry_backoff_max=60,
+    retry_jitter=True,
 )
 def recognize_food_async(
     self,
-    meal_id: str,
-    image_data_url: str,
-    user_id: int,
-    description: str = "",
-    comment: str = ""
-):
+    *,
+    meal_id: int,
+    image_bytes: bytes,
+    mime_type: str,
+    user_comment: str = "",
+    request_id: str = "",
+    user_id: int | None = None,
+) -> Dict[str, Any]:
     """
-    Async task for AI food recognition.
-    
-    Args:
-        meal_id: UUID of the created Meal
-        image_data_url: Base64 data URL of the image
-        user_id: User ID for usage tracking
-        description: Optional user description
-        comment: Optional user comment
-        
-    Returns:
-        dict with full recognition results for frontend polling.
-        IMPORTANT: Items are returned from DB after refresh_from_db()
-        to prevent race condition where items are not yet visible.
-    """
-    from apps.nutrition.models import Meal, FoodItem
-    from apps.ai_proxy.service import AIProxyRecognitionService
-    from apps.billing.usage import DailyUsage
-    from django.contrib.auth.models import User
-    
-    task_id = self.request.id
-    logger.info(f"[Task {task_id}] Starting AI recognition for meal {meal_id}")
-    
-    recognition_start = time.time()
-    
-    try:
-        meal = Meal.objects.get(id=meal_id)
-        user = User.objects.get(id=user_id)
-        
-        # Call AI Proxy service
-        ai_service = AIProxyRecognitionService()
-        result = ai_service.recognize_food(
-            image_data_url,
-            user_description=description,
-            user_comment=comment
-        )
-        
-        recognition_time = time.time() - recognition_start
-        recognized_items = result.get('recognized_items', [])
-        
-        if recognized_items:
-            # Create FoodItems in transaction to ensure atomicity
-            with transaction.atomic():
-                for item_data in recognized_items:
-                    FoodItem.objects.create(
-                        meal=meal,
-                        name=item_data.get('name', 'Unknown'),
-                        grams=item_data.get('estimated_weight', 100),
-                        calories=item_data.get('calories', 0),
-                        protein=item_data.get('protein', 0),
-                        fat=item_data.get('fat', 0),
-                        carbohydrates=item_data.get('carbohydrates', 0),
-                    )
-                
-                # Increment usage counter inside transaction
-                DailyUsage.objects.increment_photo_requests(user)
-            
-            # RACE CONDITION FIX: Refresh from DB to get actual saved items
-            # This guarantees task result contains items that are really in the database
-            meal.refresh_from_db()
-            db_items = list(meal.items.all())
-            
-            # Build result from DB items (not from AI response)
-            food_items_data = [
-                {
-                    'id': item.id,
-                    'name': item.name,
-                    'grams': item.grams,
-                    'calories': item.calories,
-                    'protein': float(item.protein),
-                    'fat': float(item.fat),
-                    'carbohydrates': float(item.carbohydrates),
-                    'confidence': 0.9,  # Default confidence
-                }
-                for item in db_items
-            ]
-            
-            # Calculate totals from DB items
-            total_calories = sum(item.calories for item in db_items)
-            total_protein = sum(float(item.protein) for item in db_items)
-            total_fat = sum(float(item.fat) for item in db_items)
-            total_carbs = sum(float(item.carbohydrates) for item in db_items)
-            
-            logger.info(
-                f"[Task {task_id}] Recognition complete for meal {meal_id}. "
-                f"Created {len(db_items)} food items in {recognition_time:.2f}s"
-            )
-            
-            return {
-                'success': True,
-                'meal_id': str(meal_id),
-                'recognized_items': food_items_data,
-                'totals': {
-                    'calories': total_calories,
-                    'protein': round(total_protein, 1),
-                    'fat': round(total_fat, 1),
-                    'carbohydrates': round(total_carbs, 1),
-                },
-                'recognition_time': round(recognition_time, 2),
-            }
-        else:
-            # B-001 FIX: НЕ удаляем meal - он уже создан с фото и может быть виден пользователю
-            # Пользователь увидит пустой приём пищи и сможет добавить items вручную
-            # Cleanup stale meals task уберёт старые пустые meals позже
-            error_msg = result.get('error', 'No food items recognized')
-            logger.warning(f"[Task {task_id}] No items recognized for meal {meal_id}: {error_msg}. Meal kept for manual entry.")
-            
-            # Increment usage counter even for empty results (user made an attempt)
-            DailyUsage.objects.increment_photo_requests(user)
-            
-            return {
-                'success': True,  # Changed to True - meal exists, just empty
-                'meal_id': str(meal_id),
-                'recognized_items': [],
-                'totals': {
-                    'calories': 0,
-                    'protein': 0,
-                    'fat': 0,
-                    'carbohydrates': 0,
-                },
-                'recognition_time': round(recognition_time, 2),
-                'message': 'Не удалось распознать еду автоматически. Вы можете добавить блюда вручную.',
-            }
-            
-    except Meal.DoesNotExist:
-        logger.error(f"[Task {task_id}] Meal {meal_id} not found")
-        return {
-            'success': False,
-            'meal_id': str(meal_id),
-            'error': 'Meal not found',
-        }
-    except Exception as e:
-        logger.error(f"[Task {task_id}] Error processing meal {meal_id}: {str(e)}", exc_info=True)
-        # Re-raise to trigger Celery retry
-        raise
+    Основная задача: распознать еду по фото и сохранить items в БД.
 
+    Возвращаемое значение будет доступно через Celery result backend (polling ручка).
+    """
+    task_id = getattr(self.request, "id", None) or "unknown"
+    rid = request_id or f"task-{str(task_id)[:8]}"
 
-@shared_task(bind=True)
-def cleanup_stale_meals(self, hours: int = 24):
-    """
-    Cleanup meals that were created but never got food items.
-    These are likely failed async tasks.
-    
-    Args:
-        hours: Delete meals older than this with no food items
-    """
+    # Импортируем модель внутри задачи, чтобы не тянуть ORM при старте воркера
     from apps.nutrition.models import Meal
-    from django.utils import timezone
-    from datetime import timedelta
-    
-    cutoff = timezone.now() - timedelta(hours=hours)
-    
-    stale_meals = Meal.objects.filter(
-        created_at__lt=cutoff,
-        items__isnull=True
+
+    logger.info("[AI] start task=%s meal_id=%s rid=%s user_id=%s", task_id, meal_id, rid, user_id)
+
+    meal = Meal.objects.get(id=meal_id)
+
+    service = AIProxyService()
+
+    # 1) Вызов AI Proxy (политика ошибок/ретраев)
+    try:
+        result = service.recognize_food(
+            image_bytes=image_bytes,
+            content_type=mime_type,
+            user_comment=user_comment or "",
+            locale="ru",
+            request_id=rid,
+        )
+    except AIProxyValidationError as e:
+        # Валидация не лечится ретраем
+        logger.warning(
+            "[AI] validation error task=%s meal_id=%s rid=%s err=%s", task_id, meal_id, rid, str(e)
+        )
+        raise
+    except AIProxyAuthenticationError as e:
+        # Неверный секрет — ретраи бессмысленны
+        logger.error(
+            "[AI] auth error task=%s meal_id=%s rid=%s err=%s", task_id, meal_id, rid, str(e)
+        )
+        raise
+    except (AIProxyTimeoutError, AIProxyServerError) as e:
+        # Временные проблемы — ретраим
+        logger.warning(
+            "[AI] retryable error task=%s meal_id=%s rid=%s err=%s", task_id, meal_id, rid, str(e)
+        )
+        raise self.retry(exc=e)
+    except Exception as e:
+        # Любая неожиданная ошибка — пробуем ретрай (ограниченно)
+        logger.exception("[AI] unexpected error task=%s meal_id=%s rid=%s", task_id, meal_id, rid)
+        raise self.retry(exc=e)
+
+    items = result.items
+    totals = result.totals
+    meta = result.meta
+
+    # 2) Гарантируем валидные данные
+    safe_items = _json_safe_items(items)
+
+    # 3) Сохраняем в БД атомарно
+    with transaction.atomic():
+        # Если AI пересчитали — перезаписываем
+        meal.items.all().delete()
+
+        for it in safe_items:
+            meal.items.create(
+                name=it["name"],
+                grams=int(_clamp_grams(it["grams"])),
+                calories=_to_decimal(it["calories"], "0"),
+                protein=_to_decimal(it["protein"], "0"),
+                fat=_to_decimal(it["fat"], "0"),
+                carbohydrates=_to_decimal(it["carbohydrates"], "0"),
+            )
+
+    response: Dict[str, Any] = {
+        "meal_id": int(meal_id),
+        "items": safe_items,
+        "total_calories": float(totals.get("calories") or 0.0),
+        "totals": {
+            "calories": float(totals.get("calories") or 0.0),
+            "protein": float(totals.get("protein") or 0.0),
+            "fat": float(totals.get("fat") or 0.0),
+            "carbohydrates": float(totals.get("carbohydrates") or 0.0),
+        },
+        "meta": meta,
+    }
+
+    logger.info(
+        "[AI] done task=%s meal_id=%s rid=%s items=%s kcal=%.1f",
+        task_id,
+        meal_id,
+        rid,
+        len(safe_items),
+        float(totals.get("calories") or 0.0),
     )
-    
-    count = stale_meals.count()
-    stale_meals.delete()
-    
-    logger.info(f"[Task {self.request.id}] Cleaned up {count} stale meals")
-    
-    return {'deleted_count': count}
+    return response

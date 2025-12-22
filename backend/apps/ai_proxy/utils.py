@@ -1,69 +1,79 @@
 """
-Utility functions for AI Proxy integration.
+utils.py — вспомогательные функции для ai_proxy.
+
+Простыми словами:
+- тут только простые утилиты, которые не зависят от Django/ORM
+- цель: меньше дублирования кода и меньше “случайных” багов
+
+Правила:
+- никаких секретов в логах
+- никаких больших данных (байты изображений) в логах
 """
 
-import base64
-import re
-from typing import Tuple
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, Tuple
+import uuid
 
 
-DATA_URL_PATTERN = re.compile(r'^data:(?P<content_type>[^;]+);base64,(?P<data>.+)$')
-
-
-def parse_data_url(data_url: str) -> Tuple[bytes, str]:
+def new_request_id() -> str:
     """
-    Parse data URL and extract image bytes and content type.
+    Генерирует короткий request_id для трассировки запросов через логи.
 
-    Args:
-        data_url: Image in data URL format (e.g., 'data:image/jpeg;base64,...')
+    Пример:
+    - Django → Celery → AI Proxy → обратно
 
-    Returns:
-        Tuple of (image_bytes, content_type)
-
-    Raises:
-        ValueError: If data URL format is invalid or data cannot be decoded
-
-    Example:
-        >>> data_url = "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
-        >>> image_bytes, content_type = parse_data_url(data_url)
-        >>> print(content_type)
-        'image/jpeg'
-        >>> print(len(image_bytes))
-        12345
+    Это помогает быстро найти все сообщения в логах по одному идентификатору.
     """
-    # Validate format
-    match = DATA_URL_PATTERN.match(data_url)
-    if not match:
-        raise ValueError(
-            "Invalid data URL format. Expected: data:image/jpeg;base64,..."
-        )
+    return uuid.uuid4().hex
 
-    content_type = match.group("content_type")
-    b64_data = match.group("data")
 
-    # Validate content type
-    allowed_types = ["image/jpeg", "image/jpg", "image/png"]
-    if content_type not in allowed_types:
-        raise ValueError(
-            f"Unsupported content type: {content_type}. "
-            f"Allowed types: {', '.join(allowed_types)}"
-        )
+def join_url(base_url: str, path: str) -> str:
+    """
+    Склеивает base_url и path без двойных слешей.
 
-    # Decode base64
+    join_url("https://x/api", "/v1/recognize") -> "https://x/api/v1/recognize"
+    """
+    base = (base_url or "").rstrip("/")
+    p = path if (path or "").startswith("/") else f"/{path}"
+    return f"{base}{p}"
+
+
+def safe_json_loads(raw_text: str, *, max_preview: int = 300) -> Tuple[Dict[str, Any], str]:
+    """
+    Безопасно парсит JSON строку.
+
+    Возвращает:
+    - dict (если удалось и это объект)
+    - preview текста (если не удалось/не dict), чтобы логировать кратко
+
+    Почему это важно:
+    - иногда сервис отвечает не JSON (html, plain text)
+    - мы не хотим, чтобы это падало исключением и ломало пайплайн
+    """
+    text = (raw_text or "").strip()
+    if not text:
+        return {}, ""
+
     try:
-        image_bytes = base64.b64decode(b64_data, validate=True)
-    except Exception as e:
-        raise ValueError(f"Failed to decode base64 data: {e}")
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return {}, text[:max_preview]
 
-    # Validate decoded data
-    if not image_bytes:
-        raise ValueError("Empty image data after decoding")
+    if isinstance(parsed, dict):
+        return parsed, ""
+    # Если пришёл список/число/строка — считаем это ошибкой формата
+    return {}, text[:max_preview]
 
-    # Validate minimum size (at least 50 bytes for a valid image)
-    if len(image_bytes) < 50:
-        raise ValueError(
-            f"Image data too small: {len(image_bytes)} bytes. "
-            "Minimum: 50 bytes"
-        )
 
-    return image_bytes, content_type
+def clip_dict(d: Dict[str, Any], *, max_keys: int = 20) -> Dict[str, Any]:
+    """
+    Урезает словарь для безопасного логирования.
+
+    Пример: если AI Proxy вернул огромный payload, мы не хотим забивать логи.
+    """
+    if not isinstance(d, dict):
+        return {}
+    keys = list(d.keys())[:max_keys]
+    return {k: d.get(k) for k in keys}

@@ -1,55 +1,58 @@
 """
-Django base settings for FoodMind AI project.
-Common settings for all environments.
+base.py — общие настройки Django, которые используются и в локалке, и в проде.
+
+Простыми словами:
+- этот файл = “общая база”
+- local.py / production.py / test.py берут этот файл и переопределяют то, что отличается
+
+ВАЖНОЕ ПРАВИЛО:
+- НИКАКИХ настроек, зависящих от окружения (типа Redis/LocMem cache) — здесь.
+  Это задаётся в local.py / production.py / test.py, чтобы не было путаницы.
 """
 
-from datetime import datetime, timedelta, timezone as dt_timezone
+from __future__ import annotations
+
+from datetime import timedelta
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured  # noqa: F401
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# BASE_DIR указывает на корень backend-проекта (где manage.py и т.д.)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Load environment variables from .env file
-load_dotenv(BASE_DIR / '.env')
+
+# -----------------------------------------------------------------------------
+# Безопасность: секретный ключ
+# -----------------------------------------------------------------------------
+# SECRET_KEY читается из окружения. Проверка на непустоту происходит позже,
+# чтобы test.py мог переопределить его.
+SECRET_KEY = os.environ.get("SECRET_KEY") or os.environ.get("DJANGO_SECRET_KEY") or ""
 
 
-# SECURITY WARNING: keep the secret key used in production secret!
-# Require SECRET_KEY in production - no insecure defaults
-
-SECRET_KEY = os.environ.get("SECRET_KEY") or os.environ.get("DJANGO_SECRET_KEY")
-if not SECRET_KEY:
-    # Allow default only in development
-    DEBUG_MODE = os.environ.get("DEBUG", "True") == "True"
-    if not DEBUG_MODE:
-        raise ImproperlyConfigured(
-            "SECRET_KEY environment variable must be set in production. "
-            "Generate a secure key with: python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'"
-        )
-    # Development fallback (only when DEBUG=True)
-    SECRET_KEY = "django-insecure-dev-only-c2+=p2+n2v)6cpyh2)#!reeaeni&73uk580gl)%$cp*m%()3&z"
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DEBUG", "True") == "True" or os.environ.get("DJANGO_DEBUG", "True") == "True"
-
-# Browser Debug Mode - allows frontend development without Telegram WebApp
-# When enabled, X-Debug-Mode: true header will create/authenticate debug user
-DEBUG_MODE_ENABLED = os.environ.get("DEBUG_MODE_ENABLED", str(DEBUG)).lower() == "true"
-
-# SECURITY: Webapp Debug Mode - separate setting for stricter control
-# In production, this should ALWAYS be False to prevent unauthorized access
-# Set via WEBAPP_DEBUG_MODE_ENABLED env var (defaults to DEBUG value)
-WEBAPP_DEBUG_MODE_ENABLED = os.environ.get("WEBAPP_DEBUG_MODE_ENABLED", str(DEBUG)).lower() == "true"
-
-ALLOWED_HOSTS_RAW = os.environ.get("ALLOWED_HOSTS") or os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
-ALLOWED_HOSTS = ALLOWED_HOSTS_RAW.split(",")
+# -----------------------------------------------------------------------------
+# DEBUG
+# -----------------------------------------------------------------------------
+# По умолчанию DEBUG выключен (безопаснее).
+# В local.py он будет включаться явно.
+DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
 
-# Application definition
+# -----------------------------------------------------------------------------
+# Hosts (какие домены имеют право обращаться к Django)
+# -----------------------------------------------------------------------------
+# В base держим максимально безопасный дефолт.
+# В production.py будет строгая проверка, что ALLOWED_HOSTS не пустой.
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if h.strip()
+]
 
+
+# -----------------------------------------------------------------------------
+# Приложения
+# -----------------------------------------------------------------------------
 DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -61,9 +64,7 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     "rest_framework",
-    # NOTE: rest_framework_simplejwt kept for RefreshToken in Telegram auth views
-    # (used to generate tokens in webapp_auth response)
-    "rest_framework_simplejwt",
+    "rest_framework_simplejwt",  # используется точечно (если нужно генерировать токены)
     "drf_spectacular",
     "django_filters",
     "corsheaders",
@@ -83,6 +84,9 @@ LOCAL_APPS = [
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 
+# -----------------------------------------------------------------------------
+# Middleware
+# -----------------------------------------------------------------------------
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",  # CORS должен быть высоко в списке
@@ -90,13 +94,19 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "apps.telegram.telegram_auth.TelegramAdminOnlyMiddleware",  # After AuthenticationMiddleware so request.user exists
+    # Ограничение доступа к админке/ручкам Telegram (ваш кастомный middleware)
+    "apps.telegram.telegram_auth.TelegramAdminOnlyMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
+WSGI_APPLICATION = "config.wsgi.application"
 
+
+# -----------------------------------------------------------------------------
+# Templates
+# -----------------------------------------------------------------------------
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -110,15 +120,14 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
             ],
         },
-    },
+    }
 ]
 
-WSGI_APPLICATION = "config.wsgi.application"
 
-
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
+# -----------------------------------------------------------------------------
+# Database (общий дефолт = PostgreSQL)
+# -----------------------------------------------------------------------------
+# В local.py/test.py можно переопределить SQLite, если нужно.
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -131,354 +140,116 @@ DATABASES = {
 }
 
 
-# ============================================================
-# Cache Configuration
-# ============================================================
-
-# Use local memory cache for development (thread-safe)
-# For production, use Redis or Memcached
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "foodmind-cache",
-        "OPTIONS": {
-            "MAX_ENTRIES": 10000,  # Maximum number of cache entries
-        },
-    }
-}
-
-# Production Redis cache configuration (uncomment for production):
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-#         "LOCATION": os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1"),
-#         "OPTIONS": {
-#             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-#         },
-#         "KEY_PREFIX": "foodmind",
-#         "TIMEOUT": 300,  # Default timeout: 5 minutes
-#     }
-# }
+# -----------------------------------------------------------------------------
+# Cache
+# -----------------------------------------------------------------------------
+# Здесь намеренно НЕ задаём cache backend.
+# Причина: чтобы не было “двойных CACHES”, как у тебя раньше.
+# См. local.py / production.py / test.py
+CACHES = {}
 
 
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-        "OPTIONS": {
-            "min_length": 8,
-        },
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
-
-
+# -----------------------------------------------------------------------------
 # Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
+# -----------------------------------------------------------------------------
 LANGUAGE_CODE = "ru-ru"
-
 TIME_ZONE = "Europe/Moscow"
-
 USE_I18N = True
-
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
-
+# -----------------------------------------------------------------------------
+# Static / Media
+# -----------------------------------------------------------------------------
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Media files (User uploads)
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Trust X-Forwarded-Host header from proxy (for correct URL generation in Docker)
+# Если проект за прокси (nginx) — для корректной генерации ссылок
 USE_X_FORWARDED_HOST = True
-
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-# ============================================================
-# 4.5: Cache Configuration (Redis for API response caching)
-# ============================================================
-
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/1")
-
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": REDIS_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-        "KEY_PREFIX": "eatfit24",
-        "TIMEOUT": 300,  # 5 minutes default
-    }
-}
-
-
-# ============================================================
-# Django REST Framework Configuration
-# ============================================================
-
+# -----------------------------------------------------------------------------
+# Django REST Framework
+# -----------------------------------------------------------------------------
 REST_FRAMEWORK = {
-    # Authentication
-    # Order matters: DebugMode checked first, then Telegram
-    # NOTE: JWTAuthentication removed - EatFit24 uses Telegram WebApp auth only
+    # Аутентификация: сначала debug (только dev), потом Telegram WebApp
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "apps.telegram.auth.authentication.DebugModeAuthentication",  # Browser Debug Mode (dev only)
-        "apps.telegram.auth.authentication.TelegramWebAppAuthentication",  # Production: Telegram WebApp initData validation
+        "apps.telegram.auth.authentication.DebugModeAuthentication",
+        "apps.telegram.auth.authentication.TelegramWebAppAuthentication",
     ],
-
-    # Permissions
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
-
-    # Pagination
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
-
-    # Filtering
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ],
-
-    # Rendering
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],
-
-    # Parsing
     "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",
         "rest_framework.parsers.MultiPartParser",
         "rest_framework.parsers.FormParser",
     ],
-
-    # Schema generation
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-
-    # Throttling (rate limiting)
+    # Throttling = антиспам-защита (не тарифные лимиты)
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
+    # ВАЖНО: имена scope должны совпадать с throttles.py в apps.ai
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "500/hour",  # Anonymous users: 500 req/hour
-        "user": "5000/hour",  # Authenticated users: 5000 req/hour (was 1000/day - too restrictive)
-        "ai_per_minute": "10/minute",  # AI recognition rate limit
-        "ai_per_day": "100/day",  # AI recognition rate limit
-        "webhook": "100/hour",  # Webhook rate limit (YooKassa)
-        "payment_creation": "20/hour",  # Payment creation rate limit
-        "task_status": "60/minute",  # B-004 FIX: Task status polling rate limit
+        "anon": "500/hour",
+        "user": "5000/hour",
+        # AI
+        "ai_per_minute": "10/minute",
+        "ai_per_day": "100/day",
+        "task_status": "60/minute",  # scope для polling статуса задачи
+        # Billing/Webhooks (если используешь)
+        "webhook": "100/hour",
+        "payment_creation": "20/hour",
     },
-
-    # Error handling - unified format for frontend
+    # Единый формат ошибок для фронта
     "EXCEPTION_HANDLER": "apps.core.exception_handler.custom_exception_handler",
-
-    # Date/Time formatting
     "DATETIME_FORMAT": "%Y-%m-%dT%H:%M:%S%z",
     "DATE_FORMAT": "%Y-%m-%d",
     "TIME_FORMAT": "%H:%M:%S",
 }
 
 
-# ============================================================
-# JWT Authentication Configuration
-# ============================================================
-
-SIMPLE_JWT = {
-    # Token lifetimes
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-
-    # Rotation
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
-
-    # Algorithm
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
-
-    # Token claims
-    "AUTH_HEADER_TYPES": ("Bearer",),
-    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
-    "USER_ID_FIELD": "id",
-    "USER_ID_CLAIM": "user_id",
-
-    # Token classes
-    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
-    "TOKEN_TYPE_CLAIM": "token_type",
-
-    # Sliding tokens
-    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
-    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=60),
-    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=7),
-}
-
-
-# ============================================================
-# drf-spectacular (OpenAPI/Swagger) Configuration
-# ============================================================
-
+# -----------------------------------------------------------------------------
+# OpenAPI (Swagger)
+# -----------------------------------------------------------------------------
 SPECTACULAR_SETTINGS = {
-    "TITLE": "FoodMind AI REST API",
-    "DESCRIPTION": "REST API для приложения автоматического подсчёта калорий (КБЖУ) с распознаванием блюд по фото",
+    "TITLE": "EatFit24 REST API",
+    "DESCRIPTION": "REST API для EatFit24 (КБЖУ + распознавание по фото)",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
-
-    # API versioning
     "SCHEMA_PATH_PREFIX": r"/api/v1/",
-
-    # Authentication
-    "SECURITY": [{"bearerAuth": []}],
-    "COMPONENTS": {
-        "securitySchemes": {
-            "bearerAuth": {
-                "type": "http",
-                "scheme": "bearer",
-                "bearerFormat": "JWT",
-            }
-        }
-    },
-
-    # Schema generation
     "COMPONENT_SPLIT_REQUEST": True,
-    "SORT_OPERATIONS": False,
 }
 
 
-# ============================================================
-# CORS Configuration
-# ============================================================
-
-# SECURITY: Never allow all origins
+# -----------------------------------------------------------------------------
+# CORS
+# -----------------------------------------------------------------------------
+# В base: максимально безопасно. В local.py разрешим localhost.
 CORS_ALLOW_ALL_ORIGINS = False
-
-# Load allowed origins from environment
-raw_origins = os.environ.get(
-    "CORS_ALLOWED_ORIGINS",
-    "http://localhost:5173,http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:5173"
-).split(",")
-
-# Validate and filter CORS origins
-def validate_cors_origins(origins, debug_mode=DEBUG):
-    """
-    Validate CORS origins for security.
-
-    - In production: Only allow HTTPS origins
-    - In development: Allow HTTP for localhost/127.0.0.1
-    - Always validate URL format
-    - Log invalid origins
-    """
-    import logging
-    from urllib.parse import urlparse
-
-    logger = logging.getLogger(__name__)
-    validated_origins = []
-
-    for origin in origins:
-        origin = origin.strip()
-        if not origin:
-            continue
-
-        try:
-            parsed = urlparse(origin)
-
-            # Validate scheme
-            if not parsed.scheme:
-                logger.warning(f"CORS origin missing scheme: {origin}")
-                continue
-
-            # In production, only allow HTTPS
-            if not debug_mode:
-                if parsed.scheme != 'https':
-                    logger.error(
-                        f"SECURITY: HTTP origin not allowed in production: {origin}. "
-                        "Only HTTPS origins are permitted."
-                    )
-                    continue
-            else:
-                # In development, allow HTTP only for localhost/127.0.0.1
-                if parsed.scheme == 'http':
-                    hostname = parsed.hostname
-                    if hostname not in ['localhost', '127.0.0.1', '::1']:
-                        logger.warning(
-                            f"HTTP origin allowed only for localhost in development: {origin}"
-                        )
-                        continue
-
-            # Validate hostname
-            if not parsed.hostname:
-                logger.warning(f"CORS origin missing hostname: {origin}")
-                continue
-
-            # No wildcards allowed
-            if '*' in origin:
-                logger.error(f"SECURITY: Wildcards not allowed in CORS origins: {origin}")
-                continue
-
-            validated_origins.append(origin)
-
-        except Exception as e:
-            logger.error(f"Invalid CORS origin format '{origin}': {e}")
-            continue
-
-    # Validate CORS configuration in production
-    if not validated_origins:
-        if debug_mode:
-            logger.warning(
-                "No CORS_ALLOWED_ORIGINS configured. This is OK for development, "
-                "but you must set it in production if using a web frontend."
-            )
-        else:
-            logger.warning(
-                "No CORS_ALLOWED_ORIGINS configured in production. "
-                "If you're using a web frontend, set CORS_ALLOWED_ORIGINS environment variable."
-            )
-
-    return validated_origins
-
-# Apply validation
-CORS_ALLOWED_ORIGINS = validate_cors_origins(raw_origins, DEBUG)
-
-# Allow credentials (required for JWT authentication)
 CORS_ALLOW_CREDENTIALS = True
-
-# Don't use regex patterns for security
-CORS_ALLOWED_ORIGIN_REGEXES = []
-
-# Allowed HTTP methods (RESTful API standard)
-CORS_ALLOW_METHODS = [
-    "DELETE",
-    "GET",
-    "OPTIONS",
-    "PATCH",
-    "POST",
-    "PUT",
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()
 ]
 
-# Allowed headers (strict whitelist)
+CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
@@ -489,180 +260,20 @@ CORS_ALLOW_HEADERS = [
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
-    "x-telegram-init-data",  # Telegram Mini App authentication (initData)
-    "x-telegram-id",  # Telegram user ID from Nginx proxy
-    "x-telegram-first-name",  # Telegram user first name
-    "x-telegram-username",  # Telegram username
-    "x-telegram-last-name",  # Telegram user last name
-    "x-telegram-language-code",  # Telegram user language
+    "x-telegram-init-data",
 ]
 
-# Security: Don't expose sensitive headers
-CORS_EXPOSE_HEADERS = []
 
-# Cache preflight requests for 1 hour
-CORS_PREFLIGHT_MAX_AGE = 3600
-
-
-# ============================================================
-# OpenRouter AI Configuration
-# ============================================================
-
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_SITE_URL = os.environ.get("OPENROUTER_SITE_URL", "http://localhost:8000")
-OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "FoodMind AI")
-# Changed from openai/gpt-5-image-mini due to geographic restrictions (403 error in Russia)
-# Changed from google/gemini-2.0-flash-exp:free due to rate limiting on free tier
-# Changed from anthropic/claude-3.5-haiku - Bedrock version doesn't support vision
-# Google Gemini 2.5 Flash Image (Nano Banana) - stable, cheap ($0.30/M), good vision
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash-image")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
-# AI Recognition Settings
-AI_MAX_RETRIES = 3  # Maximum retries for invalid JSON
-AI_RATE_LIMIT_PER_MINUTE = 10  # Requests per minute per IP
-AI_RATE_LIMIT_PER_DAY = 100  # Requests per day per IP
-
-# ============================================================
-# AI Proxy Configuration (EatFit24 Internal Service)
-# ============================================================
-# AI Proxy is an internal service that wraps OpenRouter API calls
-# Accessible only via Tailscale VPN
+# -----------------------------------------------------------------------------
+# AI Proxy (внутренний сервис)
+# -----------------------------------------------------------------------------
 AI_PROXY_URL = os.environ.get("AI_PROXY_URL", "")
 AI_PROXY_SECRET = os.environ.get("AI_PROXY_SECRET", "")
 
 
-# ============================================================
-# Email Configuration (DISABLED - Telegram auth only)
-# ============================================================
-# NOTE: Email authentication has been removed from EatFit24.
-# All authentication is handled via Telegram WebApp.
-# These settings are kept commented for potential future billing/notification use.
-
-# EMAIL_BACKEND = os.environ.get(
-#     "EMAIL_BACKEND",
-#     "django.core.mail.backends.console.EmailBackend"
-# )
-#
-# EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
-# EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
-# EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
-# EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "False") == "True"
-# EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
-# EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-#
-# DEFAULT_FROM_EMAIL = os.environ.get(
-#     "DEFAULT_FROM_EMAIL",
-#     "FoodMind AI <noreply@foodmind.ai>"
-# )
-# SERVER_EMAIL = DEFAULT_FROM_EMAIL
-
-# Frontend/API URLs (still used for redirects and links)
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
-
-
-# ============================================================
-# YooKassa Payment Configuration
-# ============================================================
-
-# YooKassa mode: test or prod
-YOOKASSA_MODE = os.environ.get("YOOKASSA_MODE", "test")
-
-# Test credentials
-YOOKASSA_SHOP_ID_TEST = os.environ.get("YOOKASSA_SHOP_ID_TEST", "")
-YOOKASSA_API_KEY_TEST = os.environ.get("YOOKASSA_API_KEY_TEST", "")
-
-# Production credentials
-YOOKASSA_SHOP_ID_PROD = os.environ.get("YOOKASSA_SHOP_ID_PROD", "")
-YOOKASSA_API_KEY_PROD = os.environ.get("YOOKASSA_API_KEY_PROD", "")
-
-# Active credentials based on mode
-if YOOKASSA_MODE == "prod":
-    YOOKASSA_SHOP_ID = YOOKASSA_SHOP_ID_PROD
-    YOOKASSA_SECRET_KEY = YOOKASSA_API_KEY_PROD
-else:
-    YOOKASSA_SHOP_ID = YOOKASSA_SHOP_ID_TEST
-    YOOKASSA_SECRET_KEY = YOOKASSA_API_KEY_TEST
-
-# Return URL for payment confirmation
-YOOKASSA_RETURN_URL = os.environ.get("YOOKASSA_RETURN_URL", "https://eatfit24.ru/payments/return/")
-
-# Webhook secret for signature validation (optional)
-YOOKASSA_WEBHOOK_SECRET = os.environ.get("YOOKASSA_WEBHOOK_SECRET", "")
-
-# [SECURITY 2024-12] Webhook XFF Trust
-# Если True — доверяем X-Forwarded-For для определения IP клиента.
-# Ставить True ТОЛЬКО если сервер за trusted reverse proxy (Nginx/Cloudflare).
-# По умолчанию False — безопаснее, используем REMOTE_ADDR.
-WEBHOOK_TRUST_XFF = os.environ.get("WEBHOOK_TRUST_XFF", "false").lower() == "true"
-
-# Список доверенных прокси (nginx, docker gateway), которым разрешено передавать X-Forwarded-For
-# Формат: comma-separated list IP адресов или CIDR подсетей
-# Пример: "127.0.0.1,172.23.0.0/16"
-WEBHOOK_TRUSTED_PROXIES = [
-    ip.strip()
-    for ip in os.environ.get("WEBHOOK_TRUSTED_PROXIES", "127.0.0.1,172.23.0.0/16").split(",")
-    if ip.strip()
-]
-
-# [SECURITY 2024-12] Allowed return_url domains for payments
-# Защита от open redirect: разрешаем redirect только на эти домены.
-ALLOWED_RETURN_URL_DOMAINS = [
-    domain.strip()
-    for domain in os.environ.get(
-        "ALLOWED_RETURN_URL_DOMAINS",
-        "eatfit24.ru,localhost,127.0.0.1"
-    ).split(",")
-    if domain.strip()
-]
-
-# Billing constants
-BILLING_PLUS_PLAN_CODE = "PLUS"
-BILLING_PLUS_DURATION_DAYS = 30
-
-
-# ============================================================
-# Telegram Bot Configuration
-# ============================================================
-
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "EatFit24_bot")
-
-# Bot API Secret - защита Bot API endpoints от внешних запросов
-# Бот должен присылать этот секрет в заголовке X-Bot-Secret
-TELEGRAM_BOT_API_SECRET = os.environ.get("TELEGRAM_BOT_API_SECRET")
-
-# Personal Plan daily limit (default 3 plans per day per user)
-PERSONAL_PLAN_DAILY_LIMIT = int(os.environ.get("PERSONAL_PLAN_DAILY_LIMIT", "3"))
-
-# Дополнительный админ из окружения (совместимость с ботом)
-BOT_ADMIN_ID = os.environ.get("BOT_ADMIN_ID")
-
-# Telegram admin IDs (comma-separated in env)
-_telegram_admins_str = os.environ.get("TELEGRAM_ADMINS", "")
-TELEGRAM_ADMINS = set(int(x.strip()) for x in _telegram_admins_str.split(",") if x.strip().isdigit())
-if BOT_ADMIN_ID and BOT_ADMIN_ID.isdigit():
-    TELEGRAM_ADMINS.add(int(BOT_ADMIN_ID))
-
-
-# ============================================================
-# Subscription Settings
-# ============================================================
-
-# FREE subscription configuration
-
-FREE_SUBSCRIPTION_END_DATE = datetime(2099, 12, 31, 23, 59, 59, tzinfo=dt_timezone.utc)
-
-# File upload limits
-MAX_UPLOAD_SIZE_MB = 10  # Maximum file size for photo uploads
-MAX_IMAGE_DIMENSION = 4096  # Maximum width/height for images (4K)
-
-
-# ============================================================
-# Celery Configuration
-# ============================================================
-
+# -----------------------------------------------------------------------------
+# Celery
+# -----------------------------------------------------------------------------
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
@@ -670,14 +281,71 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 300  # 5 minutes max per task
+CELERY_TASK_TIME_LIMIT = 300  # 5 минут на задачу
 
-# Task routes - separate queues for different task types
 CELERY_TASK_ROUTES = {
     "apps.ai.tasks.*": {"queue": "ai"},
     "apps.billing.tasks.*": {"queue": "billing"},
-    "apps.billing.webhooks.tasks.*": {"queue": "billing"},  # webhook processing
+    "apps.billing.webhooks.tasks.*": {"queue": "billing"},
 }
 
-# Enable async AI processing (set to False to use sync mode)
-AI_ASYNC_ENABLED = os.environ.get("AI_ASYNC_ENABLED", "False") == "True"
+# ВАЖНО: чтобы не было случайного “sync AI” в проде — включаем async по умолчанию.
+AI_ASYNC_ENABLED = os.environ.get("AI_ASYNC_ENABLED", "True").lower() == "true"
+
+
+# -----------------------------------------------------------------------------
+# JWT (если нужно)
+# -----------------------------------------------------------------------------
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+# Явно перечисляем, что можно импортировать из base.py в local/production/test.
+# Это убирает "магические" зависимости и помогает линтерам (Ruff).
+__all__ = [
+    "BASE_DIR",
+    "DEBUG",
+    "ALLOWED_HOSTS",
+    "INSTALLED_APPS",
+    "MIDDLEWARE",
+    "ROOT_URLCONF",
+    "WSGI_APPLICATION",
+    "TEMPLATES",
+    "DATABASES",
+    "CACHES",
+    "REST_FRAMEWORK",
+    "LANGUAGE_CODE",
+    "TIME_ZONE",
+    "USE_I18N",
+    "USE_TZ",
+    "STATIC_URL",
+    "STATIC_ROOT",
+    "MEDIA_URL",
+    "MEDIA_ROOT",
+    "DEFAULT_AUTO_FIELD",
+    "SPECTACULAR_SETTINGS",
+    "CORS_ALLOW_ALL_ORIGINS",
+    "CORS_ALLOWED_ORIGINS",
+    "CORS_ALLOW_CREDENTIALS",
+    "CORS_ALLOW_METHODS",
+    "CORS_ALLOW_HEADERS",
+    "AI_PROXY_URL",
+    "AI_PROXY_SECRET",
+    "AI_ASYNC_ENABLED",
+    "CELERY_BROKER_URL",
+    "CELERY_RESULT_BACKEND",
+    "CELERY_ACCEPT_CONTENT",
+    "CELERY_TASK_SERIALIZER",
+    "CELERY_RESULT_SERIALIZER",
+    "CELERY_TIMEZONE",
+    "CELERY_TASK_TRACK_STARTED",
+    "CELERY_TASK_TIME_LIMIT",
+    "CELERY_TASK_ROUTES",
+    "SIMPLE_JWT",
+]
