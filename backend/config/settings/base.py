@@ -310,6 +310,7 @@ SIMPLE_JWT = {
 # Это убирает "магические" зависимости и помогает линтерам (Ruff).
 __all__ = [
     "BASE_DIR",
+    "SECRET_KEY",
     "DEBUG",
     "ALLOWED_HOSTS",
     "INSTALLED_APPS",
