@@ -286,6 +286,7 @@ def get_subscription_plans(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([])  # TEMPORARY: Disable throttling due to frontend polling issue
 def get_subscription_status(request):
     """
     GET /api/v1/billing/me/
@@ -391,6 +392,7 @@ def _build_subscription_details_response(user) -> Response:
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([])  # TEMPORARY: Disable throttling due to frontend polling issue
 def get_subscription_details(request):
     """
     GET /api/v1/billing/subscription/
