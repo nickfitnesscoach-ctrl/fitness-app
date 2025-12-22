@@ -43,9 +43,11 @@ logger = logging.getLogger(__name__)
 # Общие хелперы
 # ---------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class TelegramIdentity:
     """Нормализованные данные, которые мы извлекли из Telegram."""
+
     telegram_id: int
     username: str = ""
     first_name: str = ""
@@ -158,6 +160,7 @@ def _ensure_user_and_profiles(identity: TelegramIdentity) -> User:
 # 1) DebugModeAuthentication — только DEV
 # ---------------------------------------------------------------------
 
+
 class DebugModeAuthentication(authentication.BaseAuthentication):
     """
     DEV-only аутентификация для разработки без Telegram.
@@ -210,6 +213,7 @@ class DebugModeAuthentication(authentication.BaseAuthentication):
 # 2) TelegramWebAppAuthentication — основной безопасный путь
 # ---------------------------------------------------------------------
 
+
 class TelegramWebAppAuthentication(authentication.BaseAuthentication):
     """
     Основной способ: проверяем initData от Telegram Mini App.
@@ -222,22 +226,42 @@ class TelegramWebAppAuthentication(authentication.BaseAuthentication):
     def authenticate(self, request) -> Optional[Tuple[User, Dict[str, Any]]]:
         init_data = _get_header(request, "X-Telegram-Init-Data")
         if not init_data and request.method in {"POST", "PUT", "PATCH"}:
-            init_data = (request.data.get("initData") or request.data.get("init_data") or "").strip()
+            init_data = (
+                request.data.get("initData") or request.data.get("init_data") or ""
+            ).strip()
 
         if not init_data:
+            # Not our auth method - let other backends try
             return None
+
+        # Log auth attempt for diagnostics (path only, no sensitive data)
+        logger.debug("[TelegramAuth] Attempting auth for path=%s", request.path)
 
         auth_service = get_webapp_auth_service()
         parsed = auth_service.validate_init_data(init_data)
         if not parsed:
+            # Log more detail - validate_init_data logs specific reason internally
+            logger.warning(
+                "[TelegramAuth] Auth FAILED: invalid initData signature. "
+                "path=%s, initData_len=%d, initData_prefix=%s",
+                request.path,
+                len(init_data),
+                init_data[:20] + "..." if len(init_data) > 20 else init_data,
+            )
             raise exceptions.AuthenticationFailed("Invalid Telegram initData signature")
 
         user_data = auth_service.get_user_data_from_init_data(parsed)
         if not user_data:
+            logger.warning(
+                "[TelegramAuth] Auth FAILED: no user data in initData. path=%s", request.path
+            )
             raise exceptions.AuthenticationFailed("Invalid Telegram user data")
 
         telegram_id = user_data.get("id")
         if not telegram_id:
+            logger.warning(
+                "[TelegramAuth] Auth FAILED: no telegram_id in user data. path=%s", request.path
+            )
             raise exceptions.AuthenticationFailed("Telegram ID is required")
 
         identity = TelegramIdentity(
@@ -250,12 +274,14 @@ class TelegramWebAppAuthentication(authentication.BaseAuthentication):
         )
 
         user = _ensure_user_and_profiles(identity)
+        logger.info("[TelegramAuth] Auth OK: user_id=%s telegram_id=%s", user.id, telegram_id)
         return user, {"auth": "telegram_webapp"}
 
 
 # ---------------------------------------------------------------------
 # 3) TelegramHeaderAuthentication — опционально, выключено по умолчанию
 # ---------------------------------------------------------------------
+
 
 class TelegramHeaderAuthentication(authentication.BaseAuthentication):
     """

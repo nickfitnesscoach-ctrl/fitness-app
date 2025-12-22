@@ -260,7 +260,16 @@ CORS_ALLOW_HEADERS = [
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
+    # Telegram WebApp auth
     "x-telegram-init-data",
+    "x-telegram-id",
+    "x-telegram-first-name",
+    "x-telegram-last-name",
+    "x-telegram-username",
+    "x-telegram-language-code",
+    # Debug mode (DEV only)
+    "x-debug-mode",
+    "x-debug-user-id",
 ]
 
 

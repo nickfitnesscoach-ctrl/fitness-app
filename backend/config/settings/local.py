@@ -20,6 +20,9 @@ SECRET_KEY = os.environ.get("SECRET_KEY") or os.environ.get("DJANGO_SECRET_KEY")
 # В локальной разработке мы явно включаем DEBUG
 DEBUG = True
 
+# Debug Mode для Telegram WebApp (позволяет использовать X-Debug-Mode header)
+WEBAPP_DEBUG_MODE_ENABLED = True
+
 # Разрешённые хосты для локалки
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", ".ngrok-free.dev"]
 
