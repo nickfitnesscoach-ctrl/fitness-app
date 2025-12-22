@@ -116,7 +116,8 @@ export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (auth.isInitialized) {
             refresh();
         }
-    }, [auth.isInitialized, refresh]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [auth.isInitialized]); // Only trigger on auth initialization, not on refresh change
 
     /**
      * Toggle auto-renew
