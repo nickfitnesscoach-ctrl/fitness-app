@@ -4,12 +4,32 @@ set -e
 # EatFit24 Backend Entrypoint Script
 # Handles: DB wait, migrations, static files, then starts gunicorn
 #
-# NOTE:
-# - This script is used inside the backend Docker container for EatFit24.
-# - It waits for PostgreSQL, runs migrations + collectstatic, then starts Gunicorn.
-# - Migration / static failures DO NOT stop the container (they log WARNING and continue).
+# ENV VARIABLES:
+# - DJANGO_SETTINGS_MODULE: Django settings module (default: config.settings.production)
+# - MIGRATIONS_STRICT: If 1 (default), fail container if migrations fail. If 0, warn and continue.
+# - RUN_MIGRATIONS: If 1 (default), run migrations. If 0, skip.
+# - RUN_COLLECTSTATIC: If 1 (default), run collectstatic. If 0, skip.
+#
+# PRODUCTION SAFETY:
+# - By default (MIGRATIONS_STRICT=1), container FAILS if migrations fail - prevents DB schema mismatch.
+# - Set MIGRATIONS_STRICT=0 ONLY for emergency recovery scenarios.
 
 echo "[Entrypoint] Starting EatFit24 Backend..."
+
+# ============================================================
+# Configuration
+# ============================================================
+
+DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.production}"
+MIGRATIONS_STRICT="${MIGRATIONS_STRICT:-1}"
+RUN_MIGRATIONS="${RUN_MIGRATIONS:-1}"
+RUN_COLLECTSTATIC="${RUN_COLLECTSTATIC:-1}"
+
+echo "[Entrypoint] Configuration:"
+echo "  - DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE"
+echo "  - MIGRATIONS_STRICT=$MIGRATIONS_STRICT"
+echo "  - RUN_MIGRATIONS=$RUN_MIGRATIONS"
+echo "  - RUN_COLLECTSTATIC=$RUN_COLLECTSTATIC"
 
 # ============================================================
 # Wait for PostgreSQL
@@ -41,25 +61,46 @@ echo "[Entrypoint] PostgreSQL is ready!"
 # Run Django migrations
 # ============================================================
 
-echo "[Entrypoint] Running Django migrations (production settings)..."
+if [ "$RUN_MIGRATIONS" = "1" ]; then
+    echo "[Entrypoint] Running Django migrations..."
 
-if python manage.py migrate --settings=config.settings.production; then
-    echo "[Entrypoint] Migrations completed successfully"
+    if python manage.py migrate --settings="$DJANGO_SETTINGS_MODULE"; then
+        echo "[Entrypoint] Migrations completed successfully"
+    else
+        if [ "$MIGRATIONS_STRICT" = "1" ]; then
+            echo "[Entrypoint] ERROR: Migrations failed and MIGRATIONS_STRICT=1. Container will exit."
+            echo "[Entrypoint] This prevents running with incompatible DB schema."
+            echo "[Entrypoint] Set MIGRATIONS_STRICT=0 only for emergency recovery."
+            exit 1
+        else
+            echo "[Entrypoint] WARNING: Migrations failed but MIGRATIONS_STRICT=0. Continuing anyway."
+            echo "[Entrypoint] This is DANGEROUS in production - DB schema may be incompatible!"
+        fi
+    fi
 else
-    echo "[Entrypoint] WARNING: Migrations failed, backend will still start. CHECK LOGS!"
-    # Don't exit - let the app try to start
+    echo "[Entrypoint] Skipping migrations (RUN_MIGRATIONS=0)"
 fi
 
 # ============================================================
 # Collect static files
 # ============================================================
 
-echo "[Entrypoint] Collecting static files..."
+if [ "$RUN_COLLECTSTATIC" = "1" ]; then
+    echo "[Entrypoint] Collecting static files..."
 
-if python manage.py collectstatic --noinput --settings=config.settings.production; then
-    echo "[Entrypoint] Static files collected successfully"
+    if python manage.py collectstatic --noinput --settings="$DJANGO_SETTINGS_MODULE"; then
+        echo "[Entrypoint] Static files collected successfully"
+    else
+        if [ "$MIGRATIONS_STRICT" = "1" ]; then
+            echo "[Entrypoint] ERROR: collectstatic failed and MIGRATIONS_STRICT=1. Container will exit."
+            echo "[Entrypoint] Static files are required for proper frontend serving."
+            exit 1
+        else
+            echo "[Entrypoint] WARNING: collectstatic failed but MIGRATIONS_STRICT=0. Continuing anyway."
+        fi
+    fi
 else
-    echo "[Entrypoint] WARNING: collectstatic failed, continuing without updated static files"
+    echo "[Entrypoint] Skipping collectstatic (RUN_COLLECTSTATIC=0)"
 fi
 
 # ============================================================

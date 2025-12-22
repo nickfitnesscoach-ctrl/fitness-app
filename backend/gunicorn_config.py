@@ -3,12 +3,13 @@ Gunicorn configuration for EatFit24 Django application.
 
 Production configuration:
 - Used in Docker containers (backend service)
-- Log files written to /app/logs/ (created by Docker image)
-- No debug settings should be present here
+- Logs to stdout/stderr by default (Docker best practice)
+- Set GUNICORN_LOG_TO_FILES=1 to write logs to /app/logs/ instead
 - Worker count: CPU cores * 2 + 1
 - Worker class: sync (standard synchronous workers)
 """
 import multiprocessing
+import os
 
 # Server socket
 bind = "0.0.0.0:8000"
@@ -26,8 +27,17 @@ timeout = 140
 keepalive = 2
 
 # Logging
-accesslog = "/app/logs/gunicorn_access.log"
-errorlog = "/app/logs/gunicorn_error.log"
+# Docker best practice: logs to stdout/stderr for container log collection
+# Set GUNICORN_LOG_TO_FILES=1 to write to /app/logs/ instead (requires volume mount)
+LOG_TO_FILES = os.environ.get("GUNICORN_LOG_TO_FILES", "0") == "1"
+
+if LOG_TO_FILES:
+    accesslog = "/app/logs/gunicorn_access.log"
+    errorlog = "/app/logs/gunicorn_error.log"
+else:
+    accesslog = "-"  # stdout
+    errorlog = "-"   # stderr
+
 loglevel = "info"
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 

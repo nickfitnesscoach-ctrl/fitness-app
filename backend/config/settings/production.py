@@ -65,8 +65,15 @@ CACHES = {
 }
 
 # Structured logging configuration
-# Enable JSON logging via environment variable (default: True for production)
+# Docker best practice: logs to stdout by default
+# Set DJANGO_LOG_TO_FILES=1 to write to /app/logs/ (requires volume mount)
 USE_JSON_LOGGING = os.environ.get("USE_JSON_LOGGING", "True") == "True"
+LOG_TO_FILES = os.environ.get("DJANGO_LOG_TO_FILES", "0") == "1"
+
+# Build handlers list based on LOG_TO_FILES setting
+_handlers = ["console"]
+if LOG_TO_FILES:
+    _handlers.append("file")
 
 LOGGING = {
     "version": 1,
@@ -96,27 +103,27 @@ LOGGING = {
         },
     },
     "root": {
-        "handlers": ["console", "file"],
+        "handlers": _handlers,
         "level": "INFO",
     },
     "loggers": {
         "django": {
-            "handlers": ["console", "file"],
+            "handlers": _handlers,
             "level": "INFO",
             "propagate": False,
         },
         "apps.billing": {
-            "handlers": ["console", "file"],
+            "handlers": _handlers,
             "level": "INFO",
             "propagate": False,
         },
         "apps.telegram": {
-            "handlers": ["console", "file"],
+            "handlers": _handlers,
             "level": "DEBUG",
             "propagate": False,
         },
         "apps.ai": {
-            "handlers": ["console", "file"],
+            "handlers": _handlers,
             "level": "INFO",
             "propagate": False,
         },

@@ -6,6 +6,9 @@ import sys
 
 def main():
     """Run administrative tasks."""
+    # Use DJANGO_SETTINGS_MODULE from environment if set, otherwise default to local
+    # In Docker containers, DJANGO_SETTINGS_MODULE is always set explicitly
+    # For local development without env var, defaults to config.settings.local
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
     try:
         from django.core.management import execute_from_command_line
