@@ -19,7 +19,41 @@ API использует другие названия полей, чем UI (д
 | `items` | `recognized_items` | Массив распознанных блюд |
 | `amount_grams` | `grams` | Маппинг на уровне API |
 | `user_comment` | `comment` | В FileWithComment |
-| `breakfast` | `breakfast` | Типы приёмов пищи в нижнем регистре |
+
+## Meal type mapping (UI → API)
+
+Фронтенд использует типы приёмов пищи в нижнем регистре (русский/английский), а бэкенд требует **UPPERCASE** формат.
+
+**Таблица соответствий:**
+
+| UI (пользователь вводит) | API (отправляется на бэк) | Django Model Choice |
+|--------------------------|---------------------------|---------------------|
+| `завтрак` / `breakfast` | `BREAKFAST` | `BREAKFAST` - Завтрак |
+| `обед` / `lunch` | `LUNCH` | `LUNCH` - Обед |
+| `ужин` / `dinner` | `DINNER` | `DINNER` - Ужин |
+| `перекус` / `snack` | `SNACK` | `SNACK` - Перекус |
+| Любое другое значение | `SNACK` _(fallback)_ | По умолчанию |
+
+**Реализация:**
+
+Маппинг выполняется в `api/ai.api.ts` функцией `mapMealTypeToApi()`:
+
+```typescript
+const MEAL_TYPE_MAP: Record<string, string> = {
+    'завтрак': 'BREAKFAST',
+    'breakfast': 'BREAKFAST',
+    'обед': 'LUNCH',
+    'lunch': 'LUNCH',
+    'ужин': 'DINNER',
+    'dinner': 'DINNER',
+    'перекус': 'SNACK',
+    'snack': 'SNACK',
+};
+```
+
+Функция автоматически нормализует входное значение (lowercase, trim) и применяет fallback на `SNACK` для неизвестных значений.
+
+**Важно:** Backend модель требует строго одно из значений: `BREAKFAST`, `LUNCH`, `DINNER`, `SNACK` (см. `apps/nutrition/models.py::Meal.MEAL_TYPE_CHOICES`).
 
 ## Структура
 

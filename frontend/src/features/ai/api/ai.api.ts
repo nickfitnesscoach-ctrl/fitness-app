@@ -27,9 +27,40 @@ import type {
 // ============================================================
 
 /**
+ * Map UI meal type to API meal type
+ * UI uses lowercase (завтрак → breakfast)
+ * API uses UPPERCASE (BREAKFAST, LUNCH, DINNER, SNACK)
+ */
+const MEAL_TYPE_MAP: Record<string, string> = {
+    'завтрак': 'BREAKFAST',
+    'breakfast': 'BREAKFAST',
+    'обед': 'LUNCH',
+    'lunch': 'LUNCH',
+    'ужин': 'DINNER',
+    'dinner': 'DINNER',
+    'перекус': 'SNACK',
+    'snack': 'SNACK',
+};
+
+/**
+ * Convert UI meal type to API format
+ * @param mealType - Meal type from UI (e.g., "Завтрак", "breakfast", "BREAKFAST")
+ * @returns API-compatible meal type (BREAKFAST/LUNCH/DINNER/SNACK) or undefined
+ */
+const mapMealTypeToApi = (mealType?: string): string | undefined => {
+    if (!mealType) return undefined;
+
+    // Normalize to lowercase for lookup
+    const normalized = mealType.toLowerCase().trim();
+
+    // Return mapped value or fallback to SNACK if unknown
+    return MEAL_TYPE_MAP[normalized] || 'SNACK';
+};
+
+/**
  * Recognize food from image (async mode)
  * POST /api/v1/ai/recognize/
- * 
+ *
  * @param imageFile - Image file (JPEG/PNG)
  * @param userComment - Optional user comment about the food
  * @param mealType - Meal type (breakfast/lunch/dinner/snack)
@@ -52,9 +83,10 @@ export const recognizeFood = async (
         formData.append('user_comment', userComment);
     }
 
-    // API uses lowercase meal_type
-    if (mealType) {
-        formData.append('meal_type', mealType.toLowerCase());
+    // Map UI meal type to API format (UPPERCASE)
+    const apiMealType = mapMealTypeToApi(mealType);
+    if (apiMealType) {
+        formData.append('meal_type', apiMealType);
     }
 
     if (date) {
