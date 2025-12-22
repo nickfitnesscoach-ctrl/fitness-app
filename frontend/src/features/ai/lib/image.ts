@@ -10,8 +10,8 @@ import heic2any from 'heic2any';
  */
 export const isHeicFile = (file: File): boolean => {
     const extension = file.name.toLowerCase().split('.').pop();
-    return extension === 'heic' || extension === 'heif' || 
-           file.type === 'image/heic' || file.type === 'image/heif';
+    return extension === 'heic' || extension === 'heif' ||
+        file.type === 'image/heic' || file.type === 'image/heif';
 };
 
 /**
@@ -34,11 +34,11 @@ export const convertHeicToJpeg = async (file: File): Promise<File> => {
 
         // heic2any can return array of blobs for multi-image HEIC
         const resultBlob = Array.isArray(blob) ? blob[0] : blob;
-        
+
         // Create new File with .jpg extension
         const newFileName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
         const convertedFile = new File([resultBlob], newFileName, { type: 'image/jpeg' });
-        
+
         console.log(`[ImageUtils] Converted ${file.name} to ${newFileName} (${convertedFile.size} bytes)`);
         return convertedFile;
     } catch (error) {
@@ -53,12 +53,12 @@ export const convertHeicToJpeg = async (file: File): Promise<File> => {
  */
 export const processFilesForUpload = async (files: File[]): Promise<File[]> => {
     const processedFiles: File[] = [];
-    
+
     for (const file of files) {
         const processed = await convertHeicToJpeg(file);
         processedFiles.push(processed);
     }
-    
+
     return processedFiles;
 };
 
@@ -77,4 +77,29 @@ export const createPreviewUrl = async (file: File): Promise<string> => {
         }
     }
     return URL.createObjectURL(file);
+};
+
+/**
+ * Validate file size
+ */
+export const validateFileSize = (file: File, maxSizeMB: number = 10): boolean => {
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+    return file.size <= maxSizeBytes;
+};
+
+/**
+ * Get file extension
+ */
+export const getFileExtension = (file: File): string => {
+    return file.name.toLowerCase().split('.').pop() || '';
+};
+
+/**
+ * Check if file is an image
+ */
+export const isImageFile = (file: File): boolean => {
+    const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'];
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+
+    return imageTypes.includes(file.type) || imageExtensions.includes(getFileExtension(file));
 };

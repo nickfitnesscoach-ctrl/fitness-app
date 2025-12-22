@@ -1,42 +1,22 @@
 import React, { useState } from 'react';
 import { Check, AlertCircle, X, ChevronLeft, Flame, Drumstick, Droplets, Wheat } from 'lucide-react';
-import { IS_DEV } from '../config/env';
-
-export interface RecognizedItem {
-    name: string;
-    grams: number;
-    calories: number;
-    protein: number;
-    fat: number;
-    carbohydrates: number;
-}
-
-export interface AnalysisResult {
-    recognized_items: RecognizedItem[];
-    total_calories: number;
-    total_protein: number;
-    total_fat: number;
-    total_carbohydrates: number;
-    meal_id?: number | string;
-    photo_url?: string | null;
-    _neutralMessage?: string; // UI hotfix: нейтральное сообщение вместо "Еда не найдена"
-}
-
-export interface BatchResult {
-    file: File;
-    status: 'success' | 'error';
-    data?: AnalysisResult;
-    error?: string;
-}
+import type { BatchResult, RecognizedItem } from '../../api';
 
 interface BatchResultsModalProps {
     results: BatchResult[];
     onClose: () => void;
     onOpenDiary?: () => void;
-    mealId?: number | null;
 }
 
-export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, onClose, onOpenDiary: _onOpenDiary }) => {
+/**
+ * Modal showing batch recognition results
+ * Supports list view and detail view for each result
+ */
+export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
+    results,
+    onClose,
+    onOpenDiary: _onOpenDiary
+}) => {
     const successCount = results.filter(r => r.status === 'success').length;
     const totalCount = results.length;
 
@@ -51,49 +31,56 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
         setSelectedResultIndex(index);
     };
 
+    // Render item card
+    const renderItemCard = (item: RecognizedItem, idx: number) => (
+        <div key={idx} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div className="flex justify-between items-start mb-3">
+                <div>
+                    <h4 className="font-bold text-gray-900 text-lg leading-tight">
+                        {item.name}
+                    </h4>
+                    <p className="text-gray-500 text-sm mt-1">
+                        {item.grams} г
+                    </p>
+                </div>
+                <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-xl">
+                    <Flame size={16} className="text-orange-500" />
+                    <span className="font-bold text-orange-700">
+                        {Math.round(item.calories)}
+                    </span>
+                </div>
+            </div>
+
+            {/* Macros */}
+            <div className="grid grid-cols-3 gap-2">
+                <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
+                    <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+                        <Drumstick size={12} />
+                        <span>Белки</span>
+                    </div>
+                    <span className="font-bold text-gray-900">{Math.round(item.protein)}г</span>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
+                    <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+                        <Droplets size={12} />
+                        <span>Жиры</span>
+                    </div>
+                    <span className="font-bold text-gray-900">{Math.round(item.fat)}г</span>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
+                    <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+                        <Wheat size={12} />
+                        <span>Угл.</span>
+                    </div>
+                    <span className="font-bold text-gray-900">{Math.round(item.carbohydrates)}г</span>
+                </div>
+            </div>
+        </div>
+    );
+
     // If viewing details of a specific result
     if (selectedResultIndex !== null) {
         const result = results[selectedResultIndex];
-
-        // DEV MODE: Mock successful data for testing UI
-        const mockResult: BatchResult | null = IS_DEV && result.status === 'error' ? {
-            ...result,
-            status: 'success',
-            data: {
-                recognized_items: [
-                    {
-                        name: 'Куриная грудка',
-                        grams: 150,
-                        calories: 248,
-                        protein: 47,
-                        fat: 5,
-                        carbohydrates: 0
-                    },
-                    {
-                        name: 'Рис отварной',
-                        grams: 200,
-                        calories: 260,
-                        protein: 5,
-                        fat: 1,
-                        carbohydrates: 58
-                    },
-                    {
-                        name: 'Овощной салат',
-                        grams: 100,
-                        calories: 45,
-                        protein: 2,
-                        fat: 1,
-                        carbohydrates: 8
-                    }
-                ],
-                total_calories: 553,
-                total_protein: 54,
-                total_fat: 7,
-                total_carbohydrates: 66
-            }
-        } : null;
-
-        const displayResult = mockResult || result;
 
         return (
             <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 animate-in fade-in duration-200">
@@ -118,7 +105,6 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                     {/* Detail View Content */}
                     <div className="overflow-y-auto flex-1">
                         {/* Large Photo */}
-                        {/* Large Photo - Reduced height for better content visibility */}
                         <div className="w-full h-64 bg-gray-200 relative">
                             <img
                                 src={URL.createObjectURL(result.file)}
@@ -127,91 +113,46 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                             />
                         </div>
 
-                        {displayResult.status === 'success' && displayResult.data ? (
+                        {result.status === 'success' && result.data ? (
                             <div className="p-6 pb-24 space-y-4">
                                 {/* Neutral message for empty items but successful processing */}
-                                {displayResult.data._neutralMessage ? (
+                                {result.data._neutralMessage ? (
                                     <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 text-center">
                                         <Check className="text-blue-500 mx-auto mb-3" size={48} />
                                         <h3 className="text-xl font-bold text-blue-600 mb-2">Анализ завершён</h3>
                                         <p className="text-blue-500">
-                                            {displayResult.data._neutralMessage}
+                                            {result.data._neutralMessage}
                                         </p>
                                     </div>
                                 ) : (
                                     <>
                                         {/* Summary */}
-                                        {/* Matches Design Goal: No orange card, compact stats instead */}
                                         <div className="grid grid-cols-4 gap-2 mb-4 p-3 bg-gray-50 rounded-2xl">
                                             <div className="text-center border-r border-gray-200 last:border-0">
                                                 <div className="text-xs text-gray-500 font-medium">Ккал</div>
-                                                <div className="text-sm font-bold text-gray-900">{Math.round(displayResult.data.total_calories)}</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_calories)}</div>
                                             </div>
                                             <div className="text-center border-r border-gray-200 last:border-0">
                                                 <div className="text-xs text-gray-500 font-medium">Белки</div>
-                                                <div className="text-sm font-bold text-gray-900">{Math.round(displayResult.data.total_protein)}</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_protein)}</div>
                                             </div>
                                             <div className="text-center border-r border-gray-200 last:border-0">
                                                 <div className="text-xs text-gray-500 font-medium">Жиры</div>
-                                                <div className="text-sm font-bold text-gray-900">{Math.round(displayResult.data.total_fat)}</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_fat)}</div>
                                             </div>
                                             <div className="text-center">
                                                 <div className="text-xs text-gray-500 font-medium">Угл.</div>
-                                                <div className="text-sm font-bold text-gray-900">{Math.round(displayResult.data.total_carbohydrates)}</div>
+                                                <div className="text-sm font-bold text-gray-900">{Math.round(result.data.total_carbohydrates)}</div>
                                             </div>
                                         </div>
 
                                         {/* Recognized Items */}
                                         <div>
                                             <h3 className="text-lg font-bold text-gray-900 mb-3">
-                                                Распознанные блюда ({displayResult.data.recognized_items.length})
+                                                Распознанные блюда ({result.data.recognized_items.length})
                                             </h3>
                                             <div className="space-y-3">
-                                                {displayResult.data.recognized_items.map((item, idx) => (
-                                                    <div key={idx} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                                                        <div className="flex justify-between items-start mb-3">
-                                                            <div>
-                                                                <h4 className="font-bold text-gray-900 text-lg leading-tight">
-                                                                    {item.name}
-                                                                </h4>
-                                                                <p className="text-gray-500 text-sm mt-1">
-                                                                    {item.grams} г
-                                                                </p>
-                                                            </div>
-                                                            <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-xl">
-                                                                <Flame size={16} className="text-orange-500" />
-                                                                <span className="font-bold text-orange-700">
-                                                                    {Math.round(item.calories)}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Macros */}
-                                                        <div className="grid grid-cols-3 gap-2">
-                                                            <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
-                                                                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
-                                                                    <Drumstick size={12} />
-                                                                    <span>Белки</span>
-                                                                </div>
-                                                                <span className="font-bold text-gray-900">{item.protein}г</span>
-                                                            </div>
-                                                            <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
-                                                                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
-                                                                    <Droplets size={12} />
-                                                                    <span>Жиры</span>
-                                                                </div>
-                                                                <span className="font-bold text-gray-900">{item.fat}г</span>
-                                                            </div>
-                                                            <div className="bg-gray-50 rounded-xl p-2 flex flex-col items-center">
-                                                                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
-                                                                    <Wheat size={12} />
-                                                                    <span>Угл.</span>
-                                                                </div>
-                                                                <span className="font-bold text-gray-900">{item.carbohydrates}г</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
+                                                {result.data.recognized_items.map((item, idx) => renderItemCard(item, idx))}
                                             </div>
                                         </div>
                                     </>
@@ -223,7 +164,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                     <AlertCircle className="text-gray-500 mx-auto mb-3" size={48} />
                                     <h3 className="text-xl font-bold text-gray-600 mb-2">Ошибка загрузки</h3>
                                     <p className="text-gray-500">
-                                        {displayResult.error || 'Попробуйте ещё раз'}
+                                        {result.error || 'Попробуйте ещё раз'}
                                     </p>
                                 </div>
                             </div>
@@ -260,7 +201,6 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                     {results.map((result, index) => (
                         <div key={index} className="flex gap-4 p-3 bg-gray-50 rounded-2xl border border-gray-100 relative group">
                             {/* Thumbnail */}
-                            {/* Thumbnail - F-009: 1:1 Ratio */}
                             <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 relative aspect-square">
                                 <img
                                     src={URL.createObjectURL(result.file)}
@@ -268,8 +208,8 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                     className="w-full h-full object-cover"
                                 />
                                 <div className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center ${result.status === 'success'
-                                    ? (result.data?._neutralMessage ? 'bg-blue-500' : 'bg-green-500')
-                                    : 'bg-gray-500'
+                                        ? (result.data?._neutralMessage ? 'bg-blue-500' : 'bg-green-500')
+                                        : 'bg-gray-500'
                                     }`}>
                                     {result.status === 'success' ? (
                                         <Check size={14} className="text-white" />
@@ -325,7 +265,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                                         </>
                                     )
                                 ) : (
-                                    // Real error (network/server failure)
+                                    // Real error
                                     <>
                                         <h3 className="font-bold text-gray-600">Ошибка загрузки</h3>
                                         <p className="text-sm text-gray-500 mt-1">
@@ -344,8 +284,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({ results, o
                     ))}
                 </div>
 
-                {/* Footer */}
-                {/* Footer - F-003, F-010: Min height & Safe Area */}
+                {/* Footer with Safe Area */}
                 <div className="p-4 border-t border-gray-100 shrink-0 bg-white sm:rounded-b-3xl pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pb-4">
                     <button
                         onClick={onClose}

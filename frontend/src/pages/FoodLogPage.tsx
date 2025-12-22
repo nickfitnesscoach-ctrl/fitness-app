@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, CreditCard, AlertCircle, Check, X, Send } from 'lucide-react';
+import { AlertCircle, Check, X, Send } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBilling } from '../contexts/BillingContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import { BatchResultsModal } from '../components/BatchResultsModal';
-import { useFoodBatchAnalysis } from '../hooks/useFoodBatchAnalysis';
-import { FileWithComment } from '../types/food';
-import { SelectedPhotosList } from '../components/food/SelectedPhotosList';
-import { BatchProcessingScreen } from '../components/food/BatchProcessingScreen';
-// F-007 FIX: HEIC/HEIF support for iOS photos
-import { convertHeicToJpeg, isHeicFile } from '../utils/imageUtils';
+
+// Import from AI feature module
+import {
+    useFoodBatchAnalysis,
+    BatchResultsModal,
+    SelectedPhotosList,
+    BatchProcessingScreen,
+    LimitReachedModal,
+    UploadDropzone,
+    isHeicFile,
+    convertHeicToJpeg,
+    MEAL_TYPE_OPTIONS,
+    AI_LIMITS,
+} from '../features/ai';
+import type { FileWithComment } from '../features/ai';
 
 const FoodLogPage: React.FC = () => {
     const navigate = useNavigate();
@@ -27,8 +35,9 @@ const FoodLogPage: React.FC = () => {
         }
         return new Date();
     };
+
     const [selectedDate, setSelectedDate] = useState<Date>(getInitialDate());
-    const [mealType, setMealType] = useState<string>('BREAKFAST');
+    const [mealType, setMealType] = useState<string>('breakfast'); // lowercase per API contract
     const [selectedFiles, setSelectedFiles] = useState<FileWithComment[]>([]);
     const [showBatchResults, setShowBatchResults] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -61,70 +70,34 @@ const FoodLogPage: React.FC = () => {
         if (results.length > 0 && !isProcessing) {
             setShowBatchResults(true);
             setSelectedFiles([]);
-            // Refresh billing info
             billing.refresh();
         }
     }, [results, isProcessing, billing]);
 
-    const mealTypeOptions = [
-        { value: 'BREAKFAST', label: 'Завтрак' },
-        { value: 'LUNCH', label: 'Обед' },
-        { value: 'DINNER', label: 'Ужин' },
-        { value: 'SNACK', label: 'Перекус' },
-    ];
-
-    // F-007: Made async for HEIC conversion
-    const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (files && files.length > 0) {
-            let fileList = Array.from(files);
-
-            // Limit to 5 files
-            if (fileList.length > 5) {
-                alert('За один раз можно загрузить не более 5 фото. Лишние фото будут проигнорированы.');
-                fileList = fileList.slice(0, 5);
-            }
-
-            // Validate file sizes
-            const validFiles = fileList.filter(file => {
-                if (file.size > 10 * 1024 * 1024) {
-                    console.warn(`File ${file.name} is too large (skipped)`);
-                    return false;
-                }
-                return true;
-            });
-
-            if (validFiles.length === 0) {
-                setError('Все выбранные файлы слишком большие (максимум 10MB).');
-                return;
-            }
-
-            // Convert to FileWithComment objects with empty comments
-            // F-007: Create preview URLs (handles HEIC conversion for preview)
-            const filesWithComments: FileWithComment[] = await Promise.all(
-                validFiles.map(async (file) => {
-                    let previewUrl: string;
-                    if (isHeicFile(file)) {
-                        // Convert HEIC to JPEG for preview
-                        try {
-                            const converted = await convertHeicToJpeg(file);
-                            previewUrl = URL.createObjectURL(converted);
-                        } catch {
-                            previewUrl = ''; // Will show placeholder
-                        }
-                    } else {
-                        previewUrl = URL.createObjectURL(file);
+    // Handle file selection from UploadDropzone
+    const handleFilesSelected = async (files: File[]) => {
+        // Convert to FileWithComment objects with empty comments
+        const filesWithComments: FileWithComment[] = await Promise.all(
+            files.map(async (file) => {
+                let previewUrl: string;
+                if (isHeicFile(file)) {
+                    try {
+                        const converted = await convertHeicToJpeg(file);
+                        previewUrl = URL.createObjectURL(converted);
+                    } catch {
+                        previewUrl = '';
                     }
-                    return { file, comment: '', previewUrl };
-                })
-            );
-            setSelectedFiles(filesWithComments);
-            setError(null);
-        }
+                } else {
+                    previewUrl = URL.createObjectURL(file);
+                }
+                return { file, comment: '', previewUrl };
+            })
+        );
+        setSelectedFiles(filesWithComments);
+        setError(null);
     };
 
     const handleAddFiles = async (newFiles: File[]) => {
-        // F-007: Create preview URLs (handles HEIC conversion for preview)
         const filesWithComments: FileWithComment[] = await Promise.all(
             newFiles.map(async (file) => {
                 let previewUrl: string;
@@ -146,6 +119,9 @@ const FoodLogPage: React.FC = () => {
 
     const handleRemoveFile = (index: number) => {
         const newFiles = [...selectedFiles];
+        if (newFiles[index].previewUrl) {
+            URL.revokeObjectURL(newFiles[index].previewUrl!);
+        }
         newFiles.splice(index, 1);
         setSelectedFiles(newFiles);
     };
@@ -163,7 +139,6 @@ const FoodLogPage: React.FC = () => {
 
     const handleCloseResults = () => {
         setShowBatchResults(false);
-        // Navigate back to dashboard with the selected date
         const dateStr = selectedDate.toISOString().split('T')[0];
         navigate(`/?date=${dateStr}`);
     };
@@ -171,17 +146,16 @@ const FoodLogPage: React.FC = () => {
     // While WebApp is initializing
     if (!isReady) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
+            <div className="min-h-screen min-h-dvh flex items-center justify-center">
                 <div className="animate-spin w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
             </div>
         );
     }
 
     // WebApp is ready but we're not in Telegram
-    // Allow Browser Debug Mode to continue
     if (!webAppDetected && !isBrowserDebug && !webAppBrowserDebug) {
         return (
-            <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="min-h-screen min-h-dvh flex items-center justify-center p-4">
                 <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center max-w-md">
                     <h2 className="text-xl font-bold text-orange-900 mb-2">
                         Откройте через Telegram
@@ -196,7 +170,7 @@ const FoodLogPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pt-6 pb-24 safe-area-bottom">
+        <div className="min-h-screen min-h-dvh bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))]">
             <div className="max-w-lg mx-auto">
                 {/* Date and Meal Type Selector */}
                 <div className="bg-white rounded-3xl shadow-sm p-4 mb-6">
@@ -218,7 +192,7 @@ const FoodLogPage: React.FC = () => {
                                     onChange={(e) => setMealType(e.target.value)}
                                     className="w-full p-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white appearance-none"
                                 >
-                                    {mealTypeOptions.map((option) => (
+                                    {MEAL_TYPE_OPTIONS.map((option) => (
                                         <option key={option.value} value={option.value}>
                                             {option.label}
                                         </option>
@@ -236,7 +210,6 @@ const FoodLogPage: React.FC = () => {
 
                 {/* Main Content Area */}
                 {isProcessing ? (
-                    /* Batch Processing State */
                     <BatchProcessingScreen
                         current={progress.current}
                         total={progress.total}
@@ -264,6 +237,7 @@ const FoodLogPage: React.FC = () => {
                                 onChangeComment={handleCommentChange}
                                 onRemove={handleRemoveFile}
                                 onAddFiles={handleAddFiles}
+                                maxFiles={AI_LIMITS.MAX_PHOTOS_PER_UPLOAD}
                             />
 
                             {/* Hint */}
@@ -294,7 +268,6 @@ const FoodLogPage: React.FC = () => {
                 ) : (
                     /* Initial Upload State */
                     <div className="space-y-6">
-
                         {/* Desktop Warning */}
                         {isDesktop && (
                             <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4">
@@ -313,22 +286,11 @@ const FoodLogPage: React.FC = () => {
                             </div>
                         )}
 
-                        <label className="block">
-                            <div className="aspect-video bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-3xl flex flex-col items-center justify-center text-white shadow-xl active:scale-95 transition-transform cursor-pointer">
-                                <Camera size={64} className="mb-4" />
-                                <span className="text-xl font-bold mb-2">
-                                    {isDesktop ? 'Загрузить фото' : 'Сфотографировать'}
-                                </span>
-                                <span className="text-sm text-white/80">Можно выбрать до 5 фото</span>
-                            </div>
-                            <input
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                className="hidden"
-                                onChange={handleFileSelect}
-                            />
-                        </label>
+                        <UploadDropzone
+                            onFilesSelected={handleFilesSelected}
+                            maxFiles={AI_LIMITS.MAX_PHOTOS_PER_UPLOAD}
+                            isDesktop={isDesktop}
+                        />
 
                         <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
                             <p className="text-blue-800 text-sm text-center">
@@ -349,39 +311,14 @@ const FoodLogPage: React.FC = () => {
 
                 {/* Limit Reached Modal */}
                 {showLimitModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
-                            <div className="text-center mb-4">
-                                <AlertCircle className="text-red-500 mx-auto mb-3" size={48} />
-                                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                    Лимит исчерпан
-                                </h3>
-                                <p className="text-gray-600">
-                                    Вы использовали свои {billing.data?.daily_photo_limit} бесплатных анализа.
-                                    Некоторые фото не были обработаны.
-                                </p>
-                            </div>
-
-                            <div className="space-y-3">
-                                <button
-                                    onClick={() => navigate('/subscription')}
-                                    className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-3 rounded-xl font-bold hover:from-blue-600 hover:to-purple-600 transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <CreditCard size={20} />
-                                    Оформить PRO
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setShowLimitModal(false);
-                                        navigate('/');
-                                    }}
-                                    className="w-full bg-gray-200 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-300 transition-colors"
-                                >
-                                    Понятно
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                    <LimitReachedModal
+                        dailyLimit={billing.data?.daily_photo_limit || 3}
+                        onClose={() => {
+                            setShowLimitModal(false);
+                            navigate('/');
+                        }}
+                        onUpgrade={() => navigate('/subscription')}
+                    />
                 )}
 
                 {/* Batch Results Modal */}

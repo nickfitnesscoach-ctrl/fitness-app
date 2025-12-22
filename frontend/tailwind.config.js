@@ -9,6 +9,14 @@ export default {
     darkMode: 'class',
     theme: {
         extend: {
+            // F-021: Support for 100dvh (dynamic viewport height)
+            minHeight: {
+                'dvh': '100dvh',
+                'screen-safe': 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
+            },
+            height: {
+                'dvh': '100dvh',
+            },
             // Custom colors for dark mode
             colors: {
                 dark: {

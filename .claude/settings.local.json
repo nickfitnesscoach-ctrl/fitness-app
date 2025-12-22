@@ -81,7 +81,13 @@
       "Bash(python3:*)",
       "Bash(if [ -f db.sqlite3 ])",
       "Bash(then echo \"Found db.sqlite3\")",
-      "Bash(else echo \"db.sqlite3 not found\")"
+      "Bash(else echo \"db.sqlite3 not found\")",
+      "Bash(SECRET_KEY=test-key DJANGO_SETTINGS_MODULE=config.settings.local python manage.py:*)",
+      "Bash(then grep -E \"^\\(DEBUG|DEBUG_MODE_ENABLED|WEBAPP_DEBUG\\)\" .env)",
+      "Bash(else echo \".env file not found\")",
+      "Bash(bash:*)",
+      "Bash(tasklist:*)",
+      "Bash(docker ps:*)"
     ],
     "deny": [],
     "ask": []
