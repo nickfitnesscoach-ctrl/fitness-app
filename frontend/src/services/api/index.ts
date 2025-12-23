@@ -17,12 +17,7 @@ import * as profile from './profile';
 import * as trainer from './trainer';
 import { getLogs, getDebugInfo, resolveImageUrl } from './client';
 
-// AI functions now from features/ai module (API contract aligned)
-import { recognizeFood, getTaskStatus } from '../../features/ai';
-
-// Re-export AI module from features/ai for direct imports
-import * as ai from '../../features/ai';
-export { ai };
+// AI module available via direct import: import { ... } from '@/features/ai'
 
 // Re-export individual modules for direct imports
 export { auth, nutrition, billing, profile, trainer };
@@ -82,9 +77,7 @@ export const api = {
     setAutoGoals: nutrition.setAutoGoals,
     getWeeklyStats: nutrition.getWeeklyStats,
 
-    // AI (from features/ai module - API contract aligned)
-    recognizeFood,
-    getTaskStatus,
+    // AI: Import directly from '@/features/ai' (no legacy re-export needed)
 
     // Billing
     getSubscriptionPlans: billing.getSubscriptionPlans,

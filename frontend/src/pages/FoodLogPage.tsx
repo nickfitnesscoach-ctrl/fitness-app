@@ -37,7 +37,7 @@ const FoodLogPage: React.FC = () => {
     };
 
     const [selectedDate, setSelectedDate] = useState<Date>(getInitialDate());
-    const [mealType, setMealType] = useState<string>('breakfast'); // lowercase per API contract
+    const [mealType, setMealType] = useState<string>('breakfast'); // UI lowercase, mapped to UPPERCASE for API
     const [selectedFiles, setSelectedFiles] = useState<FileWithComment[]>([]);
     const [showBatchResults, setShowBatchResults] = useState(false);
     const [error, setError] = useState<string | null>(null);
