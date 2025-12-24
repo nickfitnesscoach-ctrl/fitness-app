@@ -150,6 +150,65 @@ class TestAIAsyncFlow:
         body = resp.json()
         assert body["status"] == "failed"
 
+    def test_limit_exceeded_returns_429_no_meal_created(self, django_user_model):
+        """P1-4: When limit exceeded, 429 returned and Meal NOT created."""
+        from decimal import Decimal
+        from apps.billing.models import Subscription, SubscriptionPlan
+        from apps.billing.usage import DailyUsage
+
+        user = django_user_model.objects.create_user(username="u_limit", password="pass")
+        self.client.force_authenticate(user=user)
+
+        # Create FREE plan with limit=3
+        free_plan, _ = SubscriptionPlan.objects.get_or_create(
+            code="FREE",
+            defaults={
+                "name": "FREE",
+                "display_name": "Бесплатный",
+                "price": Decimal("0"),
+                "duration_days": 0,
+                "daily_photo_limit": 3,
+                "is_active": True,
+            },
+        )
+
+        # Create subscription
+        Subscription.objects.get_or_create(
+            user=user,
+            defaults={
+                "plan": free_plan,
+                "start_date": timezone.now(),
+                "end_date": timezone.now() + timezone.timedelta(days=365),
+                "is_active": True,
+            },
+        )
+
+        # Exhaust limit (set usage to 3)
+        usage = DailyUsage.objects.get_today(user)
+        usage.photo_ai_requests = 3
+        usage.save()
+
+        # Count meals before
+        meal_count_before = Meal.objects.filter(user=user).count()
+
+        url = reverse("ai:recognize-food")
+        resp = self.client.post(
+            url,
+            data={"data_url": _small_png_data_url(), "meal_type": "SNACK"},
+            format="json",
+        )
+
+        # Should return 429
+        assert resp.status_code == 429
+        body = resp.json()
+        assert body["error"] == "DAILY_PHOTO_LIMIT_EXCEEDED"
+        assert body["used"] == 3
+        assert body["limit"] == 3
+
+        # No new Meal should be created
+        meal_count_after = Meal.objects.filter(user=user).count()
+        assert meal_count_after == meal_count_before
+
 
 def _small_png_data_url() -> str:
     """Минимальный валидный PNG 1x1 (base64)."""

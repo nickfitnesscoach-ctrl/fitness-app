@@ -66,6 +66,35 @@ class AIRecognitionView(APIView):
         user_comment = s.validated_data.get("user_comment", "")
         source_type = s.validated_data.get("source_type", "unknown")
 
+        # P1-4: Проверяем лимит ДО создания Meal (избегаем orphan meals)
+        from apps.billing.services import get_effective_plan_for_user
+        from apps.billing.usage import DailyUsage
+
+        plan = get_effective_plan_for_user(request.user)
+        limit = plan.daily_photo_limit  # None = безлимит
+
+        if limit is not None:
+            usage = DailyUsage.objects.get_today(request.user)
+            if usage.photo_ai_requests >= limit:
+                logger.info(
+                    "[AI] limit exceeded: user_id=%s used=%s limit=%s rid=%s",
+                    request.user.id,
+                    usage.photo_ai_requests,
+                    limit,
+                    request_id,
+                )
+                resp = Response(
+                    {
+                        "error": "DAILY_PHOTO_LIMIT_EXCEEDED",
+                        "message": "Вы исчерпали дневной лимит фото",
+                        "used": usage.photo_ai_requests,
+                        "limit": limit,
+                    },
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+                resp["X-Request-ID"] = request_id
+                return resp
+
         # 1) Создаём Meal (meal_type/date обязательны)
         with transaction.atomic():
             meal = Meal.objects.create(
