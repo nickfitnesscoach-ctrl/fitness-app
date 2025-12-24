@@ -103,17 +103,12 @@ jobs:
             echo ">>> Mark safe.directory (extra safety)"
             git config --global --add safe.directory "${PROJECT_DIR}" || true
 
+            echo ">>> Add GitHub to known_hosts (for SSH)"
+            mkdir -p ~/.ssh
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+
             echo ">>> Updating repo"
             cd "${PROJECT_DIR}"
-
-            # Ensure we're using HTTPS remote (not SSH)
-            CURRENT_REMOTE=$(git remote get-url origin)
-            if [[ "$CURRENT_REMOTE" == git@github.com:* ]]; then
-              echo ">>> Switching from SSH to HTTPS remote"
-              HTTPS_URL=$(echo "$CURRENT_REMOTE" | sed 's|git@github.com:|https://github.com/|' | sed 's|\.git$||').git
-              git remote set-url origin "$HTTPS_URL"
-            fi
-
             git fetch origin
 
             # на всякий случай: если пуш пришел в master, ресетим на актуальную ветку
