@@ -54,18 +54,27 @@ jobs:
           script_stop: false
           debug: true
           script: |
-            echo ">>> [1/7] Setup variables"
+            echo ">>> [1/8] Setup variables"
             PROJECT_DIR="/opt/EatFit24"
+            ENV_BACKUP="/tmp/eatfit24_env_backup"
             BRANCH="main"
             DEPLOY_USER="${{ secrets.VPS_USERNAME }}"
             REPO_URL="https://github.com/${{ github.repository }}.git"
             
-            echo ">>> [2/7] Clean and create project dir"
+            echo ">>> [2/8] Backup .env file if exists"
+            if [ -f "${PROJECT_DIR}/.env" ]; then
+              cp "${PROJECT_DIR}/.env" "${ENV_BACKUP}"
+              echo ">>> .env backed up to ${ENV_BACKUP}"
+            else
+              echo ">>> No .env file found to backup"
+            fi
+            
+            echo ">>> [3/8] Clean and create project dir"
             echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S rm -rf "${PROJECT_DIR}" || true
             echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S mkdir -p "${PROJECT_DIR}"
             echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}"
             
-            echo ">>> [3/7] Clone fresh repo"
+            echo ">>> [4/8] Clone fresh repo"
             git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
             git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" "${PROJECT_DIR}"
             if [ $? -ne 0 ]; then
@@ -74,11 +83,27 @@ jobs:
             fi
             
             cd "${PROJECT_DIR}"
-            echo ">>> Current directory: $(pwd)"
+            
+            echo ">>> [5/8] Restore .env file"
+            if [ -f "${ENV_BACKUP}" ]; then
+              cp "${ENV_BACKUP}" "${PROJECT_DIR}/.env"
+              rm -f "${ENV_BACKUP}"
+              echo ">>> .env restored from backup"
+            else
+              echo ">>> ⚠️ No .env backup found!"
+              echo ">>> Creating minimal .env from .env.example..."
+              if [ -f ".env.example" ]; then
+                cp .env.example .env
+                echo ">>> Created .env from .env.example - YOU NEED TO UPDATE IT ON SERVER!"
+              else
+                echo ">>> ❌ No .env.example found! Deploy may fail!"
+              fi
+            fi
+            
             echo ">>> Files:"
             ls -la
             
-            echo ">>> [4/7] Check compose file"
+            echo ">>> [6/8] Check compose file"
             if [ -f "compose.yml" ]; then
               COMPOSE_FILE="compose.yml"
             elif [ -f "docker-compose.yml" ]; then
@@ -89,17 +114,17 @@ jobs:
             fi
             echo ">>> Using: ${COMPOSE_FILE}"
             
-            echo ">>> [5/7] Docker compose version"
+            echo ">>> [7/8] Docker compose version"
             echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S docker compose version
             
-            echo ">>> [6/7] Build and deploy all services"
+            echo ">>> [8/8] Build and deploy all services"
             echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S docker compose -f "${COMPOSE_FILE}" up -d --build
             if [ $? -ne 0 ]; then
               echo "❌ Docker compose failed!"
               exit 1
             fi
             
-            echo ">>> [7/7] Health checks"
+            echo ">>> Health checks"
             sleep 15
             
             echo ">>> Container status:"
