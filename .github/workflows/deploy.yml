@@ -90,9 +90,11 @@ jobs:
             echo ">>> [5/9] Update code from repository"
             git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
 
-            # Try git pull first (safe update)
-            git fetch origin "${BRANCH}"
-            if [ $? -ne 0 ]; then
+            # Stash any local changes (from previous manual edits on server)
+            git stash --include-untracked || true
+
+            # Fetch latest changes
+            if ! git fetch origin "${BRANCH}"; then
               echo "⚠️ Git fetch failed, trying fresh clone as fallback..."
               cd /tmp
               TEMP_CLONE="/tmp/eatfit24_fresh_clone"
@@ -111,7 +113,7 @@ jobs:
               echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S chown -R "${{ secrets.VPS_USERNAME }}:${{ secrets.VPS_USERNAME }}" "${PROJECT_DIR}"
               cd "${PROJECT_DIR}"
             else
-              # Normal update path
+              # Normal update path - reset to fetched origin
               git reset --hard "origin/${BRANCH}"
               echo ">>> Code updated to latest ${BRANCH} ✅"
             fi
