@@ -87,7 +87,15 @@
       "Bash(else echo \".env file not found\")",
       "Bash(bash:*)",
       "Bash(tasklist:*)",
-      "Bash(docker ps:*)"
+      "Bash(docker ps:*)",
+      "Bash(rm:*)",
+      "Bash(docker stats:*)",
+      "Bash(timeout 30 ssh:*)",
+      "Bash(ping:*)",
+      "Bash(wsl --list:*)",
+      "Bash(systeminfo:*)",
+      "Bash(powershell -Command \"Get-Service | Where-Object {$_Name -like ''*docker*''} | Select-Object Name, Status, StartType\")",
+      "Bash(sc query:*)"
     ],
     "deny": [],
     "ask": []
