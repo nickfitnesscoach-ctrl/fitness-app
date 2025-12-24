@@ -67,6 +67,35 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check for datetime.now() violations
+        run: |
+          echo "🔍 Checking for datetime.now() usage in backend code..."
+
+          # Search for datetime.now() or datetime.utcnow() in Python files
+          # Exclude migrations directory
+          VIOLATIONS=$(grep -r -n "datetime\.now()\|datetime\.utcnow()" \
+            --include="*.py" \
+            --exclude-dir="migrations" \
+            --exclude-dir="venv" \
+            --exclude-dir=".venv" \
+            . || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ FAILED: Found datetime.now() or datetime.utcnow() usage"
+            echo ""
+            echo "Violations found:"
+            echo "$VIOLATIONS"
+            echo ""
+            echo "⚠️  Use 'timezone.now()' from Django instead:"
+            echo "   from django.utils import timezone"
+            echo "   now = timezone.now()  # ✅ Correct"
+            echo ""
+            echo "See: docs/architecture/time.md"
+            exit 1
+          fi
+
+          echo "✅ No datetime.now() violations found"
+
       - name: Django checks
         env:
           DJANGO_SETTINGS_MODULE: config.settings.local

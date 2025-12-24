@@ -63,10 +63,34 @@ fitness-app/
 | Path | Description |
 |------|-------------|
 | `docs/` | Project-wide documentation |
+| `docs/architecture/` | System design, standards, conventions |
+| `docs/operations/` | Operational procedures, runbooks |
 | `docs/infra/` | Debug mode, deployment, bugfix reports |
 | `backend/docs/` | Backend-specific docs, cleanup changelog |
 | `frontend/docs/` | Frontend structure, archived docs |
 | `deploy/` | Nginx configs, deploy scripts |
+| `scripts/` | Operational scripts, automation |
+
+---
+
+## ⚙️ System Standards
+
+### Time & Timezone Policy
+
+> **"If it runs on the server — it's UTC."**
+
+All backend services operate in **UTC**:
+- Docker containers, databases, Celery, logs → UTC
+- Django `TIME_ZONE = "Europe/Moscow"` → for presentation only (UI, crontab schedules)
+- Frontend & Telegram → convert to user's local timezone
+
+**Key points:**
+- Always use `timezone.now()` in Django, never `datetime.now()`
+- Database timestamps are UTC
+- Celery Beat crontab schedules use Django `TIME_ZONE` (Moscow)
+- Logs show UTC timestamps
+
+📖 **Details:** [docs/architecture/time.md](docs/architecture/time.md)
 
 ---
 
@@ -296,6 +320,86 @@ On every push to `main` branch:
 2. If tests pass, code is deployed to VPS
 3. Docker containers are rebuilt and restarted
 4. Telegram notification is sent
+
+---
+
+## ✅ Pre-deploy Checklist (Backend)
+
+Run these checks before deploying backend changes to production:
+
+### 1. Code & Git
+```bash
+# Clean working directory
+git status
+# Expected: nothing to commit, working tree clean
+
+# Verify last commit
+git log -1 --oneline
+# Expected: your intended commit
+```
+
+### 2. Containers Health
+```bash
+# All containers running
+docker compose ps
+# Expected: All services "Up" with healthy status
+
+# Health endpoint
+curl -fsS http://localhost:8000/health/
+# Expected: {"status": "ok"} or similar
+```
+
+### 3. UTC Compliance
+```bash
+# System time in UTC
+docker exec eatfit24-backend-1 date
+# Expected: UTC +0000 (e.g., "Tue Dec 24 15:30:45 UTC 2025")
+```
+
+### 4. Celery Beat (if changed)
+```bash
+# If backend/config/celery.py was modified → reset Beat
+./scripts/reset-celery-beat.sh
+
+# Then verify logs after 1-2 minutes
+docker logs --tail 20 eatfit24-celery-beat-1 | grep "Sending due task"
+# Expected: Tasks appearing in logs at scheduled times
+```
+
+### 5. Worker Health
+```bash
+# Beat logs
+docker logs --since 5m eatfit24-celery-beat-1 | grep "beat: Starting"
+# Expected: "beat: Starting..." message
+
+# Worker logs
+docker logs --since 5m eatfit24-celery-worker-1 | grep -E "(succeeded|WEBHOOK|PAYMENT)"
+# Expected: Task execution logs or "[INFO] no issues found"
+```
+
+### 6. Migrations (Optional)
+```bash
+# Check pending migrations
+docker exec eatfit24-backend-1 python manage.py migrate --plan
+# Expected: Empty output OR list of expected migrations to apply
+```
+
+### 7. Final Verification
+```bash
+# Redis responsive
+docker exec eatfit24-redis-1 redis-cli PING
+# Expected: PONG
+
+# PostgreSQL responsive
+docker exec eatfit24-db-1 pg_isready -U eatfit24
+# Expected: accepting connections
+```
+
+**Time to complete:** 1-3 minutes
+
+📖 **Related docs:**
+- [Celery Beat Operations](docs/operations/celery-beat.md)
+- [Time & Timezone Policy](docs/architecture/time.md)
 
 ---
 
