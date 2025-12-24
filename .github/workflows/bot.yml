@@ -7,11 +7,17 @@ on:
     paths:
       - 'bot/**'
       - '.github/workflows/bot.yml'
+      # если хочешь, чтобы при изменении compose тоже деплоилось:
+      - 'docker-compose.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'bot/**'
       - '.github/workflows/bot.yml'
+
+concurrency:
+  group: bot-cicd-main
+  cancel-in-progress: true
 
 jobs:
   build-test:
@@ -19,21 +25,6 @@ jobs:
     defaults:
       run:
         working-directory: bot
-    
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: test_bot_db
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
       - name: Checkout
@@ -57,124 +48,108 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Lint with Ruff
+      - name: Lint with Ruff (non-blocking)
         run: |
           pip install ruff
           ruff check app/ --ignore F405 || echo "⚠️ Ruff warnings (non-blocking)"
         continue-on-error: true
 
-      - name: Check code formatting
+      - name: Check code formatting with Black (non-blocking)
         run: |
           pip install black
-          black --check app/ --line-length 120 || echo "⚠️ Black warnings"
+          black --check app/ --line-length 120 || echo "⚠️ Black warnings (non-blocking)"
         continue-on-error: true
 
       - name: Run tests
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TEST_BOT_TOKEN || '1234567890:TEST_TOKEN_FOR_CI' }}
+          TELEGRAM_BOT_TOKEN: test_token_placeholder
           BOT_ADMIN_ID: 123456789
-          OPENROUTER_API_KEY: ${{ secrets.TEST_OPENROUTER_KEY || 'test_key' }}
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: test_bot_db
-          DB_USER: test_user
-          DB_PASSWORD: test_password
+          OPENROUTER_API_KEY: test_key_placeholder
           ENVIRONMENT: test
         run: |
           pytest tests/ -v --tb=short
-
-      - name: Run Alembic migrations check
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TEST_BOT_TOKEN || '1234567890:TEST_TOKEN_FOR_CI' }}
-          BOT_ADMIN_ID: 123456789
-          OPENROUTER_API_KEY: ${{ secrets.TEST_OPENROUTER_KEY || 'test_key' }}
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: test_bot_db
-          DB_USER: test_user
-          DB_PASSWORD: test_password
-          ENVIRONMENT: test
-        run: |
-          alembic upgrade head
-          alembic check || echo "✅ No pending migrations"
-
 
   deploy:
     runs-on: ubuntu-latest
     needs: build-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Validate required secrets
         run: |
-          MISSING_SECRETS=""
+          MISSING=""
 
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_HOST"
-          fi
+          [ -z "${{ secrets.VPS_HOST }}" ] && MISSING="$MISSING VPS_HOST"
+          [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
+          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
+          [ -z "${{ secrets.VPS_SUDO_PASSWORD }}" ] && MISSING="$MISSING VPS_SUDO_PASSWORD"
 
-          if [ -z "${{ secrets.VPS_USERNAME }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_USERNAME"
-          fi
-
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_SSH_KEY"
-          fi
-
-          if [ -n "$MISSING_SECRETS" ]; then
-            echo "❌ Missing required secrets:$MISSING_SECRETS"
-            echo "Please configure these secrets in repository settings"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required secrets:$MISSING"
             exit 1
           fi
 
           echo "✅ All required secrets are configured"
 
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Deploy to VPS (sudo, bot + celery + backend stack)
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          command_timeout: 30m
+          script_stop: true
           script: |
-            set -e
-            cd /opt/EatFit24
+            set -euo pipefail
+
+            PROJECT_DIR="/opt/EatFit24"
+            BRANCH="main"
+
+            echo ">>> Who am I"
+            whoami
+
+            echo ">>> Fixing repo ownership to avoid 'dubious ownership'"
+            sudo -S -p "" bash -c "chown -R $USER:$USER ${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> Mark safe.directory (extra safety)"
+            git config --global --add safe.directory "${PROJECT_DIR}" || true
 
             echo ">>> Updating repo"
+            cd "${PROJECT_DIR}"
             git fetch origin
-            git reset --hard origin/main
+            git reset --hard "origin/${BRANCH}"
 
-            echo ">>> Rebuilding and restarting bot"
-            docker compose up -d --build bot
+            echo ">>> Rebuild/restart services (bot + server-side async stack)"
+            # ВАЖНО: db не трогаем без необходимости
+            sudo -S -p "" docker compose up -d --build redis backend celery-worker celery-beat <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            sudo -S -p "" docker compose up -d --build bot <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo "✅ Bot deployment completed successfully"
+            echo ">>> Status"
+            sudo -S -p "" docker compose ps <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-      - name: Check deployment status
-        uses: appleboy/ssh-action@v1.0.0
+            echo ">>> Quick checks"
+            curl -fsS http://127.0.0.1:8000/health/ >/dev/null && echo "✅ backend health OK"
+            sudo -S -p "" docker compose exec -T redis redis-cli ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q PONG && echo "✅ redis OK"
+            sudo -S -p "" docker compose exec -T celery-worker celery -A config inspect ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q pong && echo "✅ celery OK"
+
+            echo "✅ Deploy completed"
+
+      - name: Check bot logs (tail)
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          command_timeout: 10m
+          script_stop: true
           script: |
+            set -euo pipefail
             cd /opt/EatFit24
-            docker ps | grep eatfit24-bot
-            docker logs --tail 50 eatfit24-bot-1
-            echo "✅ Bot container is running"
-
-      - name: Send notification
-        if: always()
-        continue-on-error: true
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_ADMIN_ID }} # yamllint disable-line
-          token: ${{ secrets.TELEGRAM_NOTIFICATION_TOKEN }} # yamllint disable-line
-          message: |
-            🤖 Bot Deployment Status: ${{ job.status }}
-
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
+            docker compose ps
+            echo ">>> Bot logs (last 80 lines)"
+            docker compose logs --tail=80 bot

@@ -1,16 +1,29 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Frontend Deploy
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main, master ]
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend.yml'
+      - 'docker-compose.yml'
   pull_request:
-    branches: [main, master]
+    branches: [ main, master ]
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend.yml'
+
+  workflow_dispatch:
+    inputs:
+      no_cache:
+        description: "Build frontend with --no-cache"
+        required: false
+        default: "false"
+
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -19,6 +32,7 @@ defaults:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -27,18 +41,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'frontend/package-lock.json'
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run type check
+      - name: Type check (non-blocking for now)
         run: npm run type-check || echo "⚠️ Type check warnings (non-blocking for now)"
         continue-on-error: true
 
-      - name: Run linting
+      - name: Lint (non-blocking for now)
         run: npm run lint || echo "⚠️ Lint warnings (non-blocking for now)"
         continue-on-error: true
 
@@ -48,65 +62,95 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Validate required secrets
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      - name: Validate required secrets (deploy only)
+        if: github.event_name != 'pull_request'
         run: |
-          MISSING_SECRETS=""
+          MISSING=""
 
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_HOST"
-          fi
+          [ -z "${{ secrets.VPS_HOST }}" ] && MISSING="$MISSING VPS_HOST"
+          [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
+          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
+          [ -z "${{ secrets.VPS_SUDO_PASSWORD }}" ] && MISSING="$MISSING VPS_SUDO_PASSWORD"
 
-          if [ -z "${{ secrets.VPS_USERNAME }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_USERNAME"
-          fi
-
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_SSH_KEY"
-          fi
-
-          if [ -n "$MISSING_SECRETS" ]; then
-            echo "❌ Missing required secrets:$MISSING_SECRETS"
-            echo "Please configure these secrets in repository settings"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required secrets:$MISSING"
             exit 1
           fi
 
           echo "✅ All required secrets are configured"
 
-      - name: Deploy to VPS
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Deploy to VPS (sudo)
+        if: github.event_name != 'pull_request'
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          command_timeout: 30m
+          script_stop: true
           script: |
-            set -e
-            cd /opt/EatFit24
+            set -euo pipefail
+
+            PROJECT_DIR="/opt/EatFit24"
+
+            echo ">>> Who am I"
+            whoami
+
+            echo ">>> Fixing repo ownership (prevents 'dubious ownership')"
+            sudo -S -p "" bash -c "chown -R $USER:$USER ${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> Mark safe.directory (extra safety)"
+            git config --global --add safe.directory "${PROJECT_DIR}" || true
 
             echo ">>> Updating repo"
+            cd "${PROJECT_DIR}"
             git fetch origin
-            git reset --hard origin/main
+
+            # на всякий случай: если пуш пришел в master, ресетим на актуальную ветку
+            BRANCH="${GITHUB_REF_NAME:-main}"
+            if [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; then
+              BRANCH="main"
+            fi
+            git reset --hard "origin/${BRANCH}"
 
             echo ">>> Rebuilding and restarting frontend"
-            docker compose build --no-cache frontend
-            docker compose up -d frontend
+            NO_CACHE_INPUT="${{ github.event.inputs.no_cache || 'false' }}"
 
-            echo ">>> Cleanup unused images"
-            docker image prune -f
+            if [ "$NO_CACHE_INPUT" = "true" ]; then
+              echo ">>> Using --no-cache build"
+              sudo -S -p "" docker compose build --no-cache frontend <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            else
+              sudo -S -p "" docker compose build frontend <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            fi
+
+            sudo -S -p "" docker compose up -d frontend <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> Cleanup unused images (safe)"
+            sudo -S -p "" docker image prune -f <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
             echo "✅ Frontend deployment completed successfully"
 
       - name: Verify deployment
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: appleboy/ssh-action@v1.0.0
+        if: github.event_name != 'pull_request'
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          command_timeout: 10m
+          script_stop: true
           script: |
+            set -euo pipefail
             cd /opt/EatFit24
-            docker ps --format "table {{.Names}}\t{{.Status}}" | grep eatfit24-frontend
-            echo "✅ Frontend container is running"
+
+            echo ">>> docker compose ps"
+            docker compose ps
+
+            echo ">>> check container name contains 'frontend'"
+            docker ps --format "table {{.Names}}\t{{.Status}}" | grep -i frontend
+
+            echo ">>> Optional HTTP check"
+            # если порт 3000 у тебя публичный, то это проверка что nginx внутри контейнера жив
+            curl -fsS http://127.0.0.1:3000/ >/dev/null && echo "✅ Frontend HTTP OK"

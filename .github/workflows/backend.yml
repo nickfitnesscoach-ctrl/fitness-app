@@ -1,4 +1,5 @@
-name: Backend CI
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Backend CI/CD
 
 on:
   push:
@@ -12,39 +13,45 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend.yml'
+      - 'docker-compose.yml'
+
+concurrency:
+  group: backend-cicd-main
+  cancel-in-progress: true
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: backend
-    
+
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15-alpine
         env:
-          POSTGRES_DB: foodmind
-          POSTGRES_USER: foodmind
+          POSTGRES_DB: eatfit24
+          POSTGRES_USER: eatfit24
           POSTGRES_PASSWORD: supersecret
-        ports:
-          - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U foodmind -d foodmind"
+          --health-cmd="pg_isready -U eatfit24 -d eatfit24"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=5
-      
+          --health-retries=10
+        ports:
+          - 5432:5432
+
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
         options: >-
           --health-cmd="redis-cli ping"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=5
-    
+          --health-retries=10
+        ports:
+          - 6379:6379
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,7 +59,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -67,12 +74,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Check for datetime.now() violations
+      - name: Guardrail — forbid datetime.now()/utcnow()
         run: |
-          echo "🔍 Checking for datetime.now() usage in backend code..."
+          echo "🔍 Checking for forbidden datetime usage…"
 
-          # Search for datetime.now() or datetime.utcnow() in Python files
-          # Exclude migrations directory
           VIOLATIONS=$(grep -r -n "datetime\.now()\|datetime\.utcnow()" \
             --include="*.py" \
             --exclude-dir="migrations" \
@@ -81,27 +86,23 @@ jobs:
             . || true)
 
           if [ -n "$VIOLATIONS" ]; then
-            echo "❌ FAILED: Found datetime.now() or datetime.utcnow() usage"
-            echo ""
-            echo "Violations found:"
+            echo "❌ Forbidden datetime usage detected:"
             echo "$VIOLATIONS"
             echo ""
-            echo "⚠️  Use 'timezone.now()' from Django instead:"
-            echo "   from django.utils import timezone"
-            echo "   now = timezone.now()  # ✅ Correct"
-            echo ""
-            echo "See: docs/architecture/time.md"
+            echo "Use Django timezone:"
+            echo "from django.utils import timezone"
+            echo "timezone.now()"
             exit 1
           fi
 
-          echo "✅ No datetime.now() violations found"
+          echo "✅ Datetime guard passed"
 
-      - name: Django checks
+      - name: Django system checks
         env:
           DJANGO_SETTINGS_MODULE: config.settings.local
-          SECRET_KEY: test-secret-key-for-ci-only-not-for-production
-          POSTGRES_DB: foodmind
-          POSTGRES_USER: foodmind
+          SECRET_KEY: test-secret-key
+          POSTGRES_DB: eatfit24
+          POSTGRES_USER: eatfit24
           POSTGRES_PASSWORD: supersecret
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -110,12 +111,12 @@ jobs:
         run: |
           python manage.py check
 
-      - name: Run migrations (PostgreSQL)
+      - name: Run migrations
         env:
           DJANGO_SETTINGS_MODULE: config.settings.local
-          SECRET_KEY: test-secret-key-for-ci-only-not-for-production
-          POSTGRES_DB: foodmind
-          POSTGRES_USER: foodmind
+          SECRET_KEY: test-secret-key
+          POSTGRES_DB: eatfit24
+          POSTGRES_USER: eatfit24
           POSTGRES_PASSWORD: supersecret
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -127,9 +128,9 @@ jobs:
       - name: Run tests
         env:
           DJANGO_SETTINGS_MODULE: config.settings.local
-          SECRET_KEY: test-secret-key-for-ci-only-not-for-production
-          POSTGRES_DB: foodmind
-          POSTGRES_USER: foodmind
+          SECRET_KEY: test-secret-key
+          POSTGRES_DB: eatfit24
+          POSTGRES_USER: eatfit24
           POSTGRES_PASSWORD: supersecret
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -141,120 +142,65 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Validate required secrets
         run: |
-          MISSING_SECRETS=""
+          MISSING=""
+          [ -z "${{ secrets.VPS_HOST }}" ] && MISSING="$MISSING VPS_HOST"
+          [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
+          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
+          [ -z "${{ secrets.VPS_SUDO_PASSWORD }}" ] && MISSING="$MISSING VPS_SUDO_PASSWORD"
 
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_HOST"
-          fi
-
-          if [ -z "${{ secrets.VPS_USERNAME }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_USERNAME"
-          fi
-
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            MISSING_SECRETS="$MISSING_SECRETS VPS_SSH_KEY"
-          fi
-
-          if [ -n "$MISSING_SECRETS" ]; then
-            echo "❌ Missing required secrets:$MISSING_SECRETS"
-            echo "Please configure these secrets in repository settings"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing secrets:$MISSING"
             exit 1
           fi
 
-          echo "✅ All required secrets are configured"
+          echo "✅ Secrets OK"
 
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Deploy to VPS (sudo)
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          command_timeout: 30m
+          script_stop: true
           script: |
-            set -e
-            cd /opt/EatFit24
+            set -euo pipefail
 
-            echo ">>> Updating repo"
+            PROJECT_DIR="/opt/EatFit24"
+
+            echo ">>> Fix repo ownership"
+            sudo -S -p "" chown -R $USER:$USER $PROJECT_DIR <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> Mark safe.directory"
+            git config --global --add safe.directory "$PROJECT_DIR" || true
+
+            echo ">>> Update repo"
+            cd $PROJECT_DIR
             git fetch origin
             git reset --hard origin/main
 
-            echo ">>> Rebuilding and restarting backend services"
-            docker compose up -d --build redis backend celery-worker
+            echo ">>> Build & run backend stack"
+            sudo -S -p "" docker compose up -d --build \
+              redis backend celery-worker celery-beat \
+              <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo "✅ Backend + Redis + Celery deployment completed"
+            echo ">>> Status"
+            sudo -S -p "" docker compose ps <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-      - name: Check deployment status
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          script: |
-            cd /opt/EatFit24
+            echo ">>> Health checks"
+            curl -fsS http://127.0.0.1:8000/health/ >/dev/null && echo "✅ backend OK"
+            sudo -S -p "" docker compose exec -T redis redis-cli ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q PONG && echo "✅ redis OK"
+            sudo -S -p "" docker compose exec -T celery-worker celery -A config inspect ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q pong && echo "✅ celery OK"
 
-            # Check Redis is running
-            if ! docker ps | grep -q eatfit24-redis; then
-              echo "❌ Redis container not running!"
-              docker logs eatfit24-redis-1 --tail 50 || true
-              exit 1
-            fi
-            echo "✅ Redis is running"
-
-            # Check Backend container is running
-            if ! docker ps | grep -q eatfit24-backend; then
-              echo "❌ Backend container not running!"
-              docker logs eatfit24-backend-1 --tail 50 || true
-              exit 1
-            fi
-            echo "✅ Backend is running"
-
-            # Check Celery Worker is running
-            if ! docker ps | grep -q eatfit24-celery-worker; then
-              echo "❌ Celery Worker container not running!"
-              docker logs eatfit24-celery-worker-1 --tail 50 || true
-              exit 1
-            fi
-            echo "✅ Celery Worker is running"
-
-            # Wait for services to be ready
-            echo "⏳ Waiting for services to be healthy..."
-            sleep 10
-
-            # Backend health check
-            HEALTH_URL="https://eatfit24.ru/api/v1/health/"
-            if curl -f -s "$HEALTH_URL" | grep -q '"status":"ok"'; then
-              echo "✅ Backend health check passed"
-            else
-              echo "❌ Backend health check failed!"
-              docker logs eatfit24-backend-1 --tail 50 || true
-              exit 1
-            fi
-
-            # Redis health check
-            if docker exec eatfit24-redis-1 redis-cli ping | grep -q PONG; then
-              echo "✅ Redis health check passed"
-            else
-              echo "❌ Redis health check failed!"
-              exit 1
-            fi
-
-            # Celery Worker health check
-            if docker exec eatfit24-celery-worker-1 celery -A config inspect ping 2>/dev/null | grep -q "pong"; then
-              echo "✅ Celery Worker health check passed"
-            else
-              echo "⚠️  Celery Worker health check failed (may still be starting)"
-              docker logs eatfit24-celery-worker-1 --tail 30 || true
-            fi
-
-            echo ""
-            echo "=== Deployment Summary ==="
-            docker ps --filter "name=eatfit24-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo "✅ Backend deploy completed"
