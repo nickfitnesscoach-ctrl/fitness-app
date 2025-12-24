@@ -90,8 +90,9 @@ jobs:
             echo ">>> [5/9] Update code from repository"
             git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
 
-            # Stash any local changes (from previous manual edits on server)
-            git stash --include-untracked || true
+            # Clean any local changes (from previous manual edits on server)
+            git clean -fd || true
+            git checkout -- . || true
 
             # Fetch latest changes
             if ! git fetch origin "${BRANCH}"; then
