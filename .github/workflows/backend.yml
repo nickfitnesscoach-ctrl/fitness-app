@@ -156,17 +156,13 @@ jobs:
             PROJECT_DIR="/opt/EatFit24"
             BRANCH="main"
             DEPLOY_USER="${{ secrets.VPS_USERNAME }}"
-            REPO_SSH="git@github.com:${{ github.repository }}.git"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
 
             echo ">>> Ensure project dir exists"
             sudo -S -p "" mkdir -p "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
             echo ">>> Fix repo ownership (prevents 'dubious ownership')"
             sudo -S -p "" chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-
-            echo ">>> Add GitHub to known_hosts (SSH)"
-            mkdir -p ~/.ssh
-            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
             echo ">>> Mark safe.directory"
             git config --global --add safe.directory "${PROJECT_DIR}" || true
@@ -176,14 +172,8 @@ jobs:
 
             if [ ! -d ".git" ]; then
               echo ">>> Repo not found, cloning..."
-              git clone --branch "${BRANCH}" --depth 1 "${REPO_SSH}" .
+              git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" .
             else
-              CURRENT_REMOTE="$(git remote get-url origin || true)"
-              if echo "$CURRENT_REMOTE" | grep -qE '^https://github.com/'; then
-                git remote set-url origin "${REPO_SSH}"
-                echo ">>> origin switched to SSH: ${REPO_SSH}"
-              fi
-
               git fetch --prune origin
               git reset --hard "origin/${BRANCH}"
             fi

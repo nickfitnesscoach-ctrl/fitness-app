@@ -5,30 +5,18 @@ on:
   push:
     branches: [ main, master ]
     paths:
-      - "frontend/**"
-      - "docker-compose.yml"
+      - "**"
       - ".github/workflows/frontend.yml"
   pull_request:
     branches: [ main, master ]
     paths:
-      - "frontend/**"
+      - "**"
       - ".github/workflows/frontend.yml"
-  workflow_dispatch:
-    inputs:
-      no_cache:
-        description: "Build frontend with --no-cache"
-        required: false
-        default: "false"
-        type: choice
-        options: ["false", "true"]
+  workflow_dispatch: {}
 
 concurrency:
   group: frontend-cicd
   cancel-in-progress: true
-
-defaults:
-  run:
-    working-directory: frontend
 
 jobs:
   build-test:
@@ -39,6 +27,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug — list repo tree (top)
+        run: |
+          pwd
+          ls -la
+          echo "----"
+          find . -maxdepth 2 -type d -print
+
+      - name: Fail if frontend dir missing
+        run: |
+          if [ ! -d "frontend" ]; then
+            echo "❌ Directory ./frontend not found. Fix workflow working-directory."
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -47,114 +49,23 @@ jobs:
           cache-dependency-path: "frontend/package-lock.json"
 
       - name: Install dependencies
+        working-directory: frontend
         run: npm ci
 
       - name: Type check (non-blocking)
+        working-directory: frontend
         continue-on-error: true
         run: npm run type-check
 
       - name: Lint (non-blocking)
+        working-directory: frontend
         continue-on-error: true
         run: npm run lint
 
       - name: Unit tests
+        working-directory: frontend
         run: npm test
 
       - name: Build
+        working-directory: frontend
         run: npm run build
-
-
-  deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: build-test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-
-    steps:
-      - name: Validate required secrets
-        run: |
-          MISSING=""
-          [ -z "${{ secrets.VPS_HOST }}" ] && MISSING="$MISSING VPS_HOST"
-          [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
-          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
-          [ -z "${{ secrets.VPS_SUDO_PASSWORD }}" ] && MISSING="$MISSING VPS_SUDO_PASSWORD"
-
-          if [ -n "$MISSING" ]; then
-            echo "❌ Missing required secrets:$MISSING"
-            exit 1
-          fi
-
-          echo "✅ Secrets OK"
-
-      - name: Deploy frontend to VPS (sudo)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          command_timeout: 30m
-          script_stop: true
-          script: |
-            set -euo pipefail
-
-            PROJECT_DIR="/opt/EatFit24"
-            BRANCH="${GITHUB_REF_NAME:-main}"
-            if [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; then
-              BRANCH="main"
-            fi
-
-            DEPLOY_USER="${{ secrets.VPS_USERNAME }}"
-            REPO_SSH="git@github.com:${{ github.repository }}.git"
-
-            echo ">>> Ensure project dir exists"
-            sudo -S -p "" mkdir -p "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-
-            echo ">>> Fix repo ownership (prevents 'dubious ownership')"
-            sudo -S -p "" chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-
-            echo ">>> Add GitHub to known_hosts (SSH)"
-            mkdir -p ~/.ssh
-            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-
-            echo ">>> Mark safe.directory"
-            git config --global --add safe.directory "${PROJECT_DIR}" || true
-
-            echo ">>> Update repo"
-            cd "${PROJECT_DIR}"
-
-            if [ ! -d ".git" ]; then
-              echo ">>> Repo not found, cloning..."
-              git clone --branch "${BRANCH}" --depth 1 "${REPO_SSH}" .
-            else
-              CURRENT_REMOTE="$(git remote get-url origin || true)"
-              if echo "$CURRENT_REMOTE" | grep -qE '^https://github.com/'; then
-                git remote set-url origin "${REPO_SSH}"
-                echo ">>> origin switched to SSH: ${REPO_SSH}"
-              fi
-
-              git fetch --prune origin
-              git reset --hard "origin/${BRANCH}"
-            fi
-
-            NO_CACHE_INPUT="${{ github.event.inputs.no_cache || 'false' }}"
-
-            echo ">>> Build & run frontend"
-            if [ "$NO_CACHE_INPUT" = "true" ]; then
-              sudo -S -p "" docker compose build --no-cache frontend <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-            else
-              sudo -S -p "" docker compose build frontend <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-            fi
-
-            sudo -S -p "" docker compose up -d frontend <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-
-            echo ">>> Cleanup unused images (safe)"
-            sudo -S -p "" docker image prune -f <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-
-            echo ">>> Status"
-            sudo -S -p "" docker compose ps <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-
-            echo ">>> HTTP check"
-            curl -fsS http://127.0.0.1:3000/ >/dev/null && echo "✅ Frontend HTTP OK"
-
-            echo "✅ Frontend deploy completed"
