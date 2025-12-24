@@ -62,7 +62,7 @@ class TestAITasks:
         items = list(meal.items.all())
         assert len(items) == 1
         assert items[0].grams == 1  # clamp сработал
-        assert out["items"][0]["grams"] == 1
+        assert out["items"][0]["amount_grams"] == 1  # API uses amount_grams
 
     def test_decimal_fields_saved_correctly(self, django_user_model):
         user = django_user_model.objects.create_user(username="tu2", password="pass")
@@ -161,3 +161,73 @@ class TestAITasks:
         items = list(meal.items.all())
         assert len(items) == 2
         assert out["total_calories"] == 150.0
+
+    def test_usage_incremented_after_success(self, django_user_model):
+        """P0-1: After successful AI recognition, usage counter should increment."""
+        user = django_user_model.objects.create_user(username="tu4", password="pass")
+        meal = Meal.objects.create(user=user, meal_type="SNACK", date="2025-12-01")
+
+        fake_result = Mock()
+        fake_result.items = [
+            {
+                "name": "Test",
+                "grams": 100,
+                "calories": 100.0,
+                "protein": 10.0,
+                "fat": 5.0,
+                "carbohydrates": 10.0,
+                "confidence": 0.9,
+            }
+        ]
+        fake_result.totals = {"calories": 100.0, "protein": 10.0, "fat": 5.0, "carbohydrates": 10.0}
+        fake_result.meta = {}
+
+        with patch("apps.ai.tasks.AIProxyService") as svc_cls:
+            svc = svc_cls.return_value
+            svc.recognize_food.return_value = fake_result
+
+            with patch(
+                "apps.billing.usage.DailyUsage.objects.increment_photo_ai_requests"
+            ) as mock_increment:
+                from apps.ai.tasks import recognize_food_async
+
+                recognize_food_async.run(
+                    meal_id=meal.id,
+                    image_bytes=b"x",
+                    mime_type="image/png",
+                    user_comment="",
+                    request_id="rid",
+                    user_id=user.id,
+                )
+
+                # EXPECTED: Called once after success
+                mock_increment.assert_called_once_with(user)
+
+    def test_usage_not_incremented_on_ai_error(self, django_user_model):
+        """P0-1: On AI error, usage counter should NOT increment."""
+        from apps.ai_proxy import AIProxyValidationError
+
+        user = django_user_model.objects.create_user(username="tu5", password="pass")
+        meal = Meal.objects.create(user=user, meal_type="SNACK", date="2025-12-01")
+
+        with patch("apps.ai.tasks.AIProxyService") as svc_cls:
+            svc = svc_cls.return_value
+            svc.recognize_food.side_effect = AIProxyValidationError("Bad image")
+
+            with patch(
+                "apps.billing.usage.DailyUsage.objects.increment_photo_ai_requests"
+            ) as mock_increment:
+                from apps.ai.tasks import recognize_food_async
+
+                with pytest.raises(AIProxyValidationError):
+                    recognize_food_async.run(
+                        meal_id=meal.id,
+                        image_bytes=b"x",
+                        mime_type="image/png",
+                        user_comment="",
+                        request_id="rid",
+                        user_id=user.id,
+                    )
+
+                # EXPECTED: NOT called on error
+                mock_increment.assert_not_called()

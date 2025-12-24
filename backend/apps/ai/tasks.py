@@ -69,7 +69,7 @@ def _json_safe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         safe.append(
             {
                 "name": str(it.get("name") or "Unknown"),
-                "grams": int(_clamp_grams(it.get("grams"))),
+                "amount_grams": int(_clamp_grams(it.get("grams"))),  # API Contract field name
                 "calories": float(it.get("calories") or 0.0),
                 "protein": float(it.get("protein") or 0.0),
                 "fat": float(it.get("fat") or 0.0),
@@ -164,12 +164,29 @@ def recognize_food_async(
         for it in safe_items:
             meal.items.create(
                 name=it["name"],
-                grams=int(_clamp_grams(it["grams"])),
+                grams=it["amount_grams"],  # P1-3: use amount_grams from _json_safe_items
                 calories=_to_decimal(it["calories"], "0"),
                 protein=_to_decimal(it["protein"], "0"),
                 fat=_to_decimal(it["fat"], "0"),
                 carbohydrates=_to_decimal(it["carbohydrates"], "0"),
             )
+
+    # 4) P0-1: Инкрементируем usage ТОЛЬКО после успешного сохранения
+    # Это гарантирует, что лимит списывается только при реальном успехе AI
+    if user_id:
+        try:
+            from django.contrib.auth import get_user_model
+            from apps.billing.usage import DailyUsage
+
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            DailyUsage.objects.increment_photo_ai_requests(user)
+            logger.info("[AI] usage incremented user_id=%s task=%s", user_id, task_id)
+        except User.DoesNotExist:
+            logger.warning("[AI] user not found for usage increment: user_id=%s task=%s", user_id, task_id)
+        except Exception as usage_err:
+            # Ошибка учёта usage не должна ломать успешный результат
+            logger.error("[AI] usage increment failed: user_id=%s err=%s", user_id, str(usage_err))
 
     response: Dict[str, Any] = {
         "meal_id": int(meal_id),
