@@ -41,8 +41,8 @@ def _to_int(value: Any, default: int = 1) -> int:
         return default
 
 
-def _clamp_grams(v: int) -> int:
-    return 1 if v < 1 else v
+# P2-2: Используем общую функцию из common module
+from apps.common.nutrition_utils import clamp_grams as _clamp_grams
 
 
 def _pick_name(item: Dict[str, Any]) -> str:

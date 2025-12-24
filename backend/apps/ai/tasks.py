@@ -33,7 +33,11 @@ from apps.ai_proxy import (
     AIProxyValidationError,
 )
 
+
 logger = logging.getLogger(__name__)
+
+# P2-2: Используем общую функцию из common module
+from apps.common.nutrition_utils import clamp_grams
 
 
 def _to_decimal(value: Any, default: str = "0") -> Decimal:
@@ -44,18 +48,6 @@ def _to_decimal(value: Any, default: str = "0") -> Decimal:
         return Decimal(str(value))
     except Exception:
         return Decimal(default)
-
-
-def _clamp_grams(value: Any) -> int:
-    """
-    FoodItem.grams должен быть >= 1.
-    Если AI вернул 0/None/мусор — ставим 1.
-    """
-    try:
-        g = int(round(float(value)))
-    except (TypeError, ValueError):
-        g = 1
-    return 1 if g < 1 else g
 
 
 def _json_safe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -69,7 +61,7 @@ def _json_safe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         safe.append(
             {
                 "name": str(it.get("name") or "Unknown"),
-                "amount_grams": int(_clamp_grams(it.get("grams"))),  # API Contract field name
+                "amount_grams": clamp_grams(it.get("grams")),  # API Contract field name
                 "calories": float(it.get("calories") or 0.0),
                 "protein": float(it.get("protein") or 0.0),
                 "fat": float(it.get("fat") or 0.0),
@@ -183,7 +175,9 @@ def recognize_food_async(
             DailyUsage.objects.increment_photo_ai_requests(user)
             logger.info("[AI] usage incremented user_id=%s task=%s", user_id, task_id)
         except User.DoesNotExist:
-            logger.warning("[AI] user not found for usage increment: user_id=%s task=%s", user_id, task_id)
+            logger.warning(
+                "[AI] user not found for usage increment: user_id=%s task=%s", user_id, task_id
+            )
         except Exception as usage_err:
             # Ошибка учёта usage не должна ломать успешный результат
             logger.error("[AI] usage increment failed: user_id=%s err=%s", user_id, str(usage_err))
