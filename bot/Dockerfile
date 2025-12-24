@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
     dos2unix \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Копируем файл зависимостей
