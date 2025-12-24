@@ -93,16 +93,29 @@ jobs:
             # Clean any local changes and update code (temporarily disable set -e for git commands)
             set +e
             git clean -fd
+            GIT_CLEAN_EXIT=$?
+            echo ">>> git clean exit code: ${GIT_CLEAN_EXIT}"
+
             git checkout -- .
+            GIT_CHECKOUT_EXIT=$?
+            echo ">>> git checkout exit code: ${GIT_CHECKOUT_EXIT}"
+
             git fetch origin "${BRANCH}"
             FETCH_EXIT=$?
+            echo ">>> git fetch exit code: ${FETCH_EXIT}"
 
             if [ ${FETCH_EXIT} -eq 0 ]; then
               # Normal update path - reset to fetched origin
               git reset --hard "origin/${BRANCH}"
               RESET_EXIT=$?
+              echo ">>> git reset exit code: ${RESET_EXIT}"
+            else
+              RESET_EXIT=1
             fi
             set -e
+
+            echo ">>> Checking if git update succeeded..."
+            echo ">>> FETCH_EXIT=${FETCH_EXIT}, RESET_EXIT=${RESET_EXIT:-1}"
 
             if [ ${FETCH_EXIT} -ne 0 ] || [ ${RESET_EXIT:-1} -ne 0 ]; then
               echo "⚠️ Git update failed, trying fresh clone as fallback..."
@@ -126,8 +139,11 @@ jobs:
               echo ">>> Code updated to latest ${BRANCH} ✅"
             fi
 
+            echo ">>> Getting new commit hash..."
             NEW_COMMIT=$(git rev-parse HEAD)
             echo ">>> New commit: ${NEW_COMMIT}"
+            echo ">>> Current working directory: $(pwd)"
+            echo ">>> Continuing to next step..."
 
             echo ">>> [6/9] Verify compose file"
             if [ ! -f "compose.yml" ]; then
