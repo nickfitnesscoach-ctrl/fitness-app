@@ -41,6 +41,8 @@ db.sqlite3-journal
 /media
 /staticfiles
 /static
+backend/media/
+backend/staticfiles/
 
 # Environment variables
 .env
@@ -73,6 +75,13 @@ coverage.xml
 # Logs
 logs/
 *.log
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Gunicorn
+gunicorn.pid
 
 # Docker
 *.env.docker
