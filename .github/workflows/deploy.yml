@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Deploy to VPS (EatFit24)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "bot/**"
+      - "frontend/**"
+      - "compose.yml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      services:
+        description: "Services to deploy (comma-separated or 'all')"
+        required: false
+        default: "all"
+        type: string
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate required secrets
+        run: |
+          MISSING=""
+          [ -z "${{ secrets.VPS_HOST }}" ] && MISSING="$MISSING VPS_HOST"
+          [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
+          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
+          [ -z "${{ secrets.VPS_SUDO_PASSWORD }}" ] && MISSING="$MISSING VPS_SUDO_PASSWORD"
+
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required secrets:$MISSING"
+            exit 1
+          fi
+
+          echo "✅ Secrets OK"
+
+      - name: Deploy all services to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          command_timeout: 30m
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            PROJECT_DIR="/opt/EatFit24"
+            BRANCH="main"
+            DEPLOY_USER="${{ secrets.VPS_USERNAME }}"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+
+            echo ">>> [1/7] Ensure project dir exists"
+            sudo -S -p "" mkdir -p "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> [2/7] Fix repo ownership"
+            sudo -S -p "" chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> [3/7] Mark safe.directory"
+            git config --global --add safe.directory "${PROJECT_DIR}" || true
+
+            echo ">>> [4/7] Update repo"
+            cd "${PROJECT_DIR}"
+
+            if [ ! -d ".git" ]; then
+              echo ">>> Repo not found, cloning..."
+              git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" .
+            else
+              # Switch remote to HTTPS if it was SSH
+              CURRENT_REMOTE="$(git remote get-url origin || true)"
+              echo ">>> Current remote: ${CURRENT_REMOTE}"
+              if echo "$CURRENT_REMOTE" | grep -qE '^git@github.com'; then
+                git remote set-url origin "${REPO_URL}"
+                echo ">>> origin switched to HTTPS"
+              fi
+
+              # Unshallow if needed
+              if [ -f ".git/shallow" ]; then
+                echo ">>> Unshallowing repo..."
+                git fetch --unshallow origin || true
+              fi
+
+              echo ">>> Fetching latest..."
+              if ! git fetch --prune origin; then
+                echo ">>> git fetch failed, re-cloning..."
+                cd ..
+                sudo -S -p "" rm -rf "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+                git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" "${PROJECT_DIR}"
+                cd "${PROJECT_DIR}"
+              else
+                git reset --hard "origin/${BRANCH}"
+              fi
+            fi
+
+            echo ">>> [5/7] Docker compose version"
+            sudo -S -p "" docker compose version <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> [6/7] Build & deploy all services"
+            # Use compose.yml (new) or docker-compose.yml (fallback)
+            COMPOSE_FILE="compose.yml"
+            if [ ! -f "$COMPOSE_FILE" ]; then
+              COMPOSE_FILE="docker-compose.yml"
+            fi
+            echo ">>> Using: ${COMPOSE_FILE}"
+
+            sudo -S -p "" docker compose -f "${COMPOSE_FILE}" up -d --build <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> [7/7] Health checks"
+            sleep 10
+
+            echo ">>> Container status:"
+            sudo -S -p "" docker compose -f "${COMPOSE_FILE}" ps <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            # Health checks with retry
+            echo ">>> Checking backend..."
+            for i in 1 2 3 4 5; do
+              if curl -fsS http://127.0.0.1:8000/health/ >/dev/null 2>&1; then
+                echo "✅ backend OK"
+                break
+              fi
+              echo ">>> Backend not ready, waiting... ($i/5)"
+              sleep 5
+            done
+
+            echo ">>> Checking redis..."
+            sudo -S -p "" docker compose -f "${COMPOSE_FILE}" exec -T redis redis-cli ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q PONG && echo "✅ redis OK" || echo "⚠️ redis check failed"
+
+            echo ">>> Checking celery..."
+            sudo -S -p "" docker compose -f "${COMPOSE_FILE}" exec -T celery-worker celery -A config inspect ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" 2>/dev/null | grep -q pong && echo "✅ celery OK" || echo "⚠️ celery check skipped"
+
+            echo ">>> Checking frontend (port 80)..."
+            curl -fsS http://127.0.0.1:80/ >/dev/null 2>&1 && echo "✅ frontend OK" || echo "⚠️ frontend check failed"
+
+            echo ""
+            echo "🎉 Deploy completed!"

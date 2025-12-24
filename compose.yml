@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/compose-spec/compose-spec/master/schema/compose-spec.json
+# EatFit24 Production Docker Compose
+# Usage: docker compose up -d --build
+
+services:
+  # ============================================================
+  # PostgreSQL Database
+  # ============================================================
+  db:
+    image: postgres:15-alpine
+    container_name: eatfit24-db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-eatfit24}
+      POSTGRES_USER: ${POSTGRES_USER:-eatfit24}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eatfit24} -d ${POSTGRES_DB:-eatfit24}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - eatfit24-network
+
+  # ============================================================
+  # Redis (Celery broker + cache)
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: eatfit24-redis
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - eatfit24-network
+
+  # ============================================================
+  # Django Backend API
+  # ============================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eatfit24-backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - backend_static:/app/staticfiles
+      - backend_media:/app/media
+    expose:
+      - "8000"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - eatfit24-network
+
+  # ============================================================
+  # Celery Worker
+  # ============================================================
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eatfit24-celery-worker
+    command: celery -A config worker -l INFO --concurrency=2
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    restart: unless-stopped
+    networks:
+      - eatfit24-network
+
+  # ============================================================
+  # Celery Beat (Scheduler)
+  # ============================================================
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eatfit24-celery-beat
+    command: celery -A config beat -l INFO
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    restart: unless-stopped
+    networks:
+      - eatfit24-network
+
+  # ============================================================
+  # Telegram Bot
+  # ============================================================
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: eatfit24-bot
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - BACKEND_URL=http://backend:8000
+    restart: unless-stopped
+    networks:
+      - eatfit24-network
+
+  # ============================================================
+  # Frontend (Nginx + React SPA)
+  # ============================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=/api/v1
+        - VITE_TELEGRAM_BOT_NAME=${TELEGRAM_BOT_NAME:-EatFit24_bot}
+        - VITE_TRAINER_INVITE_LINK=${TRAINER_INVITE_LINK:-https://t.me/EatFit24_bot}
+    container_name: eatfit24-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    networks:
+      - eatfit24-network
+
+# ============================================================
+# Volumes
+# ============================================================
+volumes:
+  postgres_data:
+    name: eatfit24-postgres-data
+  redis_data:
+    name: eatfit24-redis-data
+  backend_static:
+    name: eatfit24-backend-static
+  backend_media:
+    name: eatfit24-backend-media
+
+# ============================================================
+# Networks
+# ============================================================
+networks:
+  eatfit24-network:
+    name: eatfit24-network
+    driver: bridge
