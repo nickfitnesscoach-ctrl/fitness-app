@@ -176,13 +176,28 @@ jobs:
             else
               # Switch remote to HTTPS if it was SSH
               CURRENT_REMOTE="$(git remote get-url origin || true)"
+              echo ">>> Current remote: ${CURRENT_REMOTE}"
               if echo "$CURRENT_REMOTE" | grep -qE '^git@github.com'; then
                 git remote set-url origin "${REPO_URL}"
                 echo ">>> origin switched to HTTPS: ${REPO_URL}"
               fi
 
-              git fetch --prune origin
-              git reset --hard "origin/${BRANCH}"
+              # Unshallow if shallow clone
+              if [ -f ".git/shallow" ]; then
+                echo ">>> Unshallowing repo..."
+                git fetch --unshallow origin || true
+              fi
+
+              echo ">>> Fetching latest..."
+              if ! git fetch --prune origin; then
+                echo ">>> git fetch failed, re-cloning..."
+                cd ..
+                rm -rf "${PROJECT_DIR}"
+                git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" "${PROJECT_DIR}"
+                cd "${PROJECT_DIR}"
+              else
+                git reset --hard "origin/${BRANCH}"
+              fi
             fi
 
             echo ">>> Docker compose version"
