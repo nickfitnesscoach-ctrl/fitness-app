@@ -51,10 +51,11 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           command_timeout: 30m
-          script_stop: true  # Stop on first error
-          debug: true
+          script_stop: false  # Let script handle errors with set -e
+          debug: false  # Reduce noise in logs
           script: |
             set -e  # Exit on any error
+            exec 2>&1  # Redirect stderr to stdout for better logging
 
             echo ">>> [1/9] Setup variables"
             PROJECT_DIR="/opt/EatFit24"
@@ -115,8 +116,10 @@ jobs:
 
             echo ">>> Checking if git update succeeded..."
             echo ">>> FETCH_EXIT=${FETCH_EXIT}, RESET_EXIT=${RESET_EXIT:-1}"
+            echo ">>> About to evaluate conditional..."
 
             if [ ${FETCH_EXIT} -ne 0 ] || [ ${RESET_EXIT:-1} -ne 0 ]; then
+              echo ">>> Entering FAILURE branch (fresh clone)..."
               echo "⚠️ Git update failed, trying fresh clone as fallback..."
               cd /tmp
               TEMP_CLONE="/tmp/eatfit24_fresh_clone"
@@ -135,9 +138,11 @@ jobs:
               echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S chown -R "${{ secrets.VPS_USERNAME }}:${{ secrets.VPS_USERNAME }}" "${PROJECT_DIR}"
               cd "${PROJECT_DIR}"
             else
+              echo ">>> Entering SUCCESS branch (in-place update)..."
               echo ">>> Code updated to latest ${BRANCH} ✅"
             fi
 
+            echo ">>> Exited conditional successfully"
             echo ">>> Getting new commit hash..."
             NEW_COMMIT=$(git rev-parse HEAD)
             echo ">>> New commit: ${NEW_COMMIT}"
