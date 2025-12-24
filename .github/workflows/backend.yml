@@ -1,19 +1,20 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Backend CI/CD
+name: Backend CI/CD (EatFit24)
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'backend/**'
-      - '.github/workflows/backend.yml'
-      - 'docker-compose.yml'
+      - "backend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/backend.yml"
   pull_request:
     branches: [ main ]
     paths:
-      - 'backend/**'
-      - '.github/workflows/backend.yml'
-      - 'docker-compose.yml'
+      - "backend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/backend.yml"
+  workflow_dispatch: {}
 
 concurrency:
   group: backend-cicd-main
@@ -52,6 +53,17 @@ jobs:
         ports:
           - 6379:6379
 
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      SECRET_KEY: test-secret-key
+      POSTGRES_DB: eatfit24
+      POSTGRES_USER: eatfit24
+      POSTGRES_PASSWORD: supersecret
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,7 +89,6 @@ jobs:
       - name: Guardrail — forbid datetime.now()/utcnow()
         run: |
           echo "🔍 Checking for forbidden datetime usage…"
-
           VIOLATIONS=$(grep -r -n "datetime\.now()\|datetime\.utcnow()" \
             --include="*.py" \
             --exclude-dir="migrations" \
@@ -98,44 +109,14 @@ jobs:
           echo "✅ Datetime guard passed"
 
       - name: Django system checks
-        env:
-          DJANGO_SETTINGS_MODULE: config.settings.local
-          SECRET_KEY: test-secret-key
-          POSTGRES_DB: eatfit24
-          POSTGRES_USER: eatfit24
-          POSTGRES_PASSWORD: supersecret
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          CELERY_BROKER_URL: redis://localhost:6379/0
-          CELERY_RESULT_BACKEND: redis://localhost:6379/0
         run: |
           python manage.py check
 
       - name: Run migrations
-        env:
-          DJANGO_SETTINGS_MODULE: config.settings.local
-          SECRET_KEY: test-secret-key
-          POSTGRES_DB: eatfit24
-          POSTGRES_USER: eatfit24
-          POSTGRES_PASSWORD: supersecret
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          CELERY_BROKER_URL: redis://localhost:6379/0
-          CELERY_RESULT_BACKEND: redis://localhost:6379/0
         run: |
           python manage.py migrate --noinput
 
       - name: Run tests
-        env:
-          DJANGO_SETTINGS_MODULE: config.settings.local
-          SECRET_KEY: test-secret-key
-          POSTGRES_DB: eatfit24
-          POSTGRES_USER: eatfit24
-          POSTGRES_PASSWORD: supersecret
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          CELERY_BROKER_URL: redis://localhost:6379/0
-          CELERY_RESULT_BACKEND: redis://localhost:6379/0
         run: |
           python manage.py test --noinput
 
@@ -147,9 +128,6 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Validate required secrets
         run: |
           MISSING=""
@@ -157,15 +135,13 @@ jobs:
           [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
           [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
           [ -z "${{ secrets.VPS_SUDO_PASSWORD }}" ] && MISSING="$MISSING VPS_SUDO_PASSWORD"
-
           if [ -n "$MISSING" ]; then
-            echo "❌ Missing secrets:$MISSING"
+            echo "❌ Missing required secrets:$MISSING"
             exit 1
           fi
-
           echo "✅ Secrets OK"
 
-      - name: Deploy to VPS (sudo)
+      - name: Deploy backend stack to VPS (sudo)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -178,26 +154,45 @@ jobs:
             set -euo pipefail
 
             PROJECT_DIR="/opt/EatFit24"
+            BRANCH="main"
+            DEPLOY_USER="${{ secrets.VPS_USERNAME }}"
+            REPO_SSH="git@github.com:${{ github.repository }}.git"
 
-            echo ">>> Fix repo ownership"
-            sudo -S -p "" chown -R $USER:$USER $PROJECT_DIR <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            echo ">>> Ensure project dir exists"
+            sudo -S -p "" mkdir -p "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Mark safe.directory"
-            git config --global --add safe.directory "$PROJECT_DIR" || true
+            echo ">>> Fix repo ownership (prevents 'dubious ownership')"
+            sudo -S -p "" chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Add GitHub to known_hosts (for SSH)"
+            echo ">>> Add GitHub to known_hosts (SSH)"
             mkdir -p ~/.ssh
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
-            echo ">>> Update repo"
-            cd $PROJECT_DIR
-            git fetch origin
-            git reset --hard origin/main
+            echo ">>> Mark safe.directory"
+            git config --global --add safe.directory "${PROJECT_DIR}" || true
 
-            echo ">>> Build & run backend stack"
-            sudo -S -p "" docker compose up -d --build \
-              redis backend celery-worker celery-beat \
-              <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            echo ">>> Update repo"
+            cd "${PROJECT_DIR}"
+
+            if [ ! -d ".git" ]; then
+              echo ">>> Repo not found, cloning..."
+              git clone --branch "${BRANCH}" --depth 1 "${REPO_SSH}" .
+            else
+              CURRENT_REMOTE="$(git remote get-url origin || true)"
+              if echo "$CURRENT_REMOTE" | grep -qE '^https://github.com/'; then
+                git remote set-url origin "${REPO_SSH}"
+                echo ">>> origin switched to SSH: ${REPO_SSH}"
+              fi
+
+              git fetch --prune origin
+              git reset --hard "origin/${BRANCH}"
+            fi
+
+            echo ">>> Docker compose version"
+            sudo -S -p "" docker compose version <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+
+            echo ">>> Build & run backend stack (db not touched)"
+            sudo -S -p "" docker compose up -d --build redis backend celery-worker celery-beat <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
             echo ">>> Status"
             sudo -S -p "" docker compose ps <<< "${{ secrets.VPS_SUDO_PASSWORD }}"

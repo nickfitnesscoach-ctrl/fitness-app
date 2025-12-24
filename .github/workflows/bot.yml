@@ -1,19 +1,19 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Bot CI/CD
+name: Bot CI/CD (EatFit24)
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'bot/**'
-      - '.github/workflows/bot.yml'
-      # если хочешь, чтобы при изменении compose тоже деплоилось:
-      - 'docker-compose.yml'
+      - "bot/**"
+      - "docker-compose.yml"
+      - ".github/workflows/bot.yml"
   pull_request:
     branches: [ main ]
     paths:
-      - 'bot/**'
-      - '.github/workflows/bot.yml'
+      - "bot/**"
+      - ".github/workflows/bot.yml"
+  workflow_dispatch: {}
 
 concurrency:
   group: bot-cicd-main
@@ -22,6 +22,7 @@ concurrency:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: bot
@@ -33,7 +34,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -49,16 +50,16 @@ jobs:
           pip install -r requirements.txt
 
       - name: Lint with Ruff (non-blocking)
+        continue-on-error: true
         run: |
           pip install ruff
           ruff check app/ --ignore F405 || echo "⚠️ Ruff warnings (non-blocking)"
-        continue-on-error: true
 
-      - name: Check code formatting with Black (non-blocking)
+      - name: Check formatting with Black (non-blocking)
+        continue-on-error: true
         run: |
           pip install black
           black --check app/ --line-length 120 || echo "⚠️ Black warnings (non-blocking)"
-        continue-on-error: true
 
       - name: Run tests
         env:
@@ -67,21 +68,19 @@ jobs:
           OPENROUTER_API_KEY: test_key_placeholder
           ENVIRONMENT: test
         run: |
-          pytest tests/ -v --tb=short
+          pytest -q
+
 
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Validate required secrets
         run: |
           MISSING=""
-
           [ -z "${{ secrets.VPS_HOST }}" ] && MISSING="$MISSING VPS_HOST"
           [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
           [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
@@ -92,9 +91,9 @@ jobs:
             exit 1
           fi
 
-          echo "✅ All required secrets are configured"
+          echo "✅ Secrets OK"
 
-      - name: Deploy to VPS (sudo, bot + celery + backend stack)
+      - name: Deploy bot to VPS (sudo)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -108,52 +107,46 @@ jobs:
 
             PROJECT_DIR="/opt/EatFit24"
             BRANCH="main"
+            DEPLOY_USER="${{ secrets.VPS_USERNAME }}"
+            REPO_SSH="git@github.com:${{ github.repository }}.git"
 
-            echo ">>> Who am I"
-            whoami
+            echo ">>> Ensure project dir exists"
+            sudo -S -p "" mkdir -p "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Fixing repo ownership to avoid 'dubious ownership'"
-            sudo -S -p "" bash -c "chown -R $USER:$USER ${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            echo ">>> Fix repo ownership (prevents 'dubious ownership')"
+            sudo -S -p "" chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Mark safe.directory (extra safety)"
-            git config --global --add safe.directory "${PROJECT_DIR}" || true
-
-            echo ">>> Add GitHub to known_hosts (for SSH)"
+            echo ">>> Add GitHub to known_hosts (SSH)"
             mkdir -p ~/.ssh
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
-            echo ">>> Updating repo"
-            cd "${PROJECT_DIR}"
-            git fetch origin
-            git reset --hard "origin/${BRANCH}"
+            echo ">>> Mark safe.directory"
+            git config --global --add safe.directory "${PROJECT_DIR}" || true
 
-            echo ">>> Rebuild/restart services (bot + server-side async stack)"
-            # ВАЖНО: db не трогаем без необходимости
-            sudo -S -p "" docker compose up -d --build redis backend celery-worker celery-beat <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            echo ">>> Update repo"
+            cd "${PROJECT_DIR}"
+
+            if [ ! -d ".git" ]; then
+              echo ">>> Repo not found, cloning..."
+              git clone --branch "${BRANCH}" --depth 1 "${REPO_SSH}" .
+            else
+              CURRENT_REMOTE="$(git remote get-url origin || true)"
+              if echo "$CURRENT_REMOTE" | grep -qE '^https://github.com/'; then
+                git remote set-url origin "${REPO_SSH}"
+                echo ">>> origin switched to SSH: ${REPO_SSH}"
+              fi
+
+              git fetch --prune origin
+              git reset --hard "origin/${BRANCH}"
+            fi
+
+            echo ">>> Rebuild/restart bot only"
             sudo -S -p "" docker compose up -d --build bot <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
             echo ">>> Status"
             sudo -S -p "" docker compose ps <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Quick checks"
-            curl -fsS http://127.0.0.1:8000/health/ >/dev/null && echo "✅ backend health OK"
-            sudo -S -p "" docker compose exec -T redis redis-cli ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q PONG && echo "✅ redis OK"
-            sudo -S -p "" docker compose exec -T celery-worker celery -A config inspect ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q pong && echo "✅ celery OK"
+            echo ">>> Bot logs (last 120 lines)"
+            sudo -S -p "" docker compose logs --tail=120 bot <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo "✅ Deploy completed"
-
-      - name: Check bot logs (tail)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          command_timeout: 10m
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd /opt/EatFit24
-            docker compose ps
-            echo ">>> Bot logs (last 80 lines)"
-            docker compose logs --tail=80 bot
+            echo "✅ Bot deploy completed"

@@ -1,9 +1,17 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Deploy to VPS (EatFit24)
 
 on:
   push:
-    branches: ["main"]
-  workflow_dispatch: {}
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      deploy_bot:
+        description: "Deploy bot too"
+        required: false
+        default: "true"
+        type: choice
+        options: [ "true", "false" ]
 
 concurrency:
   group: deploy-main
@@ -15,13 +23,18 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # (Опционально) - быстрый тест, если есть
-      # - name: Run tests
-      #   run: |
-      #     echo "TODO: add tests"
+      - name: Validate required secrets
+        run: |
+          MISSING=""
+          [ -z "${{ secrets.VPS_HOST }}" ] && MISSING="$MISSING VPS_HOST"
+          [ -z "${{ secrets.VPS_USERNAME }}" ] && MISSING="$MISSING VPS_USERNAME"
+          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
+          [ -z "${{ secrets.VPS_SUDO_PASSWORD }}" ] && MISSING="$MISSING VPS_SUDO_PASSWORD"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required secrets:$MISSING"
+            exit 1
+          fi
+          echo "✅ Secrets OK"
 
       - name: Deploy via SSH (sudo)
         uses: appleboy/ssh-action@v1.0.3
@@ -37,54 +50,59 @@ jobs:
 
             PROJECT_DIR="/opt/EatFit24"
             BRANCH="main"
+            DEPLOY_USER="${{ secrets.VPS_USERNAME }}"
+            REPO_SSH="git@github.com:${{ github.repository }}.git"
 
-            echo ">>> Who am I"
-            whoami
-            pwd
+            echo ">>> Ensure project dir exists"
+            sudo -S -p "" mkdir -p "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Ensuring project dir exists"
-            sudo -S -p "" bash -c "mkdir -p ${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            echo ">>> Fix ownership (prevents 'dubious ownership')"
+            sudo -S -p "" chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Fixing ownership (prevents 'dubious ownership' forever)"
-            sudo -S -p "" bash -c "chown -R ${USER}:${USER} ${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            echo ">>> Add GitHub to known_hosts (SSH)"
+            mkdir -p ~/.ssh
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
-            echo ">>> Mark as safe directory for git (extra safety)"
+            echo ">>> Mark safe.directory"
             git config --global --add safe.directory "${PROJECT_DIR}" || true
 
-            echo ">>> Updating repo"
+            echo ">>> Update repo"
             cd "${PROJECT_DIR}"
 
-            # Если репо ещё не инициализировано на сервере (первый деплой)
             if [ ! -d ".git" ]; then
               echo ">>> Repo not found, cloning..."
-              git clone --branch "${BRANCH}" --depth 1 "https://github.com/${{ github.repository }}.git" .
+              git clone --branch "${BRANCH}" --depth 1 "${REPO_SSH}" .
             else
-              git fetch origin
+              CURRENT_REMOTE="$(git remote get-url origin || true)"
+              if echo "$CURRENT_REMOTE" | grep -qE '^https://github.com/'; then
+                git remote set-url origin "${REPO_SSH}"
+                echo ">>> origin switched to SSH: ${REPO_SSH}"
+              fi
+
+              git fetch --prune origin
               git reset --hard "origin/${BRANCH}"
             fi
 
             echo ">>> Docker compose version"
             sudo -S -p "" docker compose version <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Pull/build/restart services (db не трогаем)"
-            # Важно: db обычно не билдится и его перезапускать без нужды не надо
+            echo ">>> Restart backend stack (db not touched)"
             sudo -S -p "" docker compose up -d --build redis backend celery-worker celery-beat <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> (Optional) restart bot too"
-            # Если бот живёт в этом же compose - раскомментируй
-            sudo -S -p "" docker compose up -d --build bot <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            DEPLOY_BOT="${{ github.event.inputs.deploy_bot || 'true' }}"
+            if [ "$DEPLOY_BOT" = "true" ]; then
+              echo ">>> Restart bot"
+              sudo -S -p "" docker compose up -d --build bot <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+            else
+              echo ">>> Skip bot"
+            fi
 
             echo ">>> Show containers"
             sudo -S -p "" docker compose ps <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
 
-            echo ">>> Basic health checks"
-            # backend health
-            curl -fsS http://127.0.0.1:8000/health/ >/dev/null && echo "✅ backend health OK"
-
-            # redis ping
+            echo ">>> Health checks"
+            curl -fsS http://127.0.0.1:8000/health/ >/dev/null && echo "✅ backend OK"
             sudo -S -p "" docker compose exec -T redis redis-cli ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q PONG && echo "✅ redis OK"
-
-            # celery ping (через worker контейнер)
-            sudo -S -p "" docker compose exec -T celery-worker celery -A config inspect ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q pong && echo "✅ celery worker OK"
+            sudo -S -p "" docker compose exec -T celery-worker celery -A config inspect ping <<< "${{ secrets.VPS_SUDO_PASSWORD }}" | grep -q pong && echo "✅ celery OK"
 
             echo "✅ Deploy completed"
