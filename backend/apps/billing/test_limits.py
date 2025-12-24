@@ -77,6 +77,20 @@ class DailyUsageTestCase(TestCase):
         )
         self.assertFalse(yesterday_usage.is_today)
 
+    def test_timezone_consistency_uses_localdate(self):
+        """P0-3: Verify that _get_today uses timezone.localdate for consistency."""
+        from apps.billing.usage import _get_today
+
+        # _get_today() should return timezone.localdate()
+        expected = timezone.localdate()
+        actual = _get_today()
+
+        self.assertEqual(expected, actual)
+
+        # Also verify that new DailyUsage uses the same date
+        usage = DailyUsage.objects.get_today(self.user)
+        self.assertEqual(usage.date, expected)
+
 
 class GetEffectivePlanTestCase(TestCase):
     """Тесты get_effective_plan_for_user."""

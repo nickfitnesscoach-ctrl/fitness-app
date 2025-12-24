@@ -20,12 +20,15 @@ billing/usage.py
 
 from __future__ import annotations
 
-from datetime import date as dt_date
-
 from django.conf import settings
 from django.db import models, transaction
 from django.db.models import F
 from django.utils import timezone
+
+
+def _get_today():
+    """Единственный источник истины для 'сегодня' в usage модуле."""
+    return timezone.localdate()
 
 
 class DailyUsageManager(models.Manager):
@@ -37,7 +40,7 @@ class DailyUsageManager(models.Manager):
 
         Возвращает DailyUsage.
         """
-        today = timezone.now().date()
+        today = _get_today()
         usage, _ = self.get_or_create(
             user=user,
             date=today,
@@ -58,7 +61,7 @@ class DailyUsageManager(models.Manager):
         if amount <= 0:
             return self.get_today(user)
 
-        today = timezone.now().date()
+        today = _get_today()
 
         with transaction.atomic():
             usage, _ = self.select_for_update().get_or_create(
@@ -78,13 +81,15 @@ class DailyUsageManager(models.Manager):
         """
         Обнуляет счётчик на сегодня (полезно для админских операций / тестов).
         """
-        today = timezone.now().date()
+        today = _get_today()
         usage, _ = self.get_or_create(user=user, date=today, defaults={"photo_ai_requests": 0})
         usage.photo_ai_requests = 0
         usage.save(update_fields=["photo_ai_requests"])
         return usage
 
-    def check_and_increment_if_allowed(self, user, limit: int | None, amount: int = 1) -> tuple[bool, int]:
+    def check_and_increment_if_allowed(
+        self, user, limit: int | None, amount: int = 1
+    ) -> tuple[bool, int]:
         """
         [SECURITY FIX 2024-12] Атомарная проверка лимита И инкремент.
 
@@ -109,7 +114,7 @@ class DailyUsageManager(models.Manager):
             usage = self.get_today(user)
             return (True, usage.photo_ai_requests)
 
-        today = timezone.now().date()
+        today = _get_today()
 
         with transaction.atomic():
             # Блокируем строку, чтобы параллельные запросы ждали
@@ -147,7 +152,7 @@ class DailyUsage(models.Model):
         related_name="daily_usage",
         verbose_name="Пользователь",
     )
-    date = models.DateField("Дата", default=dt_date.today)
+    date = models.DateField("Дата", default=_get_today)
 
     photo_ai_requests = models.PositiveIntegerField(
         "Количество фото-запросов к AI",
@@ -178,4 +183,4 @@ class DailyUsage(models.Model):
     @property
     def is_today(self) -> bool:
         """True, если запись относится к сегодняшнему дню."""
-        return self.date == timezone.now().date()
+        return self.date == _get_today()
