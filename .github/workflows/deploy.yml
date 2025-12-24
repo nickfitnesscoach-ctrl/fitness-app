@@ -90,16 +90,22 @@ jobs:
             echo ">>> [5/9] Update code from repository"
             git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
 
-            # Clean any local changes (temporarily disable set -e for git commands)
+            # Clean any local changes and update code (temporarily disable set -e for git commands)
             set +e
             git clean -fd
             git checkout -- .
             git fetch origin "${BRANCH}"
             FETCH_EXIT=$?
+
+            if [ ${FETCH_EXIT} -eq 0 ]; then
+              # Normal update path - reset to fetched origin
+              git reset --hard "origin/${BRANCH}"
+              RESET_EXIT=$?
+            fi
             set -e
 
-            if [ ${FETCH_EXIT} -ne 0 ]; then
-              echo "⚠️ Git fetch failed, trying fresh clone as fallback..."
+            if [ ${FETCH_EXIT} -ne 0 ] || [ ${RESET_EXIT:-1} -ne 0 ]; then
+              echo "⚠️ Git update failed, trying fresh clone as fallback..."
               cd /tmp
               TEMP_CLONE="/tmp/eatfit24_fresh_clone"
               rm -rf "${TEMP_CLONE}"
@@ -117,8 +123,6 @@ jobs:
               echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S chown -R "${{ secrets.VPS_USERNAME }}:${{ secrets.VPS_USERNAME }}" "${PROJECT_DIR}"
               cd "${PROJECT_DIR}"
             else
-              # Normal update path - reset to fetched origin
-              git reset --hard "origin/${BRANCH}"
               echo ">>> Code updated to latest ${BRANCH} ✅"
             fi
 
