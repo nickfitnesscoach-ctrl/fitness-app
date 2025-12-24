@@ -136,7 +136,7 @@ jobs:
             fi
 
             echo ">>> [7/9] Rebuild and restart services"
-            echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S docker compose -f compose.yml up -d --build
+            docker compose -f compose.yml up -d --build
 
             DEPLOY_EXIT_CODE=$?
 
@@ -146,7 +146,7 @@ jobs:
               if [ "${PREV_COMMIT}" != "none" ]; then
                 echo ">>> Attempting rollback to ${PREV_COMMIT}..."
                 git reset --hard "${PREV_COMMIT}"
-                echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S docker compose -f compose.yml up -d --build
+                docker compose -f compose.yml up -d --build
 
                 if [ $? -eq 0 ]; then
                   echo "✅ Rollback successful"
@@ -163,7 +163,7 @@ jobs:
 
             echo ">>> [9/9] Health checks"
             echo ">>> Container status:"
-            echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S docker compose ps
+            docker compose ps
 
             echo ""
             echo ">>> Backend health check..."
@@ -181,7 +181,7 @@ jobs:
             if [ ${BACKEND_OK} -eq 0 ]; then
               echo "❌ Backend health check failed!"
               echo ">>> Backend logs:"
-              echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S docker logs --tail 50 eatfit24-backend
+              docker logs --tail 50 eatfit24-backend
               exit 1
             fi
 
@@ -192,7 +192,7 @@ jobs:
             else
               echo "⚠️ Frontend not responding on port 3000"
               echo ">>> Frontend logs:"
-              echo "${{ secrets.VPS_SUDO_PASSWORD }}" | sudo -S docker logs --tail 30 eatfit24-frontend
+              docker logs --tail 30 eatfit24-frontend
             fi
 
             echo ""
