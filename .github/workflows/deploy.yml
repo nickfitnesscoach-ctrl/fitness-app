@@ -72,35 +72,43 @@ jobs:
             echo ">>> [4/7] Update repo"
             cd "${PROJECT_DIR}"
 
+            # Function to do fresh clone
+            fresh_clone() {
+              echo ">>> Doing fresh clone..."
+              cd /opt
+              sudo -S -p "" rm -rf "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+              sudo -S -p "" mkdir -p "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+              sudo -S -p "" chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
+              git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" "${PROJECT_DIR}"
+              cd "${PROJECT_DIR}"
+            }
+
             if [ ! -d ".git" ]; then
-              echo ">>> Repo not found, cloning..."
-              git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" .
+              echo ">>> No .git found, cloning..."
+              git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" . || fresh_clone
             else
-              # Switch remote to HTTPS if it was SSH
-              CURRENT_REMOTE="$(git remote get-url origin || true)"
-              echo ">>> Current remote: ${CURRENT_REMOTE}"
-              if echo "$CURRENT_REMOTE" | grep -qE '^git@github.com'; then
-                git remote set-url origin "${REPO_URL}"
-                echo ">>> origin switched to HTTPS"
-              fi
-
-              # Unshallow if needed
-              if [ -f ".git/shallow" ]; then
-                echo ">>> Unshallowing repo..."
-                git fetch --unshallow origin || true
-              fi
-
-              echo ">>> Fetching latest..."
-              if ! git fetch --prune origin; then
-                echo ">>> git fetch failed, re-cloning..."
-                cd ..
-                sudo -S -p "" rm -rf "${PROJECT_DIR}" <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
-                git clone --branch "${BRANCH}" --depth 1 "${REPO_URL}" "${PROJECT_DIR}"
-                cd "${PROJECT_DIR}"
-              else
-                git reset --hard "origin/${BRANCH}"
-              fi
+              echo ">>> Git repo exists, updating..."
+              
+              # Try to update, fresh clone on any failure
+              {
+                # Switch remote to HTTPS if needed
+                CURRENT_REMOTE="$(git remote get-url origin 2>/dev/null || echo 'unknown')"
+                echo ">>> Current remote: ${CURRENT_REMOTE}"
+                
+                if echo "$CURRENT_REMOTE" | grep -qE '^git@'; then
+                  git remote set-url origin "${REPO_URL}"
+                  echo ">>> Switched to HTTPS"
+                fi
+                
+                # Fetch and reset
+                git fetch --prune origin && git reset --hard "origin/${BRANCH}"
+              } || {
+                echo ">>> Git update failed, doing fresh clone..."
+                fresh_clone
+              }
             fi
+            
+            echo ">>> Git update complete"
 
             echo ">>> [5/7] Docker compose version"
             sudo -S -p "" docker compose version <<< "${{ secrets.VPS_SUDO_PASSWORD }}"
