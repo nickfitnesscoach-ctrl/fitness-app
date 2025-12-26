@@ -62,7 +62,9 @@
       "Bash(echo:*)",
       "Bash(done)",
       "Bash(openssl s_client:*)",
-      "Bash(openssl x509:*)"
+      "Bash(openssl x509:*)",
+      "Bash(ruff check:*)",
+      "Bash(sudo -S sed -i 's)"
     ],
     "deny": [],
     "ask": []

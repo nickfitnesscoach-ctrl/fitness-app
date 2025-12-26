@@ -383,7 +383,27 @@ server_name _;
 
 ## 6. CI/CD — как работает деплой
 
-### 6.1 Архитектура workflows
+### 6.1 Принцип: Fail-Fast деплой
+
+> **Деплой считается успешным ТОЛЬКО если система реально работает в production.**
+
+Это осознанное решение. Раньше деплой мог быть "зелёным", но прод не работал — например, из-за сломанного SSL или недоступного Redis. Сейчас это невозможно.
+
+**Условия успешного деплоя (ALL must pass):**
+
+| Проверка | Команда | Fail если |
+|----------|---------|-----------|
+| Backend `/health/` | `curl -fsS -H "Host: eatfit24.ru" http://127.0.0.1:8000/health/` | не 200 после 6 попыток |
+| Frontend | `curl -fsS http://127.0.0.1:3000/` | не отвечает |
+| Public HTTPS | `curl -sS -L -o /dev/null -w "%{http_code}" --max-time 10 https://eatfit24.ru/health/` | код ≠ 200 |
+| PostgreSQL | Проверяется через `/health/` backend | `SELECT 1` не выполняется |
+| Redis | Проверяется через `/health/` backend | read/write не работает |
+
+**Если любое условие не выполнено → деплой FAIL → автоматический rollback.**
+
+---
+
+### 6.2 Архитектура workflows
 
 ```
 .github/workflows/
@@ -392,7 +412,7 @@ server_name _;
 └── deploy.yml    # CD: деплой на VPS при push в main
 ```
 
-### 6.2 backend.yml и bot.yml — CI
+### 6.3 backend.yml и bot.yml — CI
 
 **Триггеры:**
 - Push в `main` с изменениями в `backend/**` или `bot/**`
@@ -413,7 +433,9 @@ server_name _;
 2. Проверка форматирования Black (non-blocking)
 3. `pytest` — тесты бота
 
-### 6.3 deploy.yml — CD
+---
+
+### 6.4 deploy.yml — CD (подробно)
 
 **Триггеры:**
 ```yaml
@@ -426,10 +448,7 @@ on:
       - "frontend/**"
       - "compose.yml"
       - ".github/workflows/deploy.yml"
-  workflow_dispatch:
-    inputs:
-      services:
-        description: "Services to deploy (comma-separated or 'all')"
+  workflow_dispatch:  # ручной запуск
 ```
 
 **Защита от параллельных деплоев:**
@@ -440,39 +459,185 @@ concurrency:
 ```
 > Если два коммита подряд — первый деплой отменяется, выполняется только последний.
 
-**Последовательность действий на сервере:**
+---
 
-| Шаг | Действие | Обработка ошибок |
-|-----|----------|------------------|
-| 1 | Setup variables | — |
-| 2 | Check project dir exists | При первом запуске — клонирует репо, требует ручной `.env` |
-| 3 | Check `.env` exists | Fail если нет `.env` |
-| 4 | Save current commit | Для rollback |
-| 5 | `git fetch + reset --hard` | При ошибке — fresh clone с сохранением `.env` |
-| 6 | Verify `compose.yml` | — |
-| 7 | `docker compose up -d --build` | При ошибке — автоматический rollback |
-| 8 | Wait 20s | Даём контейнерам подняться |
-| 9 | Health checks | Backend, Frontend, HTTPS |
+### 6.5 Пошаговый процесс деплоя
 
-**Автоматический rollback:**
-Если `docker compose up` падает, скрипт:
-1. Откатывает git к предыдущему коммиту
-2. Запускает `docker compose up` снова
-3. Если rollback успешен — деплой считается OK
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DEPLOY WORKFLOW                           │
+├─────────────────────────────────────────────────────────────┤
+│  [1/9] Setup variables                                       │
+│        PROJECT_DIR="/opt/EatFit24"                           │
+│        BRANCH="main"                                         │
+├─────────────────────────────────────────────────────────────┤
+│  [2/9] Check project directory                               │
+│        ├── Exists? → continue                                │
+│        └── Not exists? → clone repo, FAIL (need manual .env) │
+├─────────────────────────────────────────────────────────────┤
+│  [3/9] Check .env file                                       │
+│        └── Not exists? → FAIL                                │
+├─────────────────────────────────────────────────────────────┤
+│  [4/9] Save current commit for rollback                      │
+│        PREV_COMMIT=$(git rev-parse HEAD)                     │
+├─────────────────────────────────────────────────────────────┤
+│  [5/9] Update code                                           │
+│        ├── git fetch + reset --hard origin/main              │
+│        └── On failure → fresh clone (preserve .env)          │
+├─────────────────────────────────────────────────────────────┤
+│  [6/9] Verify compose.yml exists                             │
+├─────────────────────────────────────────────────────────────┤
+│  [7/9] docker compose up -d --build                          │
+│        └── On failure → ROLLBACK to PREV_COMMIT              │
+├─────────────────────────────────────────────────────────────┤
+│  [8/9] Wait 20 seconds for services to start                 │
+├─────────────────────────────────────────────────────────────┤
+│  [9/9] Health checks (CRITICAL)                              │
+│        ├── Backend health (6 retries × 5s)                   │
+│        ├── Frontend health                                   │
+│        └── Public HTTPS health                               │
+│        └── Any failure → FAIL (no rollback at this stage)    │
+└─────────────────────────────────────────────────────────────┘
+```
 
-> **Ограничение:** Rollback работает ТОЛЬКО если проблема связана с кодом или сборкой образа.
+---
+
+### 6.6 Health Checks — что именно проверяется
+
+#### `/health/` endpoint (Backend)
+
+**URL:** `GET /health/` или `GET /api/v1/health/`
+
+**Что проверяет:**
+
+| Компонент | Проверка | Fail если |
+|-----------|----------|-----------|
+| PostgreSQL | `SELECT 1` через Django connection | Timeout, connection refused |
+| Redis | `cache.set()` + `cache.get()` | Не equal, connection refused |
+
+**Пример успешного ответа (200):**
+```json
+{
+  "status": "ok",
+  "version": "1.0.0",
+  "python_version": "3.12.0",
+  "database": "ok",
+  "redis": "ok"
+}
+```
+
+**Пример ошибки (500):**
+```json
+{
+  "status": "error",
+  "database": "ok",
+  "redis": "error: Connection refused"
+}
+```
+
+> **Почему Redis в health check:**  
+> Redis — брокер для Celery. Если Redis недоступен:
+> - Авто-продление подписок не работает
+> - AI-задачи не выполняются
+> - Очередь уведомлений не работает
+>
+> Это не "формальность", а контракт: если health = ok, то система функционирует.
+
+#### `/ready/` endpoint
+
+**URL:** `GET /ready/`
+
+**Отличие от `/health/`:**
+- `/health/` → 200 OK / 500 Error
+- `/ready/` → 200 Ready / 503 Service Unavailable
+
+**Когда использовать:** для load balancer (выводить из rotation при `503`).
+
+---
+
+### 6.7 HTTPS проверка — почему важна
+
+```bash
+HTTP_CODE="$(curl -sS -L -o /dev/null -w "%{http_code}" --max-time 10 https://eatfit24.ru/health/)"
+```
+
+**Флаги:**
+| Флаг | Назначение |
+|------|------------|
+| `-sS` | Silent, но показывать ошибки |
+| `-L` | Следовать редиректам (301/302) |
+| `-o /dev/null` | Не выводить body |
+| `-w "%{http_code}"` | Вывести только HTTP-код |
+| `--max-time 10` | Timeout 10 секунд |
+
+**Почему редирект ≠ success:**
+- `301 Moved Permanently` → конфигурация nginx сломана
+- `302 Found` → неожиданный redirect loop
+- `000` (timeout) → SSL не настроен, сервер недоступен
+
+**При ошибке выводится диагностика:**
+```bash
+curl -sSIL --max-time 10 https://eatfit24.ru/health/ | tail -n 20
+```
+→ Response headers помогают понять причину (SSL error, wrong redirect, etc.)
+
+**Что эта проверка ловит:**
+| Проблема | Симптом |
+|----------|---------|
+| Let's Encrypt сертификат не обновился | SSL handshake error |
+| Host-level nginx упал | Connection refused |
+| Неверный proxy_pass в host nginx | 502 Bad Gateway |
+| Frontend nginx не проксирует `/health/` | 404 Not Found |
+
+---
+
+### 6.8 Автоматический rollback
+
+**Когда срабатывает:** если `docker compose up -d --build` падает.
+
+**Что делает:**
+1. `git reset --hard ${PREV_COMMIT}` — откат кода
+2. `docker compose up -d --build` — повторная сборка
+3. Ожидание 20 секунд
+4. Проверка backend health (6 попыток)
+5. Если health OK → деплой успешен (но на старой версии)
+6. Если health FAIL → manual intervention required
+
+> **Ограничение:** Rollback работает ТОЛЬКО если проблема связана с кодом или сборкой образа.  
 > Ошибки в данных (`.env`, secrets, внешние API) rollback не исправляет.
-4. Если rollback тоже упал — manual intervention required
 
-### 6.4 Типичные ошибки при деплое
+---
+
+### 6.9 Почему деплой теперь fail-fast
+
+| Раньше | Сейчас |
+|--------|--------|
+| "Контейнеры запустились" = success | "Всё реально работает" = success |
+| CI зелёный, но прод сломан | Невозможен ложно-положительный деплой |
+| Проблемы находили пользователи | Проблемы находит CI/CD |
+
+**Это осознанное решение в пользу стабильности, а не скорости.**
+
+Деплой занимает на 30-60 секунд дольше из-за health checks, но:
+- Нет "тихих" поломок
+- Нет ручной проверки после каждого деплоя
+- При проблеме — чёткое сообщение в логах
+
+---
+
+### 6.10 Типичные ошибки при деплое
 
 | Ошибка | Причина | Решение |
 |--------|---------|---------|
 | `POSTGRES_PASSWORD is required` | Нет `.env` на сервере | Создать `.env` из `.env.example` |
-| `Backend health check failed` | Django не стартует | Смотреть `docker logs eatfit24-backend` |
-| `Permission denied` | Неправильные права на `/opt/EatFit24` | `chown -R username:username /opt/EatFit24` |
-| `Image build failed` | Ошибка в Dockerfile или requirements.txt | Собрать локально, проверить |
-| Rollback тоже упал | Фатальная ошибка | SSH на сервер, `docker compose logs` |
+| `Backend health check failed` | Django не стартует | `docker logs eatfit24-backend` |
+| `Frontend not responding` | Nginx не поднялся | `docker logs eatfit24-frontend` |
+| `Public HTTPS failed (code=000)` | SSL/timeout | Проверить host-level nginx, certbot |
+| `Public HTTPS failed (code=502)` | proxy_pass сломан | Проверить host nginx → :3000 |
+| `Public HTTPS failed (code=301)` | Бесконечный redirect | Проверить nginx rewrite rules |
+| `Permission denied` | Права на `/opt/EatFit24` | `chown -R user:user /opt/EatFit24` |
+| `Image build failed` | requirements.txt | Собрать локально |
+| `Rollback also failed` | Фатально | SSH + `docker compose logs` |
 
 ---
 

@@ -87,6 +87,12 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
 
 # -----------------------------------------------------------------------------
+# Static Files: WhiteNoise для отдачи статики в production
+# -----------------------------------------------------------------------------
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+
+# -----------------------------------------------------------------------------
 # Логи: по умолчанию в stdout (docker-friendly)
 # -----------------------------------------------------------------------------
 LOGGING = {
