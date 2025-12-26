@@ -167,7 +167,7 @@ jobs:
             if [ ${DEPLOY_EXIT_CODE} -ne 0 ]; then
               echo "❌ Docker compose failed with exit code ${DEPLOY_EXIT_CODE}"
               echo ">>> Dumping docker compose logs..."
-              docker compose logs --tail 100 2>&1 || true
+              docker compose -f compose.yml logs --tail 200 2>&1 || true
 
               if [ "${PREV_COMMIT}" != "none" ]; then
                 echo ">>> Attempting rollback to ${PREV_COMMIT}..."
@@ -178,12 +178,35 @@ jobs:
                 set -e
 
                 if [ ${ROLLBACK_EXIT} -eq 0 ]; then
-                  echo "✅ Rollback successful"
+                  echo "✅ Rollback docker compose completed"
+                  echo ">>> Waiting for services to stabilize after rollback..."
+                  sleep 20
+
+                  echo ">>> Verifying rollback health..."
+                  ROLLBACK_HEALTHY=0
+                  for i in 1 2 3 4 5 6; do
+                    if curl -fsS -H "Host: eatfit24.ru" http://127.0.0.1:8000/health/ >/dev/null 2>&1; then
+                      echo "✅ Backend healthy after rollback"
+                      ROLLBACK_HEALTHY=1
+                      break
+                    fi
+                    echo ">>> Backend not ready after rollback ($i/6), waiting..."
+                    sleep 5
+                  done
+
+                  if [ ${ROLLBACK_HEALTHY} -eq 0 ]; then
+                    echo "❌ Rollback containers started but backend health check failed"
+                    echo ">>> Backend logs:"
+                    docker logs --tail 50 eatfit24-backend
+                    exit 1
+                  fi
+
+                  echo "✅ Rollback successful and verified healthy"
                   exit 0  # Exit successfully after rollback
                 else
                   echo "❌ Rollback also failed with exit code ${ROLLBACK_EXIT}"
                   echo ">>> Manual intervention required."
-                  docker compose logs --tail 100 2>&1 || true
+                  docker compose -f compose.yml logs --tail 200 2>&1 || true
                 fi
               fi
 
@@ -229,12 +252,14 @@ jobs:
 
             echo ""
             echo ">>> Public HTTPS check..."
-            HTTP_CODE=$(curl -LsS -o /dev/null -w "%{http_code}" --max-time 10 https://eatfit24.ru/health/ 2>&1 || echo "000")
+            HTTP_CODE="$(curl -sS -L -o /dev/null -w "%{http_code}" --max-time 10 https://eatfit24.ru/health/ || true)"
+
             if [ "${HTTP_CODE}" = "200" ]; then
               echo "✅ Public website healthy (200)"
             else
-              echo "⚠️ Public website health check failed (code=${HTTP_CODE})"
-              echo ">>> This may indicate SSL/Nginx issues or backend problems"
+              echo "❌ Public website health check failed (code=${HTTP_CODE:-unknown})"
+              echo ">>> This indicates SSL/Nginx routing or backend exposure issues"
+              exit 1
             fi
 
             echo ""
