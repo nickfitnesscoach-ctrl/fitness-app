@@ -53,7 +53,16 @@
       "Bash(wsl --list:*)",
       "Bash(docker-compose:*)",
       "Bash(ssh:*)",
-      "Bash(scp:*)"
+      "Bash(scp:*)",
+      "Bash(https://api.github.com/repos/nickfitnesscoach-ctrl/fitness-app/actions/workflows/deploy.yml/dispatches )",
+      "Bash(chmod:*)",
+      "Bash(./scripts/check-production-health.sh:*)",
+      "Bash(for:*)",
+      "Bash(do)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(openssl s_client:*)",
+      "Bash(openssl x509:*)"
     ],
     "deny": [],
     "ask": []

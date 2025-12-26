@@ -34,7 +34,7 @@ FROM python:3.12-slim
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH=/root/.local/bin:$PATH
+    PATH=/home/appuser/.local/bin:$PATH
 
 WORKDIR /app
 
@@ -45,17 +45,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed Python packages from builder
-COPY --from=builder /root/.local /root/.local
+# Create non-root user for security
+RUN useradd -m -s /bin/bash appuser
+
+# Copy installed Python packages from builder (to user's local)
+COPY --from=builder /root/.local /home/appuser/.local
+RUN chown -R appuser:appuser /home/appuser/.local
 
 # Copy project files
-COPY . .
+COPY --chown=appuser:appuser . .
 
-# Create necessary directories
-RUN mkdir -p logs staticfiles media
+# Create necessary directories with proper ownership
+RUN mkdir -p logs staticfiles media && chown -R appuser:appuser logs staticfiles media
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8000
