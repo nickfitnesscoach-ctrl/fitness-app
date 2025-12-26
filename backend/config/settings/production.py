@@ -127,3 +127,12 @@ if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
         "YooKassa credentials missing in production. "
         "Set YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY environment variables."
     )
+
+
+# -----------------------------------------------------------------------------
+# Webhook Security: Trust X-Forwarded-For for real client IP detection
+# -----------------------------------------------------------------------------
+# В production Django работает за Nginx proxy, который добавляет X-Forwarded-For
+# Без этого Django видит только IP Docker сети (172.24.0.1) вместо реального IP
+WEBHOOK_TRUST_XFF = os.environ.get("WEBHOOK_TRUST_XFF", "true").lower() == "true"
+WEBHOOK_TRUSTED_PROXIES = os.environ.get("WEBHOOK_TRUSTED_PROXIES", "172.24.0.0/16").split(",")
