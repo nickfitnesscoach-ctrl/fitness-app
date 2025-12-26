@@ -229,10 +229,12 @@ jobs:
 
             echo ""
             echo ">>> Public HTTPS check..."
-            if curl -fsS https://eatfit24.ru/health/ >/dev/null 2>&1; then
-              echo "✅ Public website healthy (https://eatfit24.ru/health/)"
+            HTTP_CODE=$(curl -LsS -o /dev/null -w "%{http_code}" --max-time 10 https://eatfit24.ru/health/ 2>&1 || echo "000")
+            if [ "${HTTP_CODE}" = "200" ]; then
+              echo "✅ Public website healthy (200)"
             else
-              echo "⚠️ Public website not responding"
+              echo "⚠️ Public website health check failed (code=${HTTP_CODE})"
+              echo ">>> This may indicate SSL/Nginx issues or backend problems"
             fi
 
             echo ""

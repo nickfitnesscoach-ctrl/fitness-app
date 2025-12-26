@@ -2,12 +2,13 @@
 Common views for FoodMind AI.
 """
 
+import sys
+
+from django.core.cache import cache
+from django.db import connection
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from django.db import connection
-from django.conf import settings
-import sys
 
 
 @api_view(['GET'])
@@ -22,6 +23,10 @@ def health_check(request):
     Returns:
         200 OK if service is healthy
         500 ERROR if service has issues
+
+    Checks:
+        - Database connectivity (SELECT 1)
+        - Redis connectivity (cache ping)
     """
     health_status = {
         'status': 'ok',
@@ -39,6 +44,19 @@ def health_check(request):
         health_status['database'] = f'error: {str(e)}'
         return Response(health_status, status=500)
 
+    # Check Redis connection
+    try:
+        cache.set('health_check_test', 'ok', timeout=10)
+        cache_value = cache.get('health_check_test')
+        if cache_value == 'ok':
+            health_status['redis'] = 'ok'
+        else:
+            raise Exception('Cache read/write failed')
+    except Exception as e:
+        health_status['status'] = 'error'
+        health_status['redis'] = f'error: {str(e)}'
+        return Response(health_status, status=500)
+
     return Response(health_status, status=200)
 
 
@@ -52,6 +70,7 @@ def readiness_check(request):
     GET /ready/
 
     Checks if the service is ready to accept traffic.
+    Verifies all critical dependencies are available.
     """
     checks = {
         'status': 'ready',
@@ -66,6 +85,19 @@ def readiness_check(request):
     except Exception as e:
         checks['status'] = 'not_ready'
         checks['checks']['database'] = f'not_ready: {str(e)}'
+        return Response(checks, status=503)
+
+    # Check Redis
+    try:
+        cache.set('readiness_check_test', 'ok', timeout=10)
+        cache_value = cache.get('readiness_check_test')
+        if cache_value == 'ok':
+            checks['checks']['redis'] = 'ready'
+        else:
+            raise Exception('Cache read/write failed')
+    except Exception as e:
+        checks['status'] = 'not_ready'
+        checks['checks']['redis'] = f'not_ready: {str(e)}'
         return Response(checks, status=503)
 
     return Response(checks, status=200)
