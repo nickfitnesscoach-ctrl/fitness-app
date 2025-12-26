@@ -474,8 +474,12 @@ class WebhookLog(models.Model):
     - идемпотентность/защита от дублей
     - основа для retry (если захочешь)
 
-    Важно:
-    - event_id должен быть уникальным ключом на стороне YooKassa для конкретного события
+    Поля идемпотентности:
+    - event_id: computed key (event_type:obj_id:obj_status) или provider_event_id
+    - provider_event_id: оригинальный ID от YooKassa (если присутствует)
+
+    Observability:
+    - trace_id: уникальный ID запроса для корреляции логов
     """
 
     STATUS_CHOICES = [
@@ -490,7 +494,22 @@ class WebhookLog(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     event_type = models.CharField("Тип события", max_length=100)
-    event_id = models.CharField("ID события YooKassa", max_length=255, db_index=True)
+    event_id = models.CharField(
+        "Idempotency key",
+        max_length=255,
+        unique=True,  # Гарантирует идемпотентность на уровне БД
+        help_text="Уникальный ключ: provider_event_id или computed event_type:obj_id:obj_status",
+    )
+
+    # YooKassa native event ID (если присутствует в payload)
+    provider_event_id = models.CharField(
+        "ID события от провайдера",
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Оригинальный event ID от YooKassa (uuid или id поле)",
+    )
 
     payment_id = models.CharField(
         "ID платежа YooKassa",
@@ -498,6 +517,16 @@ class WebhookLog(models.Model):
         null=True,
         blank=True,
         db_index=True,
+    )
+
+    # Observability
+    trace_id = models.CharField(
+        "Trace ID",
+        max_length=36,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Уникальный ID запроса для корреляции логов",
     )
 
     status = models.CharField(
@@ -520,6 +549,7 @@ class WebhookLog(models.Model):
         indexes = [
             models.Index(fields=["-created_at"]),
             models.Index(fields=["status"]),
+            models.Index(fields=["trace_id"]),
         ]
 
     def __str__(self) -> str:

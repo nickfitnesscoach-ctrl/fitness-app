@@ -19,15 +19,16 @@ logger = logging.getLogger(__name__)
     bind=True,
     max_retries=5,
     default_retry_delay=30,
-    ack_late=True,       # P1-CEL-02: Acknowledge after processing to prevent loss on worker crash
-    queue='billing',     # P1-CEL-01: Dedicated queue to prevent AI tasks from blocking billing
+    ack_late=True,  # P1-CEL-02: Acknowledge after processing to prevent loss on worker crash
+    queue="billing",  # P1-CEL-01: Dedicated queue to prevent AI tasks from blocking billing
 )
-def process_yookassa_webhook(self, log_id: int):
+def process_yookassa_webhook(self, log_id: int, trace_id: str = None):
     """
     Асинхронная обработка YooKassa webhook события.
 
     Args:
         log_id: ID записи WebhookLog для обработки
+        trace_id: ID трейса для корреляции логов
 
     Retry strategy:
         - max_retries=5: максимум 5 попыток
@@ -49,9 +50,13 @@ def process_yookassa_webhook(self, log_id: int):
     try:
         log = WebhookLog.objects.get(id=log_id)
     except WebhookLog.DoesNotExist:
-        logger.error("[WEBHOOK_TASK_ERROR] log_id=%s error=not_found", log_id)
+        logger.error("[WEBHOOK_TASK_ERROR] trace_id=%s log_id=%s error=not_found", trace_id, log_id)
         # Не ретраим если запись удалена
         return
+
+    # Fallback to trace_id from log if not provided
+    if not trace_id:
+        trace_id = getattr(log, "trace_id", None) or "unknown"
 
     payload = log.raw_payload
     event_type = log.event_type
@@ -59,52 +64,70 @@ def process_yookassa_webhook(self, log_id: int):
     try:
         # Обновляем статус на PROCESSING
         WebhookLog.objects.filter(id=log_id).update(status="PROCESSING")
-        logger.info("[WEBHOOK_TASK_START] log_id=%s event=%s", log_id, event_type)
+        logger.info(
+            "[WEBHOOK_TASK_START] trace_id=%s log_id=%s task_id=%s event=%s",
+            trace_id,
+            log_id,
+            self.request.id,
+            event_type,
+        )
 
         # Основная бизнес-логика
-        handle_yookassa_event(event_type=event_type, payload=payload)
+        handle_yookassa_event(event_type=event_type, payload=payload, trace_id=trace_id)
 
         # Успех
-        WebhookLog.objects.filter(id=log_id).update(
-            status="SUCCESS",
-            processed_at=timezone.now()
+        WebhookLog.objects.filter(id=log_id).update(status="SUCCESS", processed_at=timezone.now())
+        logger.info(
+            "[WEBHOOK_TASK_DONE] trace_id=%s log_id=%s task_id=%s event=%s ok=true",
+            trace_id,
+            log_id,
+            self.request.id,
+            event_type,
         )
-        logger.info("[WEBHOOK_TASK_SUCCESS] log_id=%s event=%s", log_id, event_type)
 
     except Exception as e:
         # Логируем ошибку
         error_msg = str(e)
         logger.error(
-            "[WEBHOOK_TASK_FAILED] log_id=%s event=%s error=%s retry=%s/%s",
-            log_id, event_type, error_msg, self.request.retries, self.max_retries,
-            exc_info=True
+            "[WEBHOOK_TASK_DONE] trace_id=%s log_id=%s task_id=%s event=%s ok=false error=%s retry=%s/%s",
+            trace_id,
+            log_id,
+            self.request.id,
+            event_type,
+            error_msg,
+            self.request.retries,
+            self.max_retries,
+            exc_info=True,
         )
 
         # Обновляем статус на FAILED
         WebhookLog.objects.filter(id=log_id).update(
             status="FAILED",
             error_message=error_msg[:500],  # ограничиваем длину
-            processed_at=timezone.now()
+            processed_at=timezone.now(),
         )
 
         # Ретраим задачу с экспоненциальным backoff
         if self.request.retries < self.max_retries:
             # Экспоненциальный backoff: 30, 60, 120, 240, 480 секунд
-            delay = self.default_retry_delay * (2 ** self.request.retries)
+            delay = self.default_retry_delay * (2**self.request.retries)
             logger.info(
-                "[WEBHOOK_TASK_RETRY] log_id=%s retry=%s delay=%ss",
-                log_id, self.request.retries + 1, delay
+                "[WEBHOOK_TASK_RETRY] trace_id=%s log_id=%s retry=%s delay=%ss",
+                trace_id,
+                log_id,
+                self.request.retries + 1,
+                delay,
             )
             raise self.retry(exc=e, countdown=delay)
         else:
             logger.error(
-                "[WEBHOOK_TASK_EXHAUSTED] log_id=%s max_retries_reached",
-                log_id
+                "[WEBHOOK_TASK_EXHAUSTED] trace_id=%s log_id=%s max_retries_reached",
+                trace_id,
+                log_id,
             )
-            # Не ретраим дальше, ошибка уже залогирована
 
 
-@shared_task(queue='billing')
+@shared_task(queue="billing")
 def retry_stuck_webhooks():
     """
     P1-WH-01: Recovery для застрявших webhooks.
@@ -122,10 +145,7 @@ def retry_stuck_webhooks():
 
     stuck_threshold = timezone.now() - timedelta(minutes=10)
 
-    stuck = WebhookLog.objects.filter(
-        status="PROCESSING",
-        created_at__lt=stuck_threshold
-    )
+    stuck = WebhookLog.objects.filter(status="PROCESSING", created_at__lt=stuck_threshold)
 
     count = stuck.count()
     if count == 0:
@@ -147,23 +167,23 @@ def retry_stuck_webhooks():
 def _send_telegram_alert(message: str) -> bool:
     """
     Отправка алерта в Telegram админам.
-    
+
     Используем HTTP API напрямую, чтобы не зависеть от bot модуля.
     """
     import requests
     from django.conf import settings
-    
+
     bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", None)
     admin_ids = getattr(settings, "TELEGRAM_ADMINS", set())
-    
+
     if not bot_token or not admin_ids:
         logger.warning("[TELEGRAM_ALERT] bot_token or admin_ids not configured")
         return False
-    
+
     # TELEGRAM_ADMINS может быть строкой с ID через запятую или set/list
     if isinstance(admin_ids, str):
         admin_ids = [x.strip() for x in admin_ids.split(",") if x.strip()]
-    
+
     success = False
     for admin_id in admin_ids:
         try:
@@ -183,81 +203,76 @@ def _send_telegram_alert(message: str) -> bool:
                 logger.error("[TELEGRAM_ALERT] failed to send to %s: %s", admin_id, resp.text)
         except Exception as e:
             logger.error("[TELEGRAM_ALERT] error sending to %s: %s", admin_id, e)
-    
+
     return success
 
 
-@shared_task(queue='billing')
+@shared_task(queue="billing")
 def alert_failed_webhooks():
     """
     P2-WH-02: Alerting для FAILED webhooks.
-    
+
     Находит FAILED webhooks за последний час и отправляет alert админам.
     Рекомендуется запускать через Celery Beat каждые 15 минут.
     """
     from datetime import timedelta
-    
+
     since = timezone.now() - timedelta(hours=1)
-    
-    failed = WebhookLog.objects.filter(
-        status="FAILED",
-        processed_at__gte=since
-    )
-    
+
+    failed = WebhookLog.objects.filter(status="FAILED", processed_at__gte=since)
+
     count = failed.count()
     if count == 0:
         logger.info("[WEBHOOK_ALERT] no failed webhooks in last hour")
         return
-    
+
     # Собираем детали для алерта
     details = []
     for log in failed[:5]:  # Максимум 5 примеров
-        details.append(f"• {log.event_type}: {log.error_message[:100] if log.error_message else 'no message'}")
-    
+        details.append(
+            f"• {log.event_type}: {log.error_message[:100] if log.error_message else 'no message'}"
+        )
+
     message = (
         f"🚨 <b>BILLING ALERT</b>\n\n"
         f"⚠️ {count} failed webhooks за последний час!\n\n"
         f"Примеры:\n" + "\n".join(details) + "\n\n"
         f"Проверьте логи: <code>docker logs eatfit24-celery-worker-1</code>"
     )
-    
+
     _send_telegram_alert(message)
     logger.warning("[WEBHOOK_ALERT] sent alert for %s failed webhooks", count)
 
 
-@shared_task(queue='billing')
+@shared_task(queue="billing")
 def cleanup_pending_payments():
     """
     P2-PL-01: Cleanup для PENDING платежей старше 24 часов.
-    
+
     PENDING платежи, которые не получили webhook более 24 часов,
     считаются "мёртвыми" и переводятся в CANCELED.
-    
+
     Рекомендуется запускать через Celery Beat раз в час.
     """
     from datetime import timedelta
     from apps.billing.models import Payment
-    
+
     threshold = timezone.now() - timedelta(hours=24)
-    
-    old_pending = Payment.objects.filter(
-        status="PENDING",
-        created_at__lt=threshold
-    )
-    
+
+    old_pending = Payment.objects.filter(status="PENDING", created_at__lt=threshold)
+
     count = old_pending.count()
     if count == 0:
         logger.info("[PAYMENT_CLEANUP] no stuck pending payments found")
         return
-    
+
     # Обновляем статус
     updated = old_pending.update(
-        status="CANCELED",
-        error_message="Auto-canceled: no webhook received within 24 hours"
+        status="CANCELED", error_message="Auto-canceled: no webhook received within 24 hours"
     )
-    
+
     logger.warning("[PAYMENT_CLEANUP] canceled %s stuck pending payments", updated)
-    
+
     # Отправляем алерт если много
     if updated >= 3:
         message = (
@@ -266,5 +281,3 @@ def cleanup_pending_payments():
             f"Возможно, webhooks не доходят!"
         )
         _send_telegram_alert(message)
-
-

@@ -3,6 +3,7 @@ import type { PlanId, Plan } from '../components/PlanCard';
 import { api } from '../../../services/api';
 import { useBilling } from '../../../contexts/BillingContext';
 import { showToast } from '../utils/notify';
+import { setPollingFlagForPayment } from './usePaymentPolling';
 
 interface UseSubscriptionActionsParams {
     plans: Plan[];
@@ -22,6 +23,7 @@ interface UseSubscriptionActionsResult {
  * Hook for managing subscription actions (payments, auto-renew, card binding)
  * Encapsulates all payment-related business logic for reusability across components
  * Includes anti-double-click protection via in-flight request tracking
+ * Integrates with payment polling for automatic status updates after payment
  */
 export const useSubscriptionActions = ({
     plans,
@@ -38,6 +40,7 @@ export const useSubscriptionActions = ({
     /**
      * Handle plan selection and payment flow
      * Protected against double-click via in-flight lock
+     * Sets polling flag for automatic status update after return from payment
      */
     const handleSelectPlan = async (planId: PlanId) => {
         const lockKey = `payment-${planId}`;
@@ -67,6 +70,9 @@ export const useSubscriptionActions = ({
                 plan_code: plan.code,
                 save_payment_method: true
             });
+
+            // Set polling flag BEFORE redirect to ensure polling starts on return
+            setPollingFlagForPayment();
 
             // Open payment URL in Telegram or browser
             if (isTMA && window.Telegram) {

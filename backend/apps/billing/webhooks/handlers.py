@@ -31,9 +31,17 @@ logger = logging.getLogger(__name__)
 # Публичная точка входа для views.py
 # ---------------------------------------------------------------------
 
-def handle_yookassa_event(*, event_type: str, payload: Dict[str, Any]) -> None:
+
+def handle_yookassa_event(
+    *, event_type: str, payload: Dict[str, Any], trace_id: str = None
+) -> None:
     """
     Главный роутер событий.
+
+    Args:
+        event_type: Тип события от YooKassa
+        payload: Полный payload webhook'а
+        trace_id: ID трейса для корреляции логов
 
     event_type примеры (YooKassa):
     - payment.succeeded
@@ -58,17 +66,18 @@ def handle_yookassa_event(*, event_type: str, payload: Dict[str, Any]) -> None:
     handler = handlers.get(event_type)
     if not handler:
         # Неизвестное событие — не ошибка. Просто логируем и выходим.
-        logger.info(f"Unhandled YooKassa webhook event: {event_type}")
+        logger.info("[WEBHOOK_UNHANDLED] trace_id=%s event_type=%s", trace_id, event_type)
         return
 
-    handler(payload)
+    handler(payload, trace_id=trace_id)
 
 
 # ---------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------
 
-def _handle_payment_succeeded(payload: Dict[str, Any]) -> None:
+
+def _handle_payment_succeeded(payload: Dict[str, Any], *, trace_id: str = None) -> None:
     """
     payment.succeeded:
     - находим локальный Payment по yookassa_payment_id
@@ -197,7 +206,7 @@ def _handle_payment_succeeded(payload: Dict[str, Any]) -> None:
         )
 
 
-def _handle_payment_canceled(payload: Dict[str, Any]) -> None:
+def _handle_payment_canceled(payload: Dict[str, Any], *, trace_id: str = None) -> None:
     """
     payment.canceled:
     - находим Payment
@@ -226,12 +235,10 @@ def _handle_payment_canceled(payload: Dict[str, Any]) -> None:
         payment.webhook_processed_at = timezone.now()
         payment.save(update_fields=["status", "webhook_processed_at", "updated_at"])
 
-        logger.info(
-            f"[payment.canceled] ok: payment_id={payment.id}, yk_id={yk_payment_id}"
-        )
+        logger.info(f"[payment.canceled] ok: payment_id={payment.id}, yk_id={yk_payment_id}")
 
 
-def _handle_payment_waiting_for_capture(payload: Dict[str, Any]) -> None:
+def _handle_payment_waiting_for_capture(payload: Dict[str, Any], *, trace_id: str = None) -> None:
     """
     payment.waiting_for_capture:
     - для нашего сценария обычно редкость (у нас capture=True),
@@ -265,7 +272,7 @@ def _handle_payment_waiting_for_capture(payload: Dict[str, Any]) -> None:
         )
 
 
-def _handle_refund_succeeded(payload: Dict[str, Any]) -> None:
+def _handle_refund_succeeded(payload: Dict[str, Any], *, trace_id: str = None) -> None:
     """
     refund.succeeded:
     - создаём/обновляем Refund запись
@@ -287,7 +294,9 @@ def _handle_refund_succeeded(payload: Dict[str, Any]) -> None:
         amount_value = None
 
     with transaction.atomic():
-        payment = Payment.objects.select_for_update().filter(yookassa_payment_id=yk_payment_id).first()
+        payment = (
+            Payment.objects.select_for_update().filter(yookassa_payment_id=yk_payment_id).first()
+        )
 
         # 1) Refund запись (для админки/учёта)
         refund, created = Refund.objects.get_or_create(
@@ -331,7 +340,10 @@ def _handle_refund_succeeded(payload: Dict[str, Any]) -> None:
 # Helpers
 # ---------------------------------------------------------------------
 
-def _extract_payment_method_info(obj: Dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+
+def _extract_payment_method_info(
+    obj: Dict[str, Any],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Аккуратно вытаскиваем payment_method данные из payload.
     Возвращаем:

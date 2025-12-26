@@ -23,6 +23,7 @@ export { useSubscriptionStatus } from './hooks/useSubscriptionStatus';
 export { useSubscriptionActions } from './hooks/useSubscriptionActions';
 export { useSubscriptionDetails } from './hooks/useSubscriptionDetails';
 export { usePaymentHistory } from './hooks/usePaymentHistory';
+export { usePaymentPolling, setPollingFlagForPayment, clearPollingFlag } from './hooks/usePaymentPolling';
 
 // Utils
 export { formatBillingDate, formatShortDate, formatDate } from './utils/date';
