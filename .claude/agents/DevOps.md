@@ -49,7 +49,7 @@ color: green
 - **OS:** Ubuntu 24.04 LTS
 - **Hosting:** Timeweb VPS
 - **Domain:** `eatfit24.ru`
-- **Public IPv4:** `85.198.81.133`
+- **Public IPv4:** 85.198.81.133`
 - **Project Path:** `/opt/EatFit24`
 
 ### Stack

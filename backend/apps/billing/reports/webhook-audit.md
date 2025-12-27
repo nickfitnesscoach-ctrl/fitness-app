@@ -1,33 +1,27 @@
 # Webhook Security Audit Report
 
-**Date**: 2025-12-17
+**Date**: 2025-12-26 (Updated)
+**Version**: 2.0
 
 ## Endpoint Configuration
 
 **URL**: `POST /api/v1/billing/webhooks/yookassa`
-**Location**: [backend/apps/billing/webhooks/views.py](../backend/apps/billing/webhooks/views.py)
+**Location**: `backend/apps/billing/webhooks/views.py`
 
 ## Security Mechanisms
 
 ### 1. Rate Limiting ✅
 
-**Implementation**: WebhookThrottle class ([throttles.py:27-44](../backend/apps/billing/throttles.py#L27-L44))
-
-```python
-@throttle_classes([WebhookThrottle])
-class WebhookThrottle(SimpleRateThrottle):
-    scope = "billing_webhook"
-    rate = "100/hour"
-```
+**Implementation**: WebhookThrottle class
 
 - **Limit**: 100 requests/hour per IP
 - **Key**: IP address
-- **Backend**: Redis cache (shared across workers) ✅
+- **Backend**: Redis cache (shared across workers)
 - **Status**: ACTIVE
 
 ### 2. IP Allowlist ✅
 
-**Implementation**: [webhooks/utils.py:47-72](../backend/apps/billing/webhooks/utils.py#L47-L72)
+**Implementation**: `webhooks/utils.py`
 
 **Allowed IP Ranges** (YooKassa official IPs):
 ```python
@@ -42,75 +36,83 @@ YOOKASSA_IP_RANGES = [
 ]
 ```
 
-**Validation logic**:
-- Uses Python `ipaddress` module for CIDR matching
-- Blocks non-whitelisted IPs with 403 Forbidden
-- Logs blocked attempts with IP and path
-
 **Status**: ✅ SECURE
 
-### 3. X-Forwarded-For Spoofing Protection ✅
+### 3. X-Forwarded-For Protection ✅ IMPROVED (A2)
 
-**Implementation**: [webhooks/views.py:163-195](../backend/apps/billing/webhooks/views.py#L163-L195)
+**Implementation**: `webhooks/views.py` → `_get_client_ip_secure()`
 
 ```python
-def _get_client_ip_secure(request: HttpRequest) -> str | None:
+def _get_client_ip_secure(request) -> Tuple[Optional[str], str]:
+    remote_addr = request.META.get("REMOTE_ADDR", "")
     trust_xff = getattr(settings, "WEBHOOK_TRUST_XFF", False)
-
+    
     if trust_xff:
-        # Only trust XFF if explicitly enabled
-        xff = request.META.get("HTTP_X_FORWARDED_FOR")
-        ...
-
-    # Default: use REMOTE_ADDR only
-    return request.META.get("REMOTE_ADDR")
+        trusted_proxies = getattr(settings, "WEBHOOK_TRUSTED_PROXIES", [])
+        if _is_trusted_proxy(remote_addr):
+            # Trust XFF only from trusted proxy
+            xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+            real_ip = xff.split(",")[0].strip()
+            return real_ip, remote_addr
+        else:
+            # SECURITY: Log and ignore spoofed XFF
+            logger.warning("[WEBHOOK_SECURITY] xff_ignored_untrusted_proxy ...")
+    
+    return remote_addr, remote_addr
 ```
 
-**Current Setting**: `WEBHOOK_TRUST_XFF=False` (or not set, defaults to False)
+**Settings**:
+- `WEBHOOK_TRUST_XFF=True` — enable XFF trust
+- `WEBHOOK_TRUSTED_PROXIES=172.24.0.0/16` — Docker network
 
-**Security Analysis**:
-- ✅ By default, DOES NOT trust X-Forwarded-For
-- ✅ Logs warning if XFF is present but ignored
-- ✅ Uses REMOTE_ADDR for IP allowlist check
-- ⚠️ **CRITICAL**: Requires proper nginx/proxy configuration to pass real REMOTE_ADDR
+**Security Improvements (A2)**:
+- ✅ XFF trusted ONLY if REMOTE_ADDR is from trusted proxy
+- ✅ Spoofing attempts are logged with warning
+- ✅ Direct requests bypass XFF completely
+- ✅ Returns tuple (effective_ip, remote_addr) for audit
 
-### 4. Idempotency ✅
+**Status**: ✅ HARDENED
 
-**Implementation**: [webhooks/views.py:104-126](../backend/apps/billing/webhooks/views.py#L104-L126)
+### 4. Idempotency ✅ IMPROVED (A3)
 
-**Mechanism**: WebhookLog with unique `event_id`
+**Implementation**: `webhooks/views.py`
 
+**Two-level protection:**
+
+1. **DB level:** `WebhookLog.event_id` — UNIQUE constraint (DB-enforced)
+2. **Business level:** `Payment.status` check
+
+**event_id priority (A3):**
 ```python
-with transaction.atomic():
-    webhook_log, created = WebhookLog.objects.select_for_update().get_or_create(
-        event_id=event_id,
-        defaults={...}
-    )
+# 1. Primary: YooKassa native event ID
+provider_event_id = payload.get("uuid") or payload.get("id")
 
-    if not created:
-        # Duplicate webhook - return 200 without processing
-        webhook_log.status = "DUPLICATE"
-        return JsonResponse({"status": "ok"})
+# 2. Fallback: computed key
+if not provider_event_id:
+    event_id = f"{event_type}:{obj_id}:{obj_status}"
+```
+
+**WebhookLog model:**
+```python
+provider_event_id = CharField(null=True, db_index=True)  # YooKassa native ID
+event_id = CharField(unique=True)  # Idempotency key (UNIQUE!)
 ```
 
 **Features**:
-- ✅ Uses `select_for_update()` to prevent race conditions
+- ✅ UNIQUE constraint prevents race conditions
 - ✅ Atomic transaction for consistency
 - ✅ Duplicate webhooks return 200 (YooKassa won't retry)
-- ✅ Status tracked: RECEIVED → PROCESSING → SUCCESS/FAILED/DUPLICATE
+- ✅ Status tracked: RECEIVED → QUEUED → PROCESSING → SUCCESS/FAILED/DUPLICATE
 
-**Status**: ✅ RACE-CONDITION SAFE
+**Status**: ✅ DB-ENFORCED IDEMPOTENCY
 
 ### 5. Business Logic Idempotency ✅
 
-**Payment Processing**: [webhooks/handlers.py:70-179](../backend/apps/billing/webhooks/handlers.py#L70-L179)
-
 ```python
-def _handle_payment_succeeded(payload: Dict[str, Any]) -> None:
+def _handle_payment_succeeded(payload, *, trace_id=None):
     with transaction.atomic():
         payment = Payment.objects.select_for_update().get(yookassa_payment_id=yk_payment_id)
 
-        # Idempotency check
         if payment.status == "SUCCEEDED":
             logger.info(f"already processed: payment_id={payment.id}")
             return
@@ -119,36 +121,46 @@ def _handle_payment_succeeded(payload: Dict[str, Any]) -> None:
 **Features**:
 - ✅ select_for_update() on Payment record
 - ✅ Checks current status before processing
-- ✅ Won't re-extend subscription if already processed
-- ✅ Safe for YooKassa retries
+- ✅ trace_id passed through for logging (A4)
 
-### 6. Error Handling ✅
+### 6. Observability ✅ NEW (A4)
 
-**Invalid JSON**:
+**trace_id generation:**
 ```python
-except Exception:
-    logger.error("Invalid JSON payload from YooKassa")
-    return JsonResponse({"error": "invalid_json"}, status=400)
+trace_id = uuid.uuid4().hex[:8]  # 8 characters
 ```
 
-**Processing Errors**:
-```python
-except Exception as e:
-    # Log error but still return 200 to YooKassa
-    webhook_log.status = "FAILED"
-    webhook_log.error_message = str(e)
-    return JsonResponse({"status": "ok"})
-```
+**Logged at all key points:**
 
-**Status**: ✅ PROPER (always returns 200 if IP/JSON valid, prevents retry loops)
+| Log Message | Description |
+|-------------|-------------|
+| `[WEBHOOK_RECEIVED] trace_id=...` | Entry point |
+| `[WEBHOOK_BLOCKED] trace_id=...` | IP not allowed |
+| `[WEBHOOK_DUPLICATE] trace_id=...` | Duplicate event |
+| `[WEBHOOK_QUEUED] trace_id=... task_id=...` | Celery enqueue |
+| `[WEBHOOK_TASK_START] trace_id=...` | Task start |
+| `[WEBHOOK_TASK_DONE] trace_id=... ok=true/false` | Task complete |
+
+**trace_id propagation:**
+- Stored in `WebhookLog.trace_id`
+- Passed to Celery task via kwargs
+- Passed to handlers for end-to-end correlation
+
+**Status**: ✅ FULL TRACEABILITY
+
+### 7. Error Handling ✅
+
+**Status**: ✅ PROPER (always returns 200 if IP/JSON valid)
 
 ## Logging & Monitoring
 
-### WebhookLog Model
+### WebhookLog Model ✅ UPDATED
 
 **Fields**:
-- `event_id` (unique) - for idempotency
-- `event_type` - payment.succeeded, payment.canceled, etc.
+- `event_id` (UNIQUE) — idempotency key
+- `provider_event_id` — YooKassa native ID (A3)
+- `trace_id` — request correlation ID (A4)
+- `event_type` — payment.succeeded, payment.canceled, etc.
 - `payment_id` - for filtering
 - `status` - RECEIVED/PROCESSING/SUCCESS/FAILED/DUPLICATE
 - `raw_payload` - full webhook data (JSONField)

@@ -25,10 +25,15 @@ from rest_framework import serializers
 # Meal_type из модели (не импортируем модель, чтобы не тянуть ORM сюда)
 MEAL_TYPE_CHOICES = ("BREAKFAST", "LUNCH", "DINNER", "SNACK")
 
-# Безопасные лимиты (анти-DoS). У тебя в модели валидатор тоже 10MB.
-MAX_IMAGE_BYTES = 10 * 1024 * 1024
+# Безопасные лимиты (анти-DoS). Поднято до 15MB для больших Android JPEG.
+MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
-ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+# HEIC/HEIF добавлены — normalize_image() конвертирует их в JPEG
+ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+
+# MIME типы, для которых byte sniffing надёжен
+# HEIC не включён — для него доверяем MIME (ftyp сигнатура ненадёжна)
+BYTE_SNIFF_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 DATA_URL_RE = re.compile(r"^data:(?P<mime>[-\w.+/]+);base64,(?P<data>[A-Za-z0-9+/=\s]+)$")
 
@@ -84,6 +89,13 @@ def _decode_data_url(data_url: str) -> NormalizedImage:
         raise serializers.ValidationError("Изображение слишком большое")
 
     detected = _detect_mime_from_bytes(raw)
+
+    # Для HEIC/HEIF: доверяем MIME (byte sniffing ненадёжен для ftyp)
+    # normalize_image() сам решит: конвертировать или controlled error
+    if mime in ("image/heic", "image/heif"):
+        return NormalizedImage(bytes_data=raw, mime_type=mime)
+
+    # Для jpeg/png/webp: проверяем содержимое
     if detected is None:
         raise serializers.ValidationError("Файл не похож на изображение (jpeg/png/webp)")
 
@@ -113,6 +125,15 @@ def _normalize_uploaded_file(file_obj) -> NormalizedImage:
         raise serializers.ValidationError("Файл изображения слишком большой")
 
     detected = _detect_mime_from_bytes(raw)
+
+    # Для HEIC/HEIF: пытаемся определить по MIME заголовка (если есть)
+    # или просто пропускаем (normalize_image разберётся)
+    content_type = getattr(file_obj, "content_type", None)
+    if content_type:
+        ct_lower = content_type.lower().split(";")[0].strip()
+        if ct_lower in ("image/heic", "image/heif"):
+            return NormalizedImage(bytes_data=raw, mime_type=ct_lower)
+
     if detected is None:
         raise serializers.ValidationError("Файл не похож на изображение (jpeg/png/webp)")
     if detected not in ALLOWED_MIME_TYPES:
@@ -126,9 +147,13 @@ class AIRecognizeRequestSerializer(serializers.Serializer):
     Вход для POST /api/v1/ai/recognize/
 
     Можно отправить:
-    - image (multipart file)
+    - image (multipart file) — РЕКОМЕНДУЕМЫЙ ПРОД-ПУТЬ
       или
-    - data_url (base64)
+    - data_url (base64) — ТОЛЬКО ДЛЯ ТЕСТОВ/АДМИНКИ
+
+    ℹ️ data_url предназначен ТОЛЬКО для тестов, админских сценариев и ручной отладки
+    (Postman/Swagger). Прод-клиенты (Mini App, мобильные) НЕ ДОЛЖНЫ отправлять
+    base64. В проде используется ТОЛЬКО multipart/form-data (binary upload).
 
     Дополнительно:
     - meal_type: BREAKFAST/LUNCH/DINNER/SNACK (если нет → SNACK)
@@ -137,7 +162,13 @@ class AIRecognizeRequestSerializer(serializers.Serializer):
     """
 
     image = serializers.ImageField(required=False, allow_null=True)
-    data_url = serializers.CharField(required=False, allow_blank=False, trim_whitespace=True)
+    # ⚠️ data_url: ТОЛЬКО для тестов/админки. В проде base64 запрещён!
+    data_url = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        trim_whitespace=True,
+        help_text="Только для тестов/админа. В проде base64 запрещён.",
+    )
 
     meal_type = serializers.ChoiceField(choices=MEAL_TYPE_CHOICES, required=False)
     date = serializers.DateField(required=False)

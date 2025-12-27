@@ -33,7 +33,6 @@ from apps.ai_proxy import (
     AIProxyValidationError,
 )
 
-
 logger = logging.getLogger(__name__)
 
 # P2-2: Используем общую функцию из common module
@@ -145,6 +144,27 @@ def recognize_food_async(
     totals = result.totals
     meta = result.meta
 
+    # P0-2: Обрабатываем controlled error — НЕ сохраняем в БД, НЕ списываем usage
+    if meta.get("is_error"):
+        error_code = meta.get("error_code", "UNKNOWN")
+        error_message = meta.get("error_message", "AI processing failed")
+        logger.warning(
+            "[AI] controlled error task=%s meal_id=%s rid=%s code=%s",
+            task_id,
+            meal_id,
+            rid,
+            error_code,
+        )
+        # Возвращаем ошибку для polling — frontend увидит явный error
+        return {
+            "meal_id": int(meal_id),
+            "items": [],
+            "totals": {},
+            "meta": meta,
+            "error": error_code,
+            "error_message": error_message,
+        }
+
     # 2) Гарантируем валидные данные
     safe_items = _json_safe_items(items)
 
@@ -168,6 +188,7 @@ def recognize_food_async(
     if user_id:
         try:
             from django.contrib.auth import get_user_model
+
             from apps.billing.usage import DailyUsage
 
             User = get_user_model()
