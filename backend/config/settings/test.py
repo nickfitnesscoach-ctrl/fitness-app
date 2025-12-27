@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from .base import *  # noqa
 
+# Белый шум (WhiteNoise) не нужен в тестах и может отсутствовать в окружении
+MIDDLEWARE = [m for m in MIDDLEWARE if m != "whitenoise.middleware.WhiteNoiseMiddleware"]
+
 # Override SECRET_KEY for tests (base.py now allows empty value)
 SECRET_KEY = "test-secret-key-for-pytest-only-do-not-use-in-prod"  # noqa: F811
 

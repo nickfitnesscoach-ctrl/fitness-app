@@ -51,7 +51,7 @@ class TestAITasks:
 
             out = recognize_food_async.run(
                 meal_id=meal.id,
-                image_bytes=b"x",
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
                 mime_type="image/png",
                 user_comment="",
                 request_id="rid",
@@ -96,7 +96,7 @@ class TestAITasks:
 
             recognize_food_async.run(
                 meal_id=meal.id,
-                image_bytes=b"x",
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
                 mime_type="image/png",
                 user_comment="",
                 request_id="rid",
@@ -150,7 +150,7 @@ class TestAITasks:
 
             out = recognize_food_async.run(
                 meal_id=meal.id,
-                image_bytes=b"x",
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
                 mime_type="image/png",
                 user_comment="",
                 request_id="rid",
@@ -193,7 +193,7 @@ class TestAITasks:
 
                 recognize_food_async.run(
                     meal_id=meal.id,
-                    image_bytes=b"x",
+                    image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
                     mime_type="image/png",
                     user_comment="",
                     request_id="rid",
@@ -219,15 +219,129 @@ class TestAITasks:
             ) as mock_increment:
                 from apps.ai.tasks import recognize_food_async
 
-                with pytest.raises(AIProxyValidationError):
-                    recognize_food_async.run(
-                        meal_id=meal.id,
-                        image_bytes=b"x",
-                        mime_type="image/png",
-                        user_comment="",
-                        request_id="rid",
-                        user_id=user.id,
-                    )
+                out = recognize_food_async.run(
+                    meal_id=meal.id,
+                    image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
+                    mime_type="image/png",
+                    user_comment="",
+                    request_id="rid",
+                    user_id=user.id,
+                )
 
+                # EXPECTED: Returns error payload, NOT raises
+                assert out["error"] == "AI_ERROR"
                 # EXPECTED: NOT called on error
                 mock_increment.assert_not_called()
+                # EXPECTED: Meal deleted
+                assert not Meal.objects.filter(id=meal.id).exists()
+
+    def test_meal_deleted_on_empty_result(self, django_user_model):
+        """P0-2/P1-1: If AI returns success but no items, meal should be deleted."""
+        user = django_user_model.objects.create_user(username="tu6", password="pass")
+        meal = Meal.objects.create(user=user, meal_type="SNACK", date="2025-12-01")
+
+        fake_result = Mock()
+        fake_result.items = []  # Empty!
+        fake_result.totals = {}
+        fake_result.meta = {}
+
+        with patch("apps.ai.tasks.AIProxyService") as svc_cls:
+            svc = svc_cls.return_value
+            svc.recognize_food.return_value = fake_result
+
+            from apps.ai.tasks import recognize_food_async
+
+            out = recognize_food_async.run(
+                meal_id=meal.id,
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
+                mime_type="image/png",
+                user_id=user.id,
+            )
+
+            assert out["error"] == "EMPTY_RESULT"
+            assert not Meal.objects.filter(id=meal.id).exists()
+
+    def test_meal_deleted_on_controlled_error(self, django_user_model):
+        """P0-2: If AI returns meta is_error, meal should be deleted."""
+        user = django_user_model.objects.create_user(username="tu7", password="pass")
+        meal = Meal.objects.create(user=user, meal_type="SNACK", date="2025-12-01")
+
+        fake_result = Mock()
+        fake_result.items = []
+        fake_result.meta = {"is_error": True, "error_code": "BLURRY_IMAGE"}
+
+        with patch("apps.ai.tasks.AIProxyService") as svc_cls:
+            svc = svc_cls.return_value
+            svc.recognize_food.return_value = fake_result
+
+            from apps.ai.tasks import recognize_food_async
+
+            out = recognize_food_async.run(
+                meal_id=meal.id,
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
+                mime_type="image/png",
+                user_id=user.id,
+            )
+
+            assert out["error"] == "BLURRY_IMAGE"
+            assert not Meal.objects.filter(id=meal.id).exists()
+
+    def test_security_meal_ownership_isolation(self, django_user_model):
+        """P0 Security: If meal_id belongs to another user, it must NOT be touched."""
+        user_a = django_user_model.objects.create_user(
+            username="user_a", password="pass", email="a@test.com"
+        )
+        user_b = django_user_model.objects.create_user(
+            username="user_b", password="pass", email="b@test.com"
+        )
+
+        meal_a = Meal.objects.create(user=user_a, meal_type="SNACK", date="2025-12-01")
+
+        fake_result = Mock()
+        fake_result.items = []  # Force empty to see if it tries to delete
+        fake_result.meta = {}
+
+        with patch("apps.ai.tasks.AIProxyService") as svc_cls:
+            svc = svc_cls.return_value
+            svc.recognize_food.return_value = fake_result
+
+            from apps.ai.tasks import recognize_food_async
+
+            # User B tries to process using Meal A's ID
+            recognize_food_async.run(
+                meal_id=meal_a.id,
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
+                mime_type="image/png",
+                user_id=user_b.id,  # Different user!
+            )
+
+            # EXPECTED: meal_a still exists because ownership check failed (meal was None in task)
+            assert Meal.objects.filter(id=meal_a.id).exists()
+
+    def test_strict_meal_creation_only_on_success(self, django_user_model):
+        """P1-1: Meal should be created ONLY if AI returns items."""
+        user = django_user_model.objects.create_user(username="tu8", password="pass")
+
+        fake_result = Mock()
+        fake_result.items = [{"name": "Apple", "grams": 100, "calories": 52}]
+        fake_result.totals = {"calories": 52}
+        fake_result.meta = {}
+
+        with patch("apps.ai.tasks.AIProxyService") as svc_cls:
+            svc = svc_cls.return_value
+            svc.recognize_food.return_value = fake_result
+
+            from apps.ai.tasks import recognize_food_async
+
+            out = recognize_food_async.run(
+                meal_id=None,  # No meal provided
+                meal_type="BREAKFAST",
+                date="2025-12-01",
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"x" * 10,
+                mime_type="image/png",
+                user_id=user.id,
+            )
+
+            new_meal_id = out["meal_id"]
+            assert new_meal_id is not None
+            assert Meal.objects.filter(id=new_meal_id, user=user).exists()

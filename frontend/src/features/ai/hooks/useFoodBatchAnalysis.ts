@@ -25,7 +25,6 @@ import type {
 } from '../model';
 import { POLLING_CONFIG, AI_ERROR_CODES, getAiErrorMessage } from '../model';
 import { preprocessImage, PreprocessError } from '../lib';
-import { api } from '../../../services/api';
 
 // ============================================================
 // Hook Interface
@@ -36,6 +35,7 @@ interface UseFoodBatchAnalysisResult {
     photoQueue: PhotoQueueItem[];
     startBatch: (files: FileWithComment[]) => Promise<void>;
     retryPhoto: (id: string) => void;
+    removePhoto: (id: string) => void;
     cancelBatch: () => void;
     cleanup: () => void;
 }
@@ -44,10 +44,8 @@ interface UseFoodBatchAnalysisResult {
 // Helpers
 // ============================================================
 
-let idCounter = 0;
-const generatePhotoId = (file: File, index: number): string => {
-    idCounter += 1;
-    return `${file.name}-${file.size}-${index}-${idCounter}`;
+const generatePhotoId = (): string => {
+    return crypto.randomUUID();
 };
 
 const getPollingDelay = (elapsedMs: number, attempt: number): number => {
@@ -156,7 +154,6 @@ export const useFoodBatchAnalysis = (
     const pollTaskStatus = useCallback(
         async (
             taskId: string,
-            mealId: number,
             abortController: AbortController
         ): Promise<AnalysisResult | null> => {
             const startTime = Date.now();
@@ -179,97 +176,26 @@ export const useFoodBatchAnalysis = (
                         abortController.signal
                     );
 
-                    // SUCCESS
+                    // SUCCESS state (might contain logic error)
                     if (taskStatus.state === 'SUCCESS' && taskStatus.status === 'success') {
-                        let analysisResult = mapToAnalysisResult(taskStatus.result, mealId);
+                        const analysisResult = mapToAnalysisResult(taskStatus);
 
-                        // Fallback: if empty items but meal_id exists, try fetching from meal API
-                        if (
-                            (!analysisResult || analysisResult.recognized_items.length === 0) &&
-                            mealId
-                        ) {
-                            for (let fAttempt = 1; fAttempt <= 3; fAttempt++) {
-                                await abortableSleep(fAttempt * 1000, abortController.signal);
-                                if (abortController.signal.aborted || isCancelledRef.current)
-                                    return null;
-
-                                try {
-                                    const mealData = await api.getMealAnalysis(
-                                        mealId,
-                                        abortController.signal
-                                    );
-
-                                    if (
-                                        mealData?.recognized_items &&
-                                        mealData.recognized_items.length > 0
-                                    ) {
-                                        analysisResult = {
-                                            meal_id: mealId,
-                                            recognized_items: mealData.recognized_items.map((item) => ({
-                                                id: String(item.id),
-                                                name: item.name,
-                                                grams: item.grams,
-                                                calories: item.calories,
-                                                protein: item.protein,
-                                                fat: item.fat,
-                                                carbohydrates: item.carbohydrates,
-                                            })),
-                                            total_calories: mealData.recognized_items.reduce(
-                                                (sum, i) => sum + (i.calories || 0),
-                                                0
-                                            ),
-                                            total_protein: mealData.recognized_items.reduce(
-                                                (sum, i) => sum + (i.protein || 0),
-                                                0
-                                            ),
-                                            total_fat: mealData.recognized_items.reduce(
-                                                (sum, i) => sum + (i.fat || 0),
-                                                0
-                                            ),
-                                            total_carbohydrates: mealData.recognized_items.reduce(
-                                                (sum, i) => sum + (i.carbohydrates || 0),
-                                                0
-                                            ),
-                                        };
-                                        break;
-                                    }
-                                } catch (fallbackErr: any) {
-                                    const msg = fallbackErr?.message || '';
-                                    if (msg.includes('404')) break;
-                                }
-                            }
-                        }
-
-                        // If still empty but has meal_id, return neutral (UX-friendly)
-                        if (
-                            (!analysisResult || analysisResult.recognized_items.length === 0) &&
-                            mealId
-                        ) {
-                            return {
-                                meal_id: mealId,
-                                recognized_items: [],
-                                total_calories: 0,
-                                total_protein: 0,
-                                total_fat: 0,
-                                total_carbohydrates: 0,
-                                _neutralMessage: 'Анализ завершён, проверьте дневник',
-                            } as any;
-                        }
-
-                        // No meal_id and no items = failure
-                        if (!analysisResult || analysisResult.recognized_items.length === 0) {
-                            const emptyError = new Error('Ошибка обработки');
-                            (emptyError as any).errorType = AI_ERROR_CODES.EMPTY_RESULT;
-                            throw emptyError;
+                        // P0-Contract Check: Fail if mapping resulted in null (empty items/error)
+                        if (!analysisResult) {
+                            const errorCode = taskStatus.result?.error || AI_ERROR_CODES.EMPTY_RESULT;
+                            const failError = new Error(taskStatus.result?.error_message || 'На фото не удалось распознать блюда');
+                            (failError as any).errorType = errorCode;
+                            throw failError;
                         }
 
                         return analysisResult;
                     }
 
-                    // FAILURE
+                    // FAILURE or controlled error from backend
                     if (taskStatus.state === 'FAILURE' || taskStatus.status === 'failed') {
-                        const failError = new Error(taskStatus.error || 'Ошибка обработки фото');
-                        (failError as any).errorType = AI_ERROR_CODES.TASK_FAILURE;
+                        const errorCode = taskStatus.error || AI_ERROR_CODES.TASK_FAILURE;
+                        const failError = new Error(taskStatus.result?.error_message || errorCode);
+                        (failError as any).errorType = errorCode;
                         throw failError;
                     }
 
@@ -281,7 +207,7 @@ export const useFoodBatchAnalysis = (
                     if (isAbortError(err)) return null;
 
                     // Rethrow known typed errors
-                    if (err?.errorType) throw err;
+                    if (err?.errorType || err?.code === 'DAILY_LIMIT_REACHED') throw err;
 
                     // Network-ish retry a few times
                     if (attempt < 3) {
@@ -298,7 +224,7 @@ export const useFoodBatchAnalysis = (
 
             return null;
         },
-        [/* stable */]
+        []
     );
 
     const processPhoto = useCallback(
@@ -338,21 +264,13 @@ export const useFoodBatchAnalysis = (
 
                 const result = await pollTaskStatus(
                     recognizeResponse.task_id,
-                    recognizeResponse.meal_id,
                     abortController
                 );
 
                 if (!result || isCancelledRef.current) return;
 
                 // Stage 4: Success / Error
-                if (result.meal_id || (result.recognized_items?.length ?? 0) > 0) {
-                    updatePhoto(id, { status: 'success', result });
-                } else {
-                    updatePhoto(id, {
-                        status: 'error',
-                        error: 'Ошибка обработки. Попробуйте ещё раз.',
-                    });
-                }
+                updatePhoto(id, { status: 'success', result });
             } catch (err: any) {
                 if (isCancelledRef.current || abortController.signal.aborted) return;
                 if (isAbortError(err)) return;
@@ -430,12 +348,12 @@ export const useFoodBatchAnalysis = (
             const abortController = new AbortController();
             abortControllerRef.current = abortController;
 
-            const initialQueue: PhotoQueueItem[] = filesWithComments.map((item, index) => {
+            const initialQueue: PhotoQueueItem[] = filesWithComments.map((item) => {
                 const previewUrl = item.previewUrl || URL.createObjectURL(item.file);
                 ownedUrlsRef.current.add(previewUrl);
 
                 return {
-                    id: generatePhotoId(item.file, index),
+                    id: generatePhotoId(),
                     file: item.file,
                     comment: item.comment,
                     previewUrl,
@@ -494,6 +412,24 @@ export const useFoodBatchAnalysis = (
         [finalizeRun, processQueue, setPhotoQueueSync, setStateSafe]
     );
 
+    const removePhoto = useCallback(
+        (id: string): void => {
+            setPhotoQueueSync((prev) => {
+                const item = prev.find((p) => p.id === id);
+                if (item?.previewUrl && ownedUrlsRef.current.has(item.previewUrl)) {
+                    try {
+                        URL.revokeObjectURL(item.previewUrl);
+                    } catch {
+                        /* ignore */
+                    }
+                    ownedUrlsRef.current.delete(item.previewUrl);
+                }
+                return prev.filter((p) => p.id !== id);
+            });
+        },
+        [setPhotoQueueSync]
+    );
+
     const cancelBatch = useCallback((): void => {
         isCancelledRef.current = true;
 
@@ -536,6 +472,7 @@ export const useFoodBatchAnalysis = (
         photoQueue,
         startBatch,
         retryPhoto,
+        removePhoto,
         cancelBatch,
         cleanup,
     };

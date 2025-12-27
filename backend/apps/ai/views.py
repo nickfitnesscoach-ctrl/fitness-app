@@ -22,12 +22,13 @@ import uuid
 
 from celery.result import AsyncResult
 from django.conf import settings
-from django.db import transaction
+from django.core.cache import cache
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from apps.nutrition.models import Meal
 
 from .serializers import AIRecognizeRequestSerializer
 from .tasks import recognize_food_async
@@ -47,11 +48,12 @@ def _new_request_id() -> str:
 class AIRecognitionView(APIView):
     """
     POST /api/v1/ai/recognize/
-
-    Всегда стараемся работать async (202).
-    Sync режим можно оставить только для дев-отладки.
+    Вход: {image, meal_type, date, user_comment}
+    Выход: 202 {task_id, status: 'processing'}
     """
 
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     throttle_classes = [AIRecognitionPerMinuteThrottle, AIRecognitionPerDayThrottle]
 
     def post(self, request, *args, **kwargs):
@@ -64,7 +66,6 @@ class AIRecognitionView(APIView):
         meal_type = s.validated_data["meal_type"]
         date = s.validated_data["date"]
         user_comment = s.validated_data.get("user_comment", "")
-        source_type = s.validated_data.get("source_type", "unknown")
 
         # P1-4: Проверяем лимит ДО создания Meal (избегаем orphan meals)
         from apps.billing.services import get_effective_plan_for_user
@@ -95,42 +96,33 @@ class AIRecognitionView(APIView):
                 resp["X-Request-ID"] = request_id
                 return resp
 
-        # 1) Создаём Meal (meal_type/date обязательны)
-        with transaction.atomic():
-            meal = Meal.objects.create(
-                user=request.user,
-                meal_type=meal_type,
-                date=date,
-            )
-
-            # Если пришёл multipart file — сохраняем фото как есть (самый правильный путь)
-            # Для data_url фото в модель можно тоже сохранять через ContentFile,
-            # но это не обязательно для MVP (и добавляет лишние нюансы).
-            if source_type == "file":
-                img_file = s.validated_data.get("image")
-                if img_file:
-                    meal.photo = img_file
-                    meal.save(update_fields=["photo"])
-
-        # 2) Async — основной режим (быстро и безопасно)
+        # 1) Async — основной режим (быстро и безопасно)
         if getattr(settings, "AI_ASYNC_ENABLED", True):
             task = recognize_food_async.delay(
-                meal_id=meal.id,
+                meal_id=None,  # P1-1: Don't create Meal yet
+                meal_type=meal_type,
+                date=date,
                 image_bytes=normalized.bytes_data,
                 mime_type=normalized.mime_type,
                 user_comment=user_comment,
                 request_id=request_id,
                 user_id=request.user.id,
             )
-            data = {"task_id": str(task.id), "meal_id": meal.id, "status": "processing"}
+
+            # P0 Security Check: link task to user in cache (24h TTL)
+            cache.set(f"ai_task_owner:{task.id}", request.user.id, timeout=86400)
+
+            data = {"task_id": str(task.id), "meal_id": None, "status": "processing"}
             resp = Response(data, status=status.HTTP_202_ACCEPTED)
             resp["X-Request-ID"] = request_id
             return resp
 
-        # 3) Sync — только для dev (не включать в проде)
+        # 2) Sync — только для dev (не включать в проде)
         result = recognize_food_async.apply(
             kwargs=dict(
-                meal_id=meal.id,
+                meal_id=None,
+                meal_type=meal_type,
+                date=date,
                 image_bytes=normalized.bytes_data,
                 mime_type=normalized.mime_type,
                 user_comment=user_comment,
@@ -147,26 +139,95 @@ class AIRecognitionView(APIView):
 class TaskStatusView(APIView):
     """
     GET /api/v1/ai/task/<task_id>/
-    Возвращает состояние и результат задачи.
+    Опрос статуса Celery задачи.
     """
 
+    permission_classes = [IsAuthenticated]
     throttle_classes = [TaskStatusThrottle]
 
-    def get(self, request, task_id: str, *args, **kwargs):
-        request_id = _new_request_id()
+    def get(self, request: Request, task_id: str) -> Response:
+        request_id = request.headers.get("X-Request-ID", "")
 
-        res = AsyncResult(task_id)
-        state = (res.state or "").upper()
+        # 1) SECURITY: Проверка владения задачей
+        owner_id = cache.get(f"ai_task_owner:{task_id}")
+        owner_verified = False
 
-        if state in {"PENDING", "STARTED", "RETRY"}:
-            data = {"task_id": task_id, "status": "processing", "state": state}
-            resp = Response(data, status=status.HTTP_200_OK)
-            resp["X-Request-ID"] = request_id
-            return resp
+        if owner_id is not None:
+            if int(owner_id) == request.user.id:
+                owner_verified = True
+        else:
+            # P0-B: FALLBACK - Если кэш пуст, проверяем payload (даже если SUCCESS=error)
+            res = AsyncResult(task_id)
+            # Мы доверяем результату, ТОЛЬКО если в нём есть owner_id, совпадающий с request.user
+            if res.ready():  # SUCCESS or FAILURE (but mainly SUCCESS carries payload)
+                payload = res.result
+                if isinstance(payload, dict):
+                    # Вариант 1: owner_id в payload (самый надёжный transient fallback)
+                    res_owner = payload.get("owner_id")
+                    if res_owner and int(res_owner) == request.user.id:
+                        # P0-Security: Double verification via DB if meal exists
+                        meal_id = payload.get("meal_id")
+                        if meal_id:
+                            try:
+                                from apps.nutrition.models import Meal
 
+                                if Meal.objects.filter(
+                                    id=meal_id, user_id=request.user.id
+                                ).exists():
+                                    cache.set(
+                                        f"ai_task_owner:{task_id}", request.user.id, timeout=86400
+                                    )
+                                    owner_verified = True
+                            except Exception:
+                                pass
+                        else:
+                            # Trust owner_id for error/empty results (no DB record to verify)
+                            cache.set(f"ai_task_owner:{task_id}", request.user.id, timeout=86400)
+                            owner_verified = True
+
+                    # Вариант 2 can be removed or kept as legacy fallback, but Variant 1 covers it better now.
+                    # Keeping it simple as requested logic loop is closed by the block above for owner_id.
+
+        if not owner_verified:
+            logger.warning(
+                "Unauthorized access attempt to AI task result: user_id=%s task_id=%s rid=%s",
+                request.user.id,
+                task_id,
+                request_id,
+            )
+            return Response(
+                {"error": "Task not found or access denied"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # res is already defined above in fallback block or needs to be
+        if "res" not in locals():
+            res = AsyncResult(task_id)
+
+        state = res.state
+
+        # P0-API: Consistent Payload
         if state == "SUCCESS":
             payload: Dict[str, Any] = res.result or {}
-            data = {"task_id": task_id, "status": "success", "state": state, "result": payload}
+
+            # Ensure items list exists for safe mapping on frontend
+            payload.setdefault("items", [])
+            payload.setdefault("totals", {})  # P0: Guarantee totals existence
+
+            # P1: Hygiene - Remove internal owner_id before sending to client
+            payload.pop("owner_id", None)
+
+            # Check if logic-level error exists in payload
+            if payload.get("error"):
+                data = {
+                    "task_id": task_id,
+                    "status": "failed",
+                    "state": state,
+                    "error": payload["error"],
+                    "result": payload,
+                }
+            else:
+                data = {"task_id": task_id, "status": "success", "state": state, "result": payload}
+
             resp = Response(data, status=status.HTTP_200_OK)
             resp["X-Request-ID"] = request_id
             return resp
@@ -184,7 +245,7 @@ class TaskStatusView(APIView):
             resp["X-Request-ID"] = request_id
             return resp
 
-        data = {"task_id": task_id, "status": "unknown", "state": state}
+        data = {"task_id": task_id, "status": "processing", "state": state}
         resp = Response(data, status=status.HTTP_200_OK)
         resp["X-Request-ID"] = request_id
         return resp

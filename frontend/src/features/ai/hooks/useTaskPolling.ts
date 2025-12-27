@@ -102,13 +102,13 @@ export function useTaskPolling(
             const delay = Math.min(initialDelay * Math.pow(backoffMultiplier, attempt), maxDelay);
 
             try {
-                const data: TaskStatusResponse = await getTaskStatus(taskId);
+                const data: TaskStatusResponse = await getTaskStatus(taskId, controller.signal);
                 console.log(`[TaskPolling] Task ${taskId}: state=${data.state}, status=${data.status}`);
 
                 // SUCCESS state
                 if (data.state === 'SUCCESS' && data.status === 'success') {
                     // Map API result to UI format
-                    const analysisResult = mapToAnalysisResult(data.result);
+                    const analysisResult = mapToAnalysisResult(data);
 
                     if (!analysisResult || analysisResult.recognized_items.length === 0) {
                         // Empty result with meal_id is okay - still "success" for UI
@@ -121,7 +121,6 @@ export function useTaskPolling(
                                 total_protein: 0,
                                 total_fat: 0,
                                 total_carbohydrates: 0,
-                                _neutralMessage: 'Анализ завершён, проверьте дневник',
                             });
                             return;
                         }

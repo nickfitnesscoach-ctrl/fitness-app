@@ -26,17 +26,13 @@ from celery import shared_task
 from django.db import transaction
 
 from apps.ai_proxy import (
-    AIProxyAuthenticationError,
     AIProxyServerError,
     AIProxyService,
     AIProxyTimeoutError,
-    AIProxyValidationError,
 )
+from apps.common.nutrition_utils import clamp_grams
 
 logger = logging.getLogger(__name__)
-
-# P2-2: Используем общую функцию из common module
-from apps.common.nutrition_utils import clamp_grams
 
 
 def _to_decimal(value: Any, default: str = "0") -> Decimal:
@@ -84,7 +80,9 @@ def _json_safe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def recognize_food_async(
     self,
     *,
-    meal_id: int,
+    meal_id: int | None = None,
+    meal_type: str = "SNACK",
+    date: str | None = None,
     image_bytes: bytes,
     mime_type: str,
     user_comment: str = "",
@@ -102,9 +100,78 @@ def recognize_food_async(
     # Импортируем модель внутри задачи, чтобы не тянуть ORM при старте воркера
     from apps.nutrition.models import Meal
 
-    logger.info("[AI] start task=%s meal_id=%s rid=%s user_id=%s", task_id, meal_id, rid, user_id)
+    logger.info(
+        "[AI] start task=%s meal_id=%s type=%s date=%s rid=%s user_id=%s",
+        task_id,
+        meal_id,
+        meal_type,
+        date,
+        rid,
+        user_id,
+    )
 
-    meal = Meal.objects.get(id=meal_id)
+    # 1) Validate mime_type (P0 Security/Integrity)
+    # Hardened Validation: Verify image by magic bytes/Pillow
+    if not mime_type or mime_type not in [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+    ]:
+        return {
+            "error": "UNSUPPORTED_IMAGE_TYPE",
+            "error_message": "Пожалуйста, загрузите изображение в формате JPEG, PNG или WEBP.",
+            "items": [],
+            "meal_id": None,
+            "owner_id": user_id,  # P0-Ownership
+        }
+
+    # P0-D: Hardened validation using safe decode or magic bytes
+    # _detect_mime_from_bytes (already imported) works by signature
+    from apps.ai.serializers import _detect_mime_from_bytes
+
+    detected = _detect_mime_from_bytes(image_bytes)
+
+    # For HEIC we rely on client MIME as signatures are complex (ftyp)
+    if not detected and mime_type not in ["image/heic", "image/heif"]:
+        return {
+            "error": "INVALID_IMAGE",
+            "error_message": "Файл поврежден или не является изображением.",
+            "items": [],
+            "meal_id": None,
+            "owner_id": user_id,  # P0-Ownership: Add explicit owner_id for robust fallback
+        }
+
+    # 2) Safely parse date
+    import datetime
+
+    parsed_date = None
+    if isinstance(date, str):
+        try:
+            parsed_date = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            logger.warning("[AI] Invalid date format: %s rid=%s", date, rid)
+            return {
+                "meal_id": None,
+                "items": [],
+                "totals": {},
+                "error": "INVALID_DATE_FORMAT",
+                "error_message": "Некорректный формат даты.",
+                "owner_id": user_id,  # P0-Ownership
+            }
+    else:
+        parsed_date = date or datetime.date.today()
+
+    # P0 Security Check: restrict meal lookup to owner
+    # If meal_id belongs to another user, we ignore it (meal will be None)
+    meal = None
+    if meal_id and user_id:
+        meal = Meal.objects.filter(id=meal_id, user_id=user_id).first()
+        if meal_id and not meal:
+            logger.warning(
+                "[AI] Meal not found or ownership mismatch: meal_id=%s user_id=%s", meal_id, user_id
+            )
 
     service = AIProxyService()
 
@@ -117,28 +184,47 @@ def recognize_food_async(
             locale="ru",
             request_id=rid,
         )
-    except AIProxyValidationError as e:
-        # Валидация не лечится ретраем
-        logger.warning(
-            "[AI] validation error task=%s meal_id=%s rid=%s err=%s", task_id, meal_id, rid, str(e)
-        )
-        raise
-    except AIProxyAuthenticationError as e:
-        # Неверный секрет — ретраи бессмысленны
-        logger.error(
-            "[AI] auth error task=%s meal_id=%s rid=%s err=%s", task_id, meal_id, rid, str(e)
-        )
-        raise
-    except (AIProxyTimeoutError, AIProxyServerError) as e:
-        # Временные проблемы — ретраим
-        logger.warning(
-            "[AI] retryable error task=%s meal_id=%s rid=%s err=%s", task_id, meal_id, rid, str(e)
-        )
-        raise self.retry(exc=e)
     except Exception as e:
-        # Любая неожиданная ошибка — пробуем ретрай (ограниченно)
-        logger.exception("[AI] unexpected error task=%s meal_id=%s rid=%s", task_id, meal_id, rid)
-        raise self.retry(exc=e)
+        logger.error("[AI] Proxy error: %r rid=%s", e, rid)
+
+        # P1-3: Delete meal atomically if AI failed and meal exists
+        if meal_id:
+            try:
+                from apps.nutrition.models import Meal
+
+                meal = Meal.objects.filter(id=meal_id, user_id=user_id).first()
+                if meal:
+                    meal.delete()
+                    logger.info(
+                        "[AI] Deleted orphan meal_id=%s because AI proxy failed. rid=%s",
+                        meal_id,
+                        rid,
+                    )
+            except Exception:
+                pass
+
+        if isinstance(e, (AIProxyTimeoutError, AIProxyServerError)):
+            # Временные проблемы — ретраим
+            logger.warning(
+                "[AI] retryable error task=%s meal_id=%s rid=%s err=%s",
+                task_id,
+                meal_id,
+                rid,
+                str(e),
+            )
+            # Re-delete meal on each retry just in case, but usually transaction helps
+            raise self.retry(exc=e)
+
+        # Любая неожиданная ошибка или валидация — не ретраим или ретраим ограниченно
+        logger.exception("[AI] processing error task=%s meal_id=%s rid=%s", task_id, meal_id, rid)
+        return {
+            "meal_id": (meal.id if meal else meal_id),
+            "items": [],
+            "totals": {},
+            "error": "AI_ERROR",
+            "error_message": "Произошла ошибка при обработке фото. Попробуйте позже.",
+            "owner_id": user_id,  # P0-Ownership
+        }
 
     items = result.items
     totals = result.totals
@@ -155,21 +241,79 @@ def recognize_food_async(
             rid,
             error_code,
         )
+        # P0-4: Delete meal if AI failed to prevent empty record in diary
+        if meal:
+            with transaction.atomic():
+                meal.delete()
+
         # Возвращаем ошибку для polling — frontend увидит явный error
         return {
-            "meal_id": int(meal_id),
+            "meal_id": meal_id,  # return original even if not owned
             "items": [],
             "totals": {},
             "meta": meta,
             "error": error_code,
             "error_message": error_message,
+            "owner_id": user_id,  # P0-Ownership
         }
 
     # 2) Гарантируем валидные данные
     safe_items = _json_safe_items(items)
 
+    # P0 Data Integrity: Delete meal if results are empty or error
+    if not safe_items:
+        if meal_id:
+            try:
+                from apps.nutrition.models import Meal
+
+                meal = Meal.objects.filter(id=meal_id, user_id=user_id).first()
+                if meal:
+                    meal.delete()
+                    logger.info(
+                        "[AI] Deleted orphan meal_id=%s because result was empty/error. rid=%s",
+                        meal_id,
+                        rid,
+                    )
+            except Exception:
+                pass
+
+        return {
+            "error": "EMPTY_RESULT",
+            "error_message": "Не удалось распознать еду на фото.",
+            "items": [],
+            "meal_id": None,
+            "owner_id": user_id,  # P0-Ownership
+        }
+
     # 3) Сохраняем в БД атомарно
     with transaction.atomic():
+        if not meal:
+            # Create new meal if not exists
+            from django.contrib.auth import get_user_model
+            from django.core.files.base import ContentFile
+
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            meal = Meal.objects.create(
+                user=user,
+                meal_type=meal_type,
+                date=parsed_date,
+            )
+            # Attach photo
+            import mimetypes
+
+            if mime_type in ["image/heic", "image/heif"]:
+                ext = "heic"
+            else:
+                ext = mimetypes.guess_extension(mime_type) or ".jpg"
+                if ext.startswith("."):
+                    ext = ext[1:]
+
+            filename = f"ai_{rid}.{ext}" if rid else f"ai_{task_id}.{ext}"
+            meal.photo.save(filename, ContentFile(image_bytes), save=False)
+            meal.save()
+            logger.info("[AI] created new meal_id=%s rid=%s", meal.id, rid)
+
         # Если AI пересчитали — перезаписываем
         meal.items.all().delete()
 
@@ -204,7 +348,7 @@ def recognize_food_async(
             logger.error("[AI] usage increment failed: user_id=%s err=%s", user_id, str(usage_err))
 
     response: Dict[str, Any] = {
-        "meal_id": int(meal_id),
+        "meal_id": int(meal.id),
         "items": safe_items,
         "total_calories": float(totals.get("calories") or 0.0),
         "totals": {
@@ -214,6 +358,7 @@ def recognize_food_async(
             "carbohydrates": float(totals.get("carbohydrates") or 0.0),
         },
         "meta": meta,
+        "owner_id": user_id,  # P0-Ownership
     }
 
     logger.info(

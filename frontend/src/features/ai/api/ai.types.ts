@@ -63,9 +63,11 @@ export type TaskStatus = 'processing' | 'success' | 'failed';
 
 /** Task result when success */
 export interface TaskSuccessResult {
-    meal_id: number;
+    meal_id: number | null;
     items: ApiRecognizedItem[];  // API uses "items", NOT "recognized_items"
     totals: RecognitionTotals;
+    error?: string;
+    error_message?: string;
 }
 
 /** GET /api/v1/ai/task/<id>/ response */
@@ -98,14 +100,13 @@ export interface RecognizedItem {
 
 /** Analysis result for UI components */
 export interface AnalysisResult {
-    meal_id: number | string;
+    meal_id: number | string | null;
     recognized_items: RecognizedItem[];  // UI uses recognized_items for compat
     total_calories: number;
     total_protein: number;
     total_fat: number;
     total_carbohydrates: number;
     photo_url?: string;
-    _neutralMessage?: string; // UI hotfix message
 }
 
 /** Batch result for multiple photo processing */

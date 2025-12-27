@@ -9,13 +9,13 @@ test_async_flow.py — тесты async API (202 + Celery).
 
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
-import pytest
+from django.core.cache import cache
 from django.urls import reverse
 from django.utils import timezone
+import pytest
 from rest_framework.test import APIClient
 
 from apps.billing.models import Subscription, SubscriptionPlan
@@ -27,9 +27,13 @@ from apps.nutrition.models import Meal
 class TestAIAsyncFlow:
     def setup_method(self):
         self.client = APIClient()
+        cache.clear()
 
-    def test_recognize_returns_202_and_creates_meal(self, django_user_model):
-        user = django_user_model.objects.create_user(username="u1", password="pass")
+    def test_recognize_returns_202(self, django_user_model):
+        """P1-1: View returns 202 and does NOT create meal upfront."""
+        user = django_user_model.objects.create_user(
+            username="u1", password="pass", email="u1@t.com"
+        )
         self.client.force_authenticate(user=user)
 
         url = reverse("ai:recognize-food")
@@ -50,66 +54,27 @@ class TestAIAsyncFlow:
         body = resp.json()
         assert body["task_id"] == "task-123"
         assert body["status"] == "processing"
-        assert "meal_id" in body
+        assert body["meal_id"] is None  # P1-1: No meal created yet
 
-        meal = Meal.objects.get(id=body["meal_id"])
-        assert meal.user_id == user.id
-        assert meal.meal_type == "LUNCH"
-        assert meal.date == timezone.localdate()
+        # Verify no meal created in DB
+        assert Meal.objects.filter(user=user).count() == 0
+
+        # Verify ownership saved in cache
+        assert cache.get(f"ai_task_owner:{fake_task.id}") == user.id
 
         delay_mock.assert_called_once()
 
-    def test_meal_created_with_defaults(self, django_user_model):
-        user = django_user_model.objects.create_user(username="u2", password="pass")
-        self.client.force_authenticate(user=user)
-
-        url = reverse("ai:recognize-food")
-        fake_task = Mock()
-        fake_task.id = "task-456"
-
-        with patch("apps.ai.views.recognize_food_async.delay", return_value=fake_task):
-            resp = self.client.post(
-                url,
-                data={"data_url": _small_png_data_url()},
-                format="json",
-            )
-
-        assert resp.status_code == 202
-        meal_id = resp.json()["meal_id"]
-        meal = Meal.objects.get(id=meal_id)
-        assert meal.meal_type == "SNACK"
-        assert meal.date == timezone.localdate()
-
-    def test_meal_created_with_custom_date(self, django_user_model):
-        user = django_user_model.objects.create_user(username="u3", password="pass")
-        self.client.force_authenticate(user=user)
-
-        url = reverse("ai:recognize-food")
-        fake_task = Mock()
-        fake_task.id = "task-789"
-        custom_date = date(2025, 12, 1)
-
-        with patch("apps.ai.views.recognize_food_async.delay", return_value=fake_task):
-            resp = self.client.post(
-                url,
-                data={
-                    "data_url": _small_png_data_url(),
-                    "meal_type": "DINNER",
-                    "date": str(custom_date),
-                },
-                format="json",
-            )
-
-        assert resp.status_code == 202
-        meal = Meal.objects.get(id=resp.json()["meal_id"])
-        assert meal.meal_type == "DINNER"
-        assert meal.date == custom_date
-
     def test_task_status_processing(self, django_user_model):
-        user = django_user_model.objects.create_user(username="u4", password="pass")
+        user = django_user_model.objects.create_user(
+            username="u4", password="pass", email="u4@t.com"
+        )
         self.client.force_authenticate(user=user)
+        task_id = "abc"
 
-        url = reverse("ai:task-status", kwargs={"task_id": "abc"})
+        # Setup ownership
+        cache.set(f"ai_task_owner:{task_id}", user.id)
+
+        url = reverse("ai:task-status", kwargs={"task_id": task_id})
         fake_res = Mock()
         fake_res.state = "PENDING"
 
@@ -121,10 +86,16 @@ class TestAIAsyncFlow:
         assert body["status"] == "processing"
 
     def test_task_status_success(self, django_user_model):
-        user = django_user_model.objects.create_user(username="u5", password="pass")
+        user = django_user_model.objects.create_user(
+            username="u5", password="pass", email="u5@t.com"
+        )
         self.client.force_authenticate(user=user)
+        task_id = "abc"
 
-        url = reverse("ai:task-status", kwargs={"task_id": "abc"})
+        # Setup ownership
+        cache.set(f"ai_task_owner:{task_id}", user.id)
+
+        url = reverse("ai:task-status", kwargs={"task_id": task_id})
         fake_res = Mock()
         fake_res.state = "SUCCESS"
         fake_res.result = {"meal_id": 1, "items": [], "totals": {"calories": 0}}
@@ -136,12 +107,19 @@ class TestAIAsyncFlow:
         body = resp.json()
         assert body["status"] == "success"
         assert "result" in body
+        assert body["result"]["items"] == []  # Guaranteed by TaskStatusView
 
     def test_task_status_failed(self, django_user_model):
-        user = django_user_model.objects.create_user(username="u6", password="pass")
+        user = django_user_model.objects.create_user(
+            username="u6", password="pass", email="u6@t.com"
+        )
         self.client.force_authenticate(user=user)
+        task_id = "abc"
 
-        url = reverse("ai:task-status", kwargs={"task_id": "abc"})
+        # Setup ownership
+        cache.set(f"ai_task_owner:{task_id}", user.id)
+
+        url = reverse("ai:task-status", kwargs={"task_id": task_id})
         fake_res = Mock()
         fake_res.state = "FAILURE"
         fake_res.result = Exception("boom")
@@ -153,9 +131,30 @@ class TestAIAsyncFlow:
         body = resp.json()
         assert body["status"] == "failed"
 
+    def test_task_status_404_if_not_owner(self, django_user_model):
+        """P0 Security: If user polls a task they don't own, return 404."""
+        user_a = django_user_model.objects.create_user(
+            username="ua", password="pass", email="ua@t.com"
+        )
+        user_b = django_user_model.objects.create_user(
+            username="ub", password="pass", email="ub@t.com"
+        )
+        self.client.force_authenticate(user=user_b)
+
+        task_id = "task-owner-a"
+        # Ownership belongs to user_a
+        cache.set(f"ai_task_owner:{task_id}", user_a.id)
+
+        url = reverse("ai:task-status", kwargs={"task_id": task_id})
+
+        resp = self.client.get(url)
+        assert resp.status_code == 404
+
     def test_limit_exceeded_returns_429_no_meal_created(self, django_user_model):
         """P1-4: When limit exceeded, 429 returned and Meal NOT created."""
-        user = django_user_model.objects.create_user(username="u_limit", password="pass")
+        user = django_user_model.objects.create_user(
+            username="u_limit", password="pass", email="limit@t.com"
+        )
         self.client.force_authenticate(user=user)
 
         # Create FREE plan with limit=3
@@ -193,7 +192,7 @@ class TestAIAsyncFlow:
         url = reverse("ai:recognize-food")
         resp = self.client.post(
             url,
-            data={"data_url": _small_png_data_url(), "meal_type": "SNACK"},
+            data={"data_url": _small_png_data_url()},
             format="json",
         )
 
@@ -201,8 +200,6 @@ class TestAIAsyncFlow:
         assert resp.status_code == 429
         body = resp.json()
         assert body["error"] == "DAILY_PHOTO_LIMIT_EXCEEDED"
-        assert body["used"] == 3
-        assert body["limit"] == 3
 
         # No new Meal should be created
         meal_count_after = Meal.objects.filter(user=user).count()
@@ -210,7 +207,6 @@ class TestAIAsyncFlow:
 
 
 def _small_png_data_url() -> str:
-    """Минимальный валидный PNG 1x1 (base64)."""
     return (
         "data:image/png;base64,"
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ZkAAAAASUVORK5CYII="

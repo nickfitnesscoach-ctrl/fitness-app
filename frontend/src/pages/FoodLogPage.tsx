@@ -53,6 +53,7 @@ const FoodLogPage: React.FC = () => {
         photoQueue,
         startBatch,
         retryPhoto,
+        removePhoto,
         cancelBatch,
         cleanup,  // For revoking ownedUrls on unmount
     } = useFoodBatchAnalysis({
@@ -394,12 +395,7 @@ const FoodLogPage: React.FC = () => {
                             });
                         }}
                         onClose={handleCloseResults}
-                        onOpenDiary={() => {
-                            setShowBatchResults(false);
-                            cleanup(); // Free hook-owned URLs
-                            const dateStr = selectedDate.toISOString().split('T')[0];
-                            navigate(`/?date=${dateStr}`);
-                        }}
+                        onRemove={removePhoto}
                     />
                 )}
 

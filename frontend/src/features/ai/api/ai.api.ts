@@ -1,17 +1,7 @@
-/**
- * AI Recognition API
- * 
- * Implements endpoints from API Contract:
- * - POST /api/v1/ai/recognize/
- * - GET /api/v1/ai/task/<id>/
- */
-
 import {
     fetchWithTimeout,
-    getHeaders,
     getHeadersWithoutContentType,
     log,
-    throwApiError,
 } from '../../../services/api/client';
 import { URLS } from '../../../services/api/urls';
 import type {
@@ -113,29 +103,31 @@ export const recognizeFood = async (
         log(`X-Request-ID: ${requestId}`);
     }
 
-    // Handle 429 (daily limit) - per contract: {detail: "Request was throttled..."}
+    // Handle 429 (daily limit) - per contract: {error: "...", message: "...", used: ..., limit: ...}
     if (response.status === 429) {
-        const data = await response.json().catch(() => ({}));
-        const error = new Error(data.detail || 'Дневной лимит исчерпан');
-        (error as any).code = 'DAILY_LIMIT_REACHED';
-        (error as any).error = 'DAILY_LIMIT_REACHED';
+        const data = await safeJsonParse(response);
+
+        // P0-1: Throw specific Error for daily limit
+        if (data.error === 'DAILY_PHOTO_LIMIT_EXCEEDED') {
+            const error = new Error(data.message || 'Дневной лимит фото исчерпан');
+            (error as any).code = 'DAILY_LIMIT_REACHED';
+            (error as any).error = 'DAILY_LIMIT_REACHED';
+            (error as any).data = data;
+            throw error;
+        }
+
+        // Fallback for other throttles
+        const error = new Error(data.detail || data.message || 'Слишком много запросов. Попробуйте позже.');
+        (error as any).code = 'THROTTLED';
         throw error;
     }
 
-    // Handle other errors
-    if (!response.ok && response.status !== 202) {
-        await throwApiError(response, 'Ошибка распознавания');
+    if (response.status !== 202) {
+        const data = await safeJsonParse(response);
+        throw new Error(data.message || 'Ошибка запуска распознавания');
     }
 
-    // 202 Accepted = async processing started
-    const data = await response.json();
-    log(`Async mode: task_id=${data.task_id}, meal_id=${data.meal_id}`);
-
-    return {
-        task_id: data.task_id,
-        meal_id: data.meal_id,
-        status: 'processing',
-    };
+    return await safeJsonParse(response);
 };
 
 // ============================================================
@@ -153,31 +145,45 @@ export const getTaskStatus = async (
 ): Promise<TaskStatusResponse> => {
     log(`Get task status: ${taskId}`);
 
-    const response = await fetchWithTimeout(
-        URLS.taskStatus(taskId),
-        {
-            method: 'GET',
-            headers: getHeaders(),
+    const response = await fetch(`${URLS.taskStatus(taskId)}`, { // Changed URLS.taskStatus(taskId) to template literal
+        method: 'GET',
+        headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json',
         },
-        undefined, // default timeout
-        false,     // skipAuthCheck
-        signal     // external abort signal
-    );
+        signal,
+    });
 
-    if (!response.ok) {
-        await throwApiError(response, 'Ошибка получения статуса задачи');
+    if (response.status === 404) {
+        throw new Error('Задача не найдена или доступ запрещен');
     }
 
-    const data = await response.json();
-    log(`Task ${taskId}: state=${data.state}, status=${data.status}`);
+    if (!response.ok) {
+        const data = await safeJsonParse(response);
+        throw new Error(data.message || 'Ошибка при получении статуса');
+    }
 
+    return await safeJsonParse(response);
+};
+
+const getAuthHeaders = () => {
+    const initData = (window as any).Telegram?.WebApp?.initData || '';
     return {
-        task_id: data.task_id,
-        status: data.status,
-        state: data.state,
-        result: data.result,
-        error: data.error,
+        'Authorization': `Bearer ${initData}`,
+        'X-Telegram-Init-Data': initData,
     };
+};
+
+/**
+ * P0-Contract: Robust JSON parsing
+ */
+const safeJsonParse = async (response: Response) => {
+    try {
+        return await response.json();
+    } catch (e) {
+        console.error('[AI API] JSON parse error:', e);
+        return {};
+    }
 };
 
 // ============================================================
@@ -185,53 +191,35 @@ export const getTaskStatus = async (
 // ============================================================
 
 /**
- * Map API result to UI display format
- * Converts API's amount_grams → UI's grams
- * Converts API's items → UI's recognized_items
- * Falls back to calculating totals from items if not provided
+ * P0 Data Integrity & API Contract:
+ * - return null if !result OR result.error OR !items OR items.length==0
+ * - generate stable item ids
  */
-export const mapToAnalysisResult = (
-    result: TaskStatusResponse['result'],
-    mealId?: number | string,
-    photoUrl?: string
-): AnalysisResult | null => {
-    if (!result) return null;
+export const mapToAnalysisResult = (taskStatus: TaskStatusResponse): AnalysisResult | null => {
+    const result = taskStatus.result;
 
-    const recognizedItems: RecognizedItem[] = result.items.map((item, index) => ({
-        id: String(index),
-        name: item.name,
-        grams: item.amount_grams, // API → UI mapping
-        calories: item.calories,
-        protein: item.protein,
-        fat: item.fat,
-        carbohydrates: item.carbohydrates,
+    // P0-Contract Check: Fail if there's a result-level error or no items
+    if (!result || result.error || !result.items || result.items.length === 0) {
+        return null;
+    }
+
+    // Success - map items to UI format (amount_grams -> grams)
+    const items: RecognizedItem[] = result.items.map((apiItem) => ({
+        id: crypto.randomUUID(), // P0: Stable unique ID
+        name: apiItem.name,
+        grams: apiItem.amount_grams,
+        calories: apiItem.calories,
+        protein: apiItem.protein,
+        fat: apiItem.fat,
+        carbohydrates: apiItem.carbohydrates,
     }));
 
-    // Check if totals are provided and non-zero
-    const hasValidTotals = result.totals && (
-        result.totals.calories > 0 ||
-        result.totals.protein > 0 ||
-        result.totals.fat > 0 ||
-        result.totals.carbohydrates > 0
-    );
-
-    // Calculate totals from items as fallback
-    const calculateFromItems = () => ({
-        calories: recognizedItems.reduce((sum, item) => sum + (item.calories || 0), 0),
-        protein: recognizedItems.reduce((sum, item) => sum + (item.protein || 0), 0),
-        fat: recognizedItems.reduce((sum, item) => sum + (item.fat || 0), 0),
-        carbohydrates: recognizedItems.reduce((sum, item) => sum + (item.carbohydrates || 0), 0),
-    });
-
-    const totals = hasValidTotals ? result.totals! : calculateFromItems();
-
     return {
-        meal_id: mealId ?? result.meal_id,
-        recognized_items: recognizedItems,
-        total_calories: totals.calories,
-        total_protein: totals.protein,
-        total_fat: totals.fat,
-        total_carbohydrates: totals.carbohydrates,
-        photo_url: photoUrl,
+        meal_id: result.meal_id,
+        recognized_items: items,
+        total_calories: result.totals.calories,
+        total_protein: result.totals.protein,
+        total_fat: result.totals.fat,
+        total_carbohydrates: result.totals.carbohydrates,
     };
 };
