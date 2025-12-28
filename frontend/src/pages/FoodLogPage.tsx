@@ -317,11 +317,16 @@ const FoodLogPage: React.FC = () => {
                         onRetryAll={() => {
                             setShowBatchResults(false);
                             photoQueue.forEach((p) => {
-                                if (p.status === 'error' && p.errorCode !== AI_ERROR_CODES.CANCELLED) retryPhoto(p.id);
+                                if (p.status === 'error') retryPhoto(p.id);
                             });
                         }}
                         onClose={handleCloseResults}
                         onRemove={removePhoto}
+                        onBackToCamera={() => {
+                            setShowBatchResults(false);
+                            cleanup();
+                            // Stay on camera page
+                        }}
                     />
                 )}
 

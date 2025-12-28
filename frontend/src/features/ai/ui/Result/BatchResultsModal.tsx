@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Check, AlertCircle, X, ChevronLeft, ChevronRight, Flame, Drumstick, Droplets, Wheat, RefreshCcw } from 'lucide-react';
+import { Check, AlertCircle, X, ChevronLeft, ChevronRight, Flame, Drumstick, Droplets, Wheat, RefreshCcw, Camera } from 'lucide-react';
 import type { RecognizedItem } from '../../api';
 import type { PhotoQueueItem } from '../../model';
 import { AI_ERROR_CODES } from '../../model';
@@ -10,6 +10,8 @@ interface BatchResultsModalProps {
     onRetryAll?: () => void;
     onRemove: (id: string) => void;
     onClose: () => void;
+    /** Called when user wants to go back to camera (for cancelled batches) */
+    onBackToCamera?: () => void;
 }
 
 export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
@@ -18,12 +20,15 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
     onRetryAll,
     onRemove,
     onClose,
+    onBackToCamera,
 }) => {
     const [selectedId, setSelectedId] = useState<string | null>(null);
 
     const totalCount = photoQueue.length;
     const successCount = photoQueue.filter((p) => p.status === 'success').length;
-    const retryableErrorCount = photoQueue.filter((p) => p.status === 'error' && p.errorCode !== AI_ERROR_CODES.CANCELLED).length;
+    // Count ALL errors (including cancelled) as retryable now
+    const errorCount = photoQueue.filter((p) => p.status === 'error').length;
+    const cancelledCount = photoQueue.filter((p) => p.errorCode === AI_ERROR_CODES.CANCELLED).length;
 
     const selectedItem = useMemo(() => photoQueue.find((p) => p.id === selectedId), [photoQueue, selectedId]);
 
@@ -33,7 +38,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                 photoItem={selectedItem}
                 onClose={() => setSelectedId(null)}
                 onRetry={
-                    selectedItem.status === 'error' && selectedItem.errorCode !== AI_ERROR_CODES.CANCELLED
+                    selectedItem.status === 'error'
                         ? () => {
                             setSelectedId(null);
                             onRetry(selectedItem.id);
@@ -118,15 +123,13 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                                             </h3>
                                             <p className="text-sm text-gray-500 mt-1 truncate">{item.error || 'Ошибка распознавания'}</p>
                                             <div className="flex gap-4 mt-2">
-                                                {!isCancelled && (
-                                                    <button
-                                                        onClick={() => onRetry(item.id)}
-                                                        className="text-sm text-blue-600 font-bold hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
-                                                    >
-                                                        <RefreshCcw size={14} />
-                                                        Повторить
-                                                    </button>
-                                                )}
+                                                <button
+                                                    onClick={() => onRetry(item.id)}
+                                                    className="text-sm text-blue-600 font-bold hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
+                                                >
+                                                    <RefreshCcw size={14} />
+                                                    Повторить
+                                                </button>
                                                 <button
                                                     onClick={() => onRemove(item.id)}
                                                     className="text-sm text-red-500 font-medium hover:bg-red-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
@@ -144,22 +147,39 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                 </div>
 
                 <div className="p-4 border-t border-gray-100 shrink-0 bg-white sm:rounded-b-3xl pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pb-4 space-y-3">
-                    {retryableErrorCount > 0 && onRetryAll && (
+                    {errorCount > 0 && onRetryAll && (
                         <button
                             onClick={onRetryAll}
                             className="w-full bg-blue-50 text-blue-600 py-4 rounded-2xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
                         >
                             <RefreshCcw size={18} />
-                            Повторить ошибки ({retryableErrorCount})
+                            Повторить {cancelledCount > 0 && errorCount === cancelledCount ? 'отменённые' : 'ошибки'} ({errorCount})
                         </button>
                     )}
 
-                    <button
-                        onClick={onClose}
-                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-2xl font-bold hover:shadow-xl transition-all min-h-[48px] flex items-center justify-center shadow-lg"
-                    >
-                        Готово
-                    </button>
+                    {successCount > 0 ? (
+                        <button
+                            onClick={onClose}
+                            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-2xl font-bold hover:shadow-xl transition-all min-h-[48px] flex items-center justify-center shadow-lg"
+                        >
+                            Готово
+                        </button>
+                    ) : onBackToCamera ? (
+                        <button
+                            onClick={onBackToCamera}
+                            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-2xl font-bold hover:shadow-xl transition-all min-h-[48px] flex items-center justify-center gap-2 shadow-lg"
+                        >
+                            <Camera size={20} />
+                            Вернуться в камеру
+                        </button>
+                    ) : (
+                        <button
+                            onClick={onClose}
+                            className="w-full bg-gray-100 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-200 transition-colors"
+                        >
+                            Закрыть
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -284,7 +304,7 @@ const ResultDetailView: React.FC<ResultDetailViewProps> = ({ photoItem, onClose,
                             </h3>
                             <p className="text-gray-500 max-w-xs mb-8">{photoItem.error || 'Попробуйте ещё раз'}</p>
 
-                            {onRetry && !isCancelled && (
+                            {onRetry && (
                                 <button
                                     onClick={onRetry}
                                     className="w-full max-w-xs bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"

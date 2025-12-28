@@ -12,6 +12,7 @@ import type { AnalysisResult, TaskStatusResponse, RecognizeResponse } from '../a
 import type { FileWithComment, BatchAnalysisOptions, PhotoQueueItem, PhotoUploadStatus } from '../model';
 import { POLLING_CONFIG, AI_ERROR_CODES, getAiErrorMessage } from '../model';
 import { preprocessImage, PreprocessError } from '../lib';
+import { api } from '../../../services/api';
 
 interface UseFoodBatchAnalysisResult {
     isProcessing: boolean;
@@ -324,6 +325,14 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
         abortRef.current?.abort();
         abortRef.current = null;
 
+        // Collect mealIds to delete from server (items that were already processing/success)
+        const mealIdsToDelete: number[] = [];
+        queueRef.current.forEach((p) => {
+            if (p.mealId && p.status !== 'success' && p.status !== 'error') {
+                mealIdsToDelete.push(p.mealId);
+            }
+        });
+
         setQueueSync((prev) =>
             prev.map((p) => {
                 if (p.status === 'success' || p.status === 'error') return p;
@@ -335,6 +344,13 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
                 };
             })
         );
+
+        // Delete orphan meals from server (fire-and-forget, don't block UI)
+        mealIdsToDelete.forEach((mealId) => {
+            api.deleteMeal(mealId).catch((err) => {
+                console.warn('[cancelBatch] Failed to delete meal', mealId, err);
+            });
+        });
 
         processingRef.current = false;
         if (isMountedRef.current) setIsProcessing(false);
