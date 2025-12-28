@@ -75,8 +75,24 @@ const FoodLogPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // auto-open results when finished (handled by context mostly, but UI trigger here if needed)
-    // Actually, context has showResults state. We just use it.
+    // Auto-open results when all photos are done (success OR error, including cancelled)
+    useEffect(() => {
+        const allDone = photoQueue.length > 0 &&
+            photoQueue.every((p) => p.status === 'success' || p.status === 'error');
+
+        if (allDone && !hasInFlight && !showResults) {
+            // Auto-open results modal
+            openResults();
+            // Clear selected files if any
+            if (selectedFiles.length > 0) {
+                setSelectedFiles([]);
+            }
+            // Refresh billing to update limits
+            billing.refresh();
+        }
+    }, [photoQueue, hasInFlight, showResults, openResults, selectedFiles, billing]);
+
+    // Clear selected files when results are shown
     useEffect(() => {
         if (showResults && selectedFiles.length > 0) {
             setSelectedFiles([]);
