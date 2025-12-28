@@ -131,13 +131,16 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                                                     <RefreshCcw size={14} />
                                                     Повторить
                                                 </button>
-                                                <button
-                                                    onClick={() => onRemove(item.id)}
-                                                    className="text-sm text-red-500 font-medium hover:bg-red-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
-                                                >
-                                                    <X size={14} />
-                                                    Удалить
-                                                </button>
+                                                {/* CANCELLED = cancelled process, not entity. Can't delete, only retry or ignore */}
+                                                {!isCancelled && (
+                                                    <button
+                                                        onClick={() => onRemove(item.id)}
+                                                        className="text-sm text-red-500 font-medium hover:bg-red-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
+                                                    >
+                                                        <X size={14} />
+                                                        Удалить
+                                                    </button>
+                                                )}
                                             </div>
                                         </>
                                     )}
@@ -148,13 +151,14 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                 </div>
 
                 <div className="p-4 border-t border-gray-100 shrink-0 bg-white sm:rounded-b-3xl pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pb-4 space-y-3">
-                    {retryableCount >= 2 && onRetryAll && (
+                    {/* Show 'Повторить все' for any retryable count >= 1 */}
+                    {retryableCount >= 1 && onRetryAll && (
                         <button
                             onClick={onRetryAll}
                             className="w-full bg-blue-50 text-blue-600 py-4 rounded-2xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
                         >
                             <RefreshCcw size={18} />
-                            Повторить все ({retryableCount})
+                            Повторить {retryableCount > 1 ? `все (${retryableCount})` : ''}
                         </button>
                     )}
 
