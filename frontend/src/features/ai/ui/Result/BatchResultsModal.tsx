@@ -112,13 +112,6 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                                                 >
                                                     Детали <ChevronRight size={14} />
                                                 </button>
-                                                <button
-                                                    onClick={() => onRemove(item.id)}
-                                                    className="text-sm text-gray-400 font-medium hover:text-red-500 transition-colors flex items-center gap-1"
-                                                >
-                                                    <X size={14} />
-                                                    Удалить
-                                                </button>
                                             </div>
                                         </>
                                     ) : (
