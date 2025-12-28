@@ -17,11 +17,7 @@ import { api } from '../../../services/api';
 interface UseFoodBatchAnalysisResult {
     isProcessing: boolean;
     photoQueue: PhotoQueueItem[];
-<<<<<<< HEAD
     startBatch: (files: FileWithComment[], context: { date: string; mealType: string }) => Promise<void>;
-=======
-    startBatch: (files: FileWithComment[]) => Promise<void>;
->>>>>>> 4ca8f99dce40d77fd273eebe71ff646a46b6029a
     /** Mark single photo for retry (does NOT auto-start processing) */
     retryPhoto: (id: string) => void;
     /** Mark multiple photos for retry and start processing */
