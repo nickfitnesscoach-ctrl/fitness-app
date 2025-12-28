@@ -1,13 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { Check, AlertCircle, X, ChevronLeft, ChevronRight, Flame, Drumstick, Droplets, Wheat, RefreshCcw, Camera } from 'lucide-react';
+import { Check, AlertCircle, X, ChevronLeft, ChevronRight, Flame, Drumstick, Droplets, Wheat, RefreshCcw, Camera, CheckCircle2 } from 'lucide-react';
 import type { RecognizedItem } from '../../api';
 import type { PhotoQueueItem } from '../../model';
 import { AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES } from '../../model';
 
 interface BatchResultsModalProps {
     photoQueue: PhotoQueueItem[];
+    /** Toggle single photo selection for retry (multi-select mode) */
     onRetry: (id: string) => void;
-    onRetryAll?: () => void;
+    /** Retry multiple selected photos and start processing */
+    onRetrySelected: (ids: string[]) => void;
     onRemove: (id: string) => void;
     onClose: () => void;
     /** Called when user wants to go back to camera (for cancelled batches) */
@@ -17,12 +19,14 @@ interface BatchResultsModalProps {
 export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
     photoQueue,
     onRetry,
-    onRetryAll,
+    onRetrySelected,
     onRemove,
     onClose,
     onBackToCamera,
 }) => {
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    // Multi-select state for retry
+    const [selectedForRetry, setSelectedForRetry] = useState<Set<string>>(new Set());
 
     const totalCount = photoQueue.length;
     const successCount = photoQueue.filter((p) => p.status === 'success').length;
@@ -124,13 +128,33 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                                             </h3>
                                             <p className="text-sm text-gray-500 mt-1 truncate">{item.error || 'Ошибка распознавания'}</p>
                                             <div className="flex gap-4 mt-2">
-                                                <button
-                                                    onClick={() => onRetry(item.id)}
-                                                    className="text-sm text-blue-600 font-bold hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
-                                                >
-                                                    <RefreshCcw size={14} />
-                                                    Повторить
-                                                </button>
+                                                {/* Toggle selection for multi-select retry */}
+                                                {!NON_RETRYABLE_ERROR_CODES.has(item.errorCode || '') && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedForRetry(prev => {
+                                                                const next = new Set(prev);
+                                                                if (next.has(item.id)) {
+                                                                    next.delete(item.id);
+                                                                } else {
+                                                                    next.add(item.id);
+                                                                }
+                                                                return next;
+                                                            });
+                                                        }}
+                                                        className={`text-sm font-bold px-2 py-1 rounded-lg transition-colors flex items-center gap-1 ${selectedForRetry.has(item.id)
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'text-blue-600 hover:bg-blue-50'
+                                                            }`}
+                                                    >
+                                                        {selectedForRetry.has(item.id) ? (
+                                                            <CheckCircle2 size={14} />
+                                                        ) : (
+                                                            <RefreshCcw size={14} />
+                                                        )}
+                                                        {selectedForRetry.has(item.id) ? 'Выбрано' : 'Повторить'}
+                                                    </button>
+                                                )}
                                                 {/* CANCELLED = cancelled process, not entity. Can't delete, only retry or ignore */}
                                                 {!isCancelled && (
                                                     <button
@@ -151,14 +175,33 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                 </div>
 
                 <div className="p-4 border-t border-gray-100 shrink-0 bg-white sm:rounded-b-3xl pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pb-4 space-y-3">
-                    {/* Show 'Повторить все' only for 2+ retryable items (avoid duplicate CTA for single photo) */}
-                    {retryableCount >= 2 && onRetryAll && (
+                    {/* Show 'Повторить выбранные' when items are selected */}
+                    {selectedForRetry.size > 0 && (
                         <button
-                            onClick={onRetryAll}
+                            onClick={() => {
+                                onRetrySelected(Array.from(selectedForRetry));
+                                setSelectedForRetry(new Set());
+                            }}
+                            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                        >
+                            <RefreshCcw size={18} />
+                            Повторить выбранные ({selectedForRetry.size})
+                        </button>
+                    )}
+
+                    {/* 'Выбрать все' helper when there are retryable items but none selected */}
+                    {selectedForRetry.size === 0 && retryableCount >= 2 && (
+                        <button
+                            onClick={() => {
+                                const retryableIds = photoQueue
+                                    .filter(p => p.status === 'error' && !NON_RETRYABLE_ERROR_CODES.has(p.errorCode || ''))
+                                    .map(p => p.id);
+                                setSelectedForRetry(new Set(retryableIds));
+                            }}
                             className="w-full bg-blue-50 text-blue-600 py-4 rounded-2xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
                         >
                             <RefreshCcw size={18} />
-                            Повторить все ({retryableCount})
+                            Выбрать все для повтора ({retryableCount})
                         </button>
                     )}
 

@@ -8,7 +8,6 @@ interface BatchProcessingScreenProps {
     onRetry: (id: string) => void;
     onCancel: () => void;
     onShowResults: () => void;
-    onRetryAll?: () => void;
 }
 
 /**
@@ -19,7 +18,6 @@ export const BatchProcessingScreen: React.FC<BatchProcessingScreenProps> = ({
     onRetry,
     onCancel,
     onShowResults,
-    onRetryAll
 }) => {
     const completedCount = photoQueue.filter(p => p.status === 'success').length;
     const errorCount = photoQueue.filter(p => p.status === 'error' && p.errorCode !== AI_ERROR_CODES.CANCELLED).length;
@@ -94,15 +92,7 @@ export const BatchProcessingScreen: React.FC<BatchProcessingScreenProps> = ({
                                     >
                                         Посмотреть итоги
                                     </button>
-                                    {errorCount > 1 && onRetryAll && (
-                                        <button
-                                            onClick={onRetryAll}
-                                            className="w-full bg-blue-50 text-blue-600 py-3 rounded-xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
-                                        >
-                                            <RefreshCw size={16} />
-                                            Повторить ошибки ({errorCount})
-                                        </button>
-                                    )}
+                                    {/* Retry moved to results screen with multi-select */}
                                 </div>
                             </div>
                         ) : (

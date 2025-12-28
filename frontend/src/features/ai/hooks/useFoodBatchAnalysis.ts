@@ -18,7 +18,12 @@ interface UseFoodBatchAnalysisResult {
     isProcessing: boolean;
     photoQueue: PhotoQueueItem[];
     startBatch: (files: FileWithComment[]) => Promise<void>;
+    /** Mark single photo for retry (does NOT auto-start processing) */
     retryPhoto: (id: string) => void;
+    /** Mark multiple photos for retry and start processing */
+    retrySelected: (ids: string[]) => void;
+    /** Manually start processing pending items */
+    startProcessing: () => void;
     removePhoto: (id: string) => void;
     cancelBatch: () => void;
     cleanup: () => void;
@@ -278,6 +283,7 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
             // Block non-retryable error codes (e.g., daily limit)
             if (photo.errorCode && NON_RETRYABLE_ERROR_CODES.has(photo.errorCode)) return;
 
+            // Just mark as pending, don't auto-start (multi-select mode)
             setQueueSync((prev) =>
                 prev.map((p) =>
                     p.id === id
@@ -285,25 +291,63 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
                         : p
                 )
             );
+        },
+        [setQueueSync]
+    );
 
-            // if idle -> restart processing over existing queue
-            if (!processingRef.current) {
-                cancelledRef.current = false;
-                processingRef.current = true;
-                setIsProcessing(true);
+    /** Mark multiple photos for retry and immediately start processing */
+    const retrySelected = useCallback(
+        (ids: string[]) => {
+            if (ids.length === 0) return;
+            if (processingRef.current) return;
 
-                const controller = new AbortController();
-                abortRef.current = controller;
+            // Mark all selected as pending
+            const validIds = new Set(ids);
+            setQueueSync((prev) =>
+                prev.map((p) => {
+                    if (!validIds.has(p.id)) return p;
+                    if (p.status !== 'error') return p;
+                    if (p.errorCode && NON_RETRYABLE_ERROR_CODES.has(p.errorCode)) return p;
+                    return { ...p, status: 'pending' as PhotoUploadStatus, errorCode: undefined, error: undefined, result: undefined, taskId: undefined, mealId: undefined };
+                })
+            );
 
-                processQueue(controller).finally(() => {
-                    abortRef.current = null;
-                    processingRef.current = false;
-                    if (isMountedRef.current) setIsProcessing(false);
-                });
-            }
+            // Start processing
+            cancelledRef.current = false;
+            processingRef.current = true;
+            setIsProcessing(true);
+
+            const controller = new AbortController();
+            abortRef.current = controller;
+
+            processQueue(controller).finally(() => {
+                abortRef.current = null;
+                processingRef.current = false;
+                if (isMountedRef.current) setIsProcessing(false);
+            });
         },
         [processQueue, setQueueSync]
     );
+
+    /** Manually start processing pending items (for multi-select flow) */
+    const startProcessing = useCallback(() => {
+        if (processingRef.current) return;
+        const hasPending = queueRef.current.some((p) => p.status === 'pending');
+        if (!hasPending) return;
+
+        cancelledRef.current = false;
+        processingRef.current = true;
+        setIsProcessing(true);
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        processQueue(controller).finally(() => {
+            abortRef.current = null;
+            processingRef.current = false;
+            if (isMountedRef.current) setIsProcessing(false);
+        });
+    }, [processQueue]);
 
     const removePhoto = useCallback(
         (id: string) => {
@@ -385,6 +429,8 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
         photoQueue,
         startBatch,
         retryPhoto,
+        retrySelected,
+        startProcessing,
         removePhoto,
         cancelBatch,
         cleanup,

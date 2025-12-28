@@ -16,7 +16,6 @@ import {
     convertHeicToJpeg,
     MEAL_TYPE_OPTIONS,
     AI_LIMITS,
-    NON_RETRYABLE_ERROR_CODES,
 } from '../features/ai';
 import type { FileWithComment } from '../features/ai';
 
@@ -47,6 +46,7 @@ const FoodLogPage: React.FC = () => {
         photoQueue,
         startBatch,
         retryPhoto,
+        retrySelected,
         removePhoto,
         cancelBatch,
         cleanup,
@@ -213,14 +213,6 @@ const FoodLogPage: React.FC = () => {
                     <BatchProcessingScreen
                         photoQueue={photoQueue}
                         onRetry={retryPhoto}
-                        onRetryAll={() => {
-                            // Retry all retryable errors (not daily limit, etc.)
-                            photoQueue.forEach((p) => {
-                                if (p.status === 'error' && !NON_RETRYABLE_ERROR_CODES.has(p.errorCode || '')) {
-                                    retryPhoto(p.id);
-                                }
-                            });
-                        }}
                         onShowResults={() => setShowBatchResults(true)}
                         onCancel={cancelBatch}
                     />
@@ -314,17 +306,12 @@ const FoodLogPage: React.FC = () => {
                     <BatchResultsModal
                         photoQueue={photoQueue}
                         onRetry={(id) => {
-                            setShowBatchResults(false);
+                            // Just mark for retry (toggle selection), don't auto-start
                             retryPhoto(id);
                         }}
-                        onRetryAll={() => {
+                        onRetrySelected={(ids) => {
                             setShowBatchResults(false);
-                            // Retry all retryable errors (not daily limit, etc.)
-                            photoQueue.forEach((p) => {
-                                if (p.status === 'error' && !NON_RETRYABLE_ERROR_CODES.has(p.errorCode || '')) {
-                                    retryPhoto(p.id);
-                                }
-                            });
+                            retrySelected(ids);
                         }}
                         onClose={handleCloseResults}
                         onRemove={removePhoto}
