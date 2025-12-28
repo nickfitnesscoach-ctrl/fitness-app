@@ -3,7 +3,7 @@
  */
 
 // API functions
-export { recognizeFood, getTaskStatus, mapToAnalysisResult } from './ai.api';
+export { recognizeFood, getTaskStatus, cancelAiTask, mapToAnalysisResult } from './ai.api';
 
 // Types
 export type {

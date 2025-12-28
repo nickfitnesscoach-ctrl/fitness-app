@@ -63,6 +63,7 @@ export {
     AI_ERROR_CODES,
     AI_ERROR_MESSAGES,
     AI_LIMITS,
+    NON_RETRYABLE_ERROR_CODES,
     getAiErrorMessage,
 } from './model';
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from django.urls import path
 
-from .views import AIRecognitionView, TaskStatusView
+from .views import AIRecognitionView, CancelTaskView, TaskStatusView
 
 app_name = "ai"
 
@@ -18,4 +18,6 @@ urlpatterns = [
     path("recognize/", AIRecognitionView.as_view(), name="recognize-food"),
     # Проверять статус задачи по task_id (polling)
     path("task/<str:task_id>/", TaskStatusView.as_view(), name="task-status"),
+    # Отменить задачу (fire-and-forget)
+    path("task/<str:task_id>/cancel/", CancelTaskView.as_view(), name="cancel-task"),
 ]

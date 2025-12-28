@@ -83,6 +83,14 @@ export const AI_ERROR_CODES = {
 
 export type AiErrorCode = typeof AI_ERROR_CODES[keyof typeof AI_ERROR_CODES];
 
+/**
+ * Error codes that should NOT allow retry
+ * (e.g., daily limit - user must wait or upgrade)
+ */
+export const NON_RETRYABLE_ERROR_CODES = new Set<string>([
+    AI_ERROR_CODES.DAILY_LIMIT_REACHED,
+]);
+
 // ============================================================
 // AI Error Messages (Russian)
 // ============================================================

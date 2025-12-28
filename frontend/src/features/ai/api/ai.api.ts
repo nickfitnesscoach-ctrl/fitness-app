@@ -132,6 +132,26 @@ export const getTaskStatus = async (taskId: string, signal?: AbortSignal): Promi
     return (await safeJson(res)) as TaskStatusResponse;
 };
 
+/**
+ * Cancel an AI task on the backend (fire-and-forget)
+ * Called when user cancels batch - prevents meal creation
+ */
+export const cancelAiTask = async (taskId: string): Promise<void> => {
+    log(`Cancel AI task: ${taskId}`);
+    try {
+        await fetch(`${URLS.cancelTask(taskId)}`, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json',
+            },
+        });
+    } catch (err) {
+        // Fire-and-forget: don't throw on network errors
+        console.warn('[cancelAiTask] Failed to cancel', taskId, err);
+    }
+};
+
 // ============================================================
 // Mapping
 // ============================================================

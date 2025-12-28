@@ -142,6 +142,7 @@ const PhotoStatusCard: React.FC<PhotoStatusCardProps> = ({ photo, onRetry }) => 
     const isSuccess = photo.status === 'success';
     const isError = photo.status === 'error';
     const isPending = photo.status === 'pending';
+    const isCancelled = photo.status === 'error' && photo.errorCode === AI_ERROR_CODES.CANCELLED;
 
     return (
         <div className={`
@@ -195,7 +196,7 @@ const PhotoStatusCard: React.FC<PhotoStatusCardProps> = ({ photo, onRetry }) => 
                         <Check className="w-4 h-4 text-white" />
                     </div>
                 )}
-                {isError && (
+                {isError && !isCancelled && (
                     <button
                         onClick={() => onRetry(photo.id)}
                         className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
@@ -203,6 +204,11 @@ const PhotoStatusCard: React.FC<PhotoStatusCardProps> = ({ photo, onRetry }) => 
                         <RefreshCw className="w-3 h-3" />
                         Повторить
                     </button>
+                )}
+                {isError && isCancelled && (
+                    <div className="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center">
+                        <X className="w-4 h-4 text-white" />
+                    </div>
                 )}
             </div>
         </div>

@@ -7,10 +7,10 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { recognizeFood, getTaskStatus, mapToAnalysisResult } from '../api';
+import { recognizeFood, getTaskStatus, cancelAiTask, mapToAnalysisResult } from '../api';
 import type { AnalysisResult, TaskStatusResponse, RecognizeResponse } from '../api';
 import type { FileWithComment, BatchAnalysisOptions, PhotoQueueItem, PhotoUploadStatus } from '../model';
-import { POLLING_CONFIG, AI_ERROR_CODES, getAiErrorMessage } from '../model';
+import { POLLING_CONFIG, AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES, getAiErrorMessage } from '../model';
 import { preprocessImage, PreprocessError } from '../lib';
 import { api } from '../../../services/api';
 
@@ -273,9 +273,10 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
     const retryPhoto = useCallback(
         (id: string) => {
             const photo = queueRef.current.find((p) => p.id === id);
+            // Only error status is retryable
             if (!photo || photo.status !== 'error') return;
-            // Cancelled items are not retryable
-            if (photo.errorCode === AI_ERROR_CODES.CANCELLED) return;
+            // Block non-retryable error codes (e.g., daily limit)
+            if (photo.errorCode && NON_RETRYABLE_ERROR_CODES.has(photo.errorCode)) return;
 
             setQueueSync((prev) =>
                 prev.map((p) =>
@@ -325,9 +326,15 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
         abortRef.current?.abort();
         abortRef.current = null;
 
-        // Collect mealIds to delete from server (items that were already processing/success)
+        // Collect taskIds to cancel on backend and mealIds to delete
+        const taskIdsToCancel: string[] = [];
         const mealIdsToDelete: number[] = [];
         queueRef.current.forEach((p) => {
+            // Cancel tasks that are in-flight (uploading/processing with taskId)
+            if (p.taskId && p.status !== 'success' && p.status !== 'error') {
+                taskIdsToCancel.push(p.taskId);
+            }
+            // Also try to delete meals (best effort)
             if (p.mealId && p.status !== 'success' && p.status !== 'error') {
                 mealIdsToDelete.push(p.mealId);
             }
@@ -345,7 +352,12 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
             })
         );
 
-        // Delete orphan meals from server (fire-and-forget, don't block UI)
+        // Cancel tasks on backend (fire-and-forget) - prevents meal creation
+        taskIdsToCancel.forEach((taskId) => {
+            void cancelAiTask(taskId);
+        });
+
+        // Delete orphan meals from server (fire-and-forget, best effort)
         mealIdsToDelete.forEach((mealId) => {
             api.deleteMeal(mealId).catch((err) => {
                 console.warn('[cancelBatch] Failed to delete meal', mealId, err);

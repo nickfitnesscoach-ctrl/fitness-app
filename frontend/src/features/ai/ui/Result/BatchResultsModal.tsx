@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Check, AlertCircle, X, ChevronLeft, ChevronRight, Flame, Drumstick, Droplets, Wheat, RefreshCcw, Camera } from 'lucide-react';
 import type { RecognizedItem } from '../../api';
 import type { PhotoQueueItem } from '../../model';
-import { AI_ERROR_CODES } from '../../model';
+import { AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES } from '../../model';
 
 interface BatchResultsModalProps {
     photoQueue: PhotoQueueItem[];
@@ -26,9 +26,10 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
 
     const totalCount = photoQueue.length;
     const successCount = photoQueue.filter((p) => p.status === 'success').length;
-    // Count ALL errors (including cancelled) as retryable now
-    const errorCount = photoQueue.filter((p) => p.status === 'error').length;
-    const cancelledCount = photoQueue.filter((p) => p.errorCode === AI_ERROR_CODES.CANCELLED).length;
+    // Retryable = all errors EXCEPT non-retryable codes (e.g., daily limit)
+    const retryableCount = photoQueue.filter(
+        (p) => p.status === 'error' && !NON_RETRYABLE_ERROR_CODES.has(p.errorCode || '')
+    ).length;
 
     const selectedItem = useMemo(() => photoQueue.find((p) => p.id === selectedId), [photoQueue, selectedId]);
 
@@ -147,13 +148,13 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                 </div>
 
                 <div className="p-4 border-t border-gray-100 shrink-0 bg-white sm:rounded-b-3xl pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pb-4 space-y-3">
-                    {errorCount > 0 && onRetryAll && (
+                    {retryableCount >= 2 && onRetryAll && (
                         <button
                             onClick={onRetryAll}
                             className="w-full bg-blue-50 text-blue-600 py-4 rounded-2xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
                         >
                             <RefreshCcw size={18} />
-                            Повторить {cancelledCount > 0 && errorCount === cancelledCount ? 'отменённые' : 'ошибки'} ({errorCount})
+                            Повторить все ({retryableCount})
                         </button>
                     )}
 

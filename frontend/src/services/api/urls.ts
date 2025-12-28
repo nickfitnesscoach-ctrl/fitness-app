@@ -40,4 +40,5 @@ export const URLS = {
     // AI endpoints
     recognize: `${API_BASE}/ai/recognize/`,
     taskStatus: (taskId: string) => `${API_BASE}/ai/task/${taskId}/`,
+    cancelTask: (taskId: string) => `${API_BASE}/ai/task/${taskId}/cancel/`,
 };

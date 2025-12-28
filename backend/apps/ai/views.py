@@ -249,3 +249,56 @@ class TaskStatusView(APIView):
         resp = Response(data, status=status.HTTP_200_OK)
         resp["X-Request-ID"] = request_id
         return resp
+
+
+class CancelTaskView(APIView):
+    """
+    POST /api/v1/ai/task/<task_id>/cancel/
+    
+    Marks a task as cancelled. The Celery task will check this flag
+    before creating a Meal, preventing orphan diary entries.
+    
+    Fire-and-forget from frontend perspective - always returns 200.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request, task_id: str) -> Response:
+        request_id = request.headers.get("X-Request-ID", "")
+
+        # Security: Verify task belongs to this user
+        owner_id = cache.get(f"ai_task_owner:{task_id}")
+        
+        if owner_id is None:
+            # Task doesn't exist or already expired - that's fine, just log
+            logger.info(
+                "[AI] Cancel request for unknown task: task_id=%s user_id=%s rid=%s",
+                task_id,
+                request.user.id,
+                request_id,
+            )
+            return Response({"ok": True}, status=status.HTTP_200_OK)
+
+        if int(owner_id) != request.user.id:
+            # Security: Don't reveal task existence to non-owners
+            logger.warning(
+                "[AI] Unauthorized cancel attempt: task_id=%s user_id=%s owner_id=%s rid=%s",
+                task_id,
+                request.user.id,
+                owner_id,
+                request_id,
+            )
+            return Response({"ok": True}, status=status.HTTP_200_OK)
+
+        # Set cancellation flag (24h TTL same as task ownership)
+        cache.set(f"ai_task_cancelled:{task_id}", request.user.id, timeout=86400)
+
+        logger.info(
+            "[AI] Task cancelled: task_id=%s user_id=%s rid=%s",
+            task_id,
+            request.user.id,
+            request_id,
+        )
+
+        return Response({"ok": True}, status=status.HTTP_200_OK)
+

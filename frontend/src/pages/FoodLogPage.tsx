@@ -16,7 +16,7 @@ import {
     convertHeicToJpeg,
     MEAL_TYPE_OPTIONS,
     AI_LIMITS,
-    AI_ERROR_CODES,
+    NON_RETRYABLE_ERROR_CODES,
 } from '../features/ai';
 import type { FileWithComment } from '../features/ai';
 
@@ -214,8 +214,11 @@ const FoodLogPage: React.FC = () => {
                         photoQueue={photoQueue}
                         onRetry={retryPhoto}
                         onRetryAll={() => {
+                            // Retry all retryable errors (not daily limit, etc.)
                             photoQueue.forEach((p) => {
-                                if (p.status === 'error' && p.errorCode !== AI_ERROR_CODES.CANCELLED) retryPhoto(p.id);
+                                if (p.status === 'error' && !NON_RETRYABLE_ERROR_CODES.has(p.errorCode || '')) {
+                                    retryPhoto(p.id);
+                                }
                             });
                         }}
                         onShowResults={() => setShowBatchResults(true)}
@@ -316,8 +319,11 @@ const FoodLogPage: React.FC = () => {
                         }}
                         onRetryAll={() => {
                             setShowBatchResults(false);
+                            // Retry all retryable errors (not daily limit, etc.)
                             photoQueue.forEach((p) => {
-                                if (p.status === 'error') retryPhoto(p.id);
+                                if (p.status === 'error' && !NON_RETRYABLE_ERROR_CODES.has(p.errorCode || '')) {
+                                    retryPhoto(p.id);
+                                }
                             });
                         }}
                         onClose={handleCloseResults}

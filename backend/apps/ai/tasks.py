@@ -45,6 +45,21 @@ def _to_decimal(value: Any, default: str = "0") -> Decimal:
         return Decimal(default)
 
 
+def _is_task_cancelled(task_id: str, user_id: int | None) -> bool:
+    """
+    Check if task was cancelled by user via CancelTaskView.
+    Returns True if task should abort without creating Meal.
+    """
+    from django.core.cache import cache
+
+    cancelled_by = cache.get(f"ai_task_cancelled:{task_id}")
+    if cancelled_by is not None:
+        # Verify it was cancelled by the same user (security)
+        if user_id is None or int(cancelled_by) == user_id:
+            return True
+    return False
+
+
 def _json_safe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Делаем items гарантированно JSON-safe:
@@ -283,6 +298,22 @@ def recognize_food_async(
             "items": [],
             "meal_id": None,
             "owner_id": user_id,  # P0-Ownership
+        }
+
+    # P0-Cancel: Check if task was cancelled before creating Meal
+    if _is_task_cancelled(task_id, user_id):
+        logger.info(
+            "[AI] Task cancelled before meal creation: task=%s user_id=%s rid=%s",
+            task_id,
+            user_id,
+            rid,
+        )
+        return {
+            "error": "CANCELLED",
+            "error_message": "Отменено",
+            "items": [],
+            "meal_id": None,
+            "owner_id": user_id,
         }
 
     # 3) Сохраняем в БД атомарно
