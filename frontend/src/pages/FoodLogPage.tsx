@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertCircle, Check, X, Send } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBilling } from '../contexts/BillingContext';
@@ -6,9 +6,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 import {
-    useFoodBatchAnalysis,
-    BatchResultsModal,
     SelectedPhotosList,
+    BatchResultsModal,
     BatchProcessingScreen,
     LimitReachedModal,
     UploadDropzone,
@@ -16,6 +15,7 @@ import {
     convertHeicToJpeg,
     MEAL_TYPE_OPTIONS,
     AI_LIMITS,
+    useAIProcessing,
 } from '../features/ai';
 import type { FileWithComment } from '../features/ai';
 
@@ -34,53 +34,54 @@ const FoodLogPage: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState<Date>(getInitialDate());
     const [mealType, setMealType] = useState<string>('breakfast');
     const [selectedFiles, setSelectedFiles] = useState<FileWithComment[]>([]);
-    const [showBatchResults, setShowBatchResults] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showLimitModal, setShowLimitModal] = useState(false);
 
-    const selectedFilesRef = useRef<FileWithComment[]>([]);
-    selectedFilesRef.current = selectedFiles;
-
     const {
-        isProcessing,
         photoQueue,
+        showResults, // from context
         startBatch,
         retryPhoto,
         retrySelected,
         removePhoto,
         cancelBatch,
         cleanup,
-    } = useFoodBatchAnalysis({
-        onDailyLimitReached: () => setShowLimitModal(true),
-        getDateString: () => selectedDate.toISOString().split('T')[0],
-        getMealType: () => mealType,
-    });
+        openResults,
+        closeResults,
+        hasInFlight
+    } = useAIProcessing();
 
-    // unmount cleanup
+    // Listen to global limit event if needed, or handle errors locally via context.
+    // For now, simpler: if context has error code DAILY_LIMIT_REACHED in queue, show modal?
+    // Let's keep it simple: if daily limit error appears in queue, we can show modal.
+    useEffect(() => {
+        const hasLimitError = photoQueue.some(p => p.errorCode === 'DAILY_LIMIT_REACHED');
+        if (hasLimitError && !showLimitModal) {
+            setShowLimitModal(true);
+        }
+    }, [photoQueue, showLimitModal]);
+
+    // unmount cleanup: ONLY revoke local preview urls
     useEffect(() => {
         return () => {
-            cleanup();
-            // revoke parent-owned urls (если остались до startBatch)
-            selectedFilesRef.current.forEach((f) => {
+            // DO NOT call cleanup() here - we want persistence!
+            // revoke local preview urls (if they haven't been passed to hook yet)
+            selectedFiles.forEach((f) => {
+                // We only own these if we are in "select" mode.
+                // If we started batch, ownership moved (files cleared).
                 if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
             });
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // auto-open results when finished (ALWAYS, even with errors)
+    // auto-open results when finished (handled by context mostly, but UI trigger here if needed)
+    // Actually, context has showResults state. We just use it.
     useEffect(() => {
-        const allDone =
-            photoQueue.length > 0 &&
-            photoQueue.every((p) => p.status === 'success' || p.status === 'error');
-
-        if (allDone && !isProcessing) {
-            setShowBatchResults(true);
-            if (selectedFilesRef.current.length > 0) setSelectedFiles([]);
-            billing.refresh();
+        if (showResults && selectedFiles.length > 0) {
+            setSelectedFiles([]);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [photoQueue, isProcessing]);
+    }, [showResults, selectedFiles]);
 
     const buildFileWithComment = async (file: File): Promise<FileWithComment> => {
         if (isHeicFile(file)) {
@@ -135,15 +136,34 @@ const FoodLogPage: React.FC = () => {
         if (selectedFiles.length === 0) return;
 
         // startBatch: hook takes ownership of previewUrl
-        startBatch(selectedFiles);
+        startBatch(selectedFiles, {
+            date: selectedDate.toISOString().split('T')[0],
+            mealType: mealType
+        });
 
         // parent drops references WITHOUT revoke
         setSelectedFiles([]);
     };
 
     const handleCloseResults = () => {
-        setShowBatchResults(false);
-        cleanup(); // revoke hook-owned URLs
+        closeResults();
+        // Option A: Just close modal (persistence). Do NOT cleanup status.
+        // User must explicitly click "Back to Camera" or "New Upload" to reset.
+        // But for "onClose" prop (clicking X or background), we usually just close window.
+        // If user wants to START NEW, they should hit button inside.
+
+        // Wait, current logic was: close -> return to camera state
+        // If we want to return to "Upload" screen, we need cleanup()
+        // If we want to keep results for later, we just closeResults().
+
+        // Let's stick to: "X" or backdrop -> just close modal.
+        // But if all done, maybe we want to cleanup?
+    };
+
+    const handleBackToCamera = () => {
+        // Explicit "I am done" action
+        closeResults();
+        cleanup();
         const dateStr = selectedDate.toISOString().split('T')[0];
         navigate(`/?date=${dateStr}`);
     };
@@ -169,7 +189,8 @@ const FoodLogPage: React.FC = () => {
         );
     }
 
-    const showProcessing = isProcessing || (photoQueue.length > 0 && !showBatchResults);
+    // Show processing if there's anything in flight, OR if we have active queue (completed) and NOT showing results yet
+    const showProcessing = hasInFlight && !showResults;
 
     return (
         <div className="min-h-screen min-h-dvh bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))]">
@@ -213,7 +234,7 @@ const FoodLogPage: React.FC = () => {
                     <BatchProcessingScreen
                         photoQueue={photoQueue}
                         onRetry={retryPhoto}
-                        onShowResults={() => setShowBatchResults(true)}
+                        onShowResults={openResults}
                         onCancel={cancelBatch}
                     />
                 ) : selectedFiles.length > 0 ? (
@@ -302,7 +323,7 @@ const FoodLogPage: React.FC = () => {
                     />
                 )}
 
-                {showBatchResults && (
+                {showResults && (
                     <BatchResultsModal
                         photoQueue={photoQueue}
                         onRetry={(id) => {
@@ -310,16 +331,20 @@ const FoodLogPage: React.FC = () => {
                             retryPhoto(id);
                         }}
                         onRetrySelected={(ids) => {
-                            setShowBatchResults(false);
+                            // Close results to show processing screen? Or keep results open?
+                            // If we retry, status becomes pending. 
+                            // If we keep results open, we see update there.
+                            // If we close results, we go to BatchProcessingScreen.
+                            // Better UX: Close results so user sees progress in ProcessingScreen?
+                            // OR: BatchResultsModal handles progress inside itself? 
+                            // Currently BatchResults is static. 
+                            // Let's close results to show main processing screen.
+                            closeResults();
                             retrySelected(ids);
                         }}
                         onClose={handleCloseResults}
                         onRemove={removePhoto}
-                        onBackToCamera={() => {
-                            setShowBatchResults(false);
-                            cleanup();
-                            // Stay on camera page
-                        }}
+                        onBackToCamera={handleBackToCamera}
                     />
                 )}
 

@@ -17,7 +17,7 @@ import { api } from '../../../services/api';
 interface UseFoodBatchAnalysisResult {
     isProcessing: boolean;
     photoQueue: PhotoQueueItem[];
-    startBatch: (files: FileWithComment[]) => Promise<void>;
+    startBatch: (files: FileWithComment[], context: { date: string; mealType: string }) => Promise<void>;
     /** Mark single photo for retry (does NOT auto-start processing) */
     retryPhoto: (id: string) => void;
     /** Mark multiple photos for retry and start processing */
@@ -56,6 +56,9 @@ const getPollingDelay = (elapsedMs: number, attempt: number) => {
 export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatchAnalysisResult => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [photoQueue, setPhotoQueue] = useState<PhotoQueueItem[]>([]);
+
+    // Store context for processing (date, mealType)
+    const contextRef = useRef<{ date: string; mealType: string }>({ date: '', mealType: '' });
 
     const isMountedRef = useRef(true);
     const queueRef = useRef<PhotoQueueItem[]>([]);
@@ -169,8 +172,9 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
 
                 updatePhoto(id, { status: 'uploading' });
 
-                const dateStr = options.getDateString();
-                const mealType = String(options.getMealType()).toLowerCase();
+                // Use context from ref
+                const dateStr = contextRef.current.date || new Date().toISOString().split('T')[0];
+                const mealType = contextRef.current.mealType || 'snack';
 
                 const rr: RecognizeResponse = await recognizeFood(
                     pre.file,
@@ -234,8 +238,11 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
     );
 
     const startBatch = useCallback(
-        async (files: FileWithComment[]) => {
+        async (files: FileWithComment[], context: { date: string; mealType: string }) => {
             if (processingRef.current) return;
+
+            // Save context for processing
+            contextRef.current = context;
 
             // new run
             cancelledRef.current = false;

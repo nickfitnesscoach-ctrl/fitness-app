@@ -67,6 +67,4 @@ export interface BatchProgress {
 /** Options for batch analysis hook */
 export interface BatchAnalysisOptions {
     onDailyLimitReached?: () => void;
-    getDateString: () => string;
-    getMealType: () => string;
 }

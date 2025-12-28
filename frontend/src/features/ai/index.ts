@@ -67,6 +67,11 @@ export {
     getAiErrorMessage,
 } from './model';
 
+export {
+    AIProcessingProvider,
+    useAIProcessing
+} from './context/AIProcessingContext';
+
 export type { AiErrorCode } from './model';
 
 // ============================================================

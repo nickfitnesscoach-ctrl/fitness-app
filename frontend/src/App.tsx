@@ -23,6 +23,9 @@ import OfflineIndicator from './components/OfflineIndicator';
 import MealDetailsPage from './pages/MealDetailsPage';
 // Billing feature module
 import { SubscriptionPage, SubscriptionDetailsPage, PaymentHistoryPage } from './features/billing';
+// AI Context
+import { AIProcessingProvider } from './features/ai/context/AIProcessingContext';
+
 function App() {
   const [isReady, setIsReady] = useState(false);
 
@@ -88,30 +91,32 @@ function App() {
                   {/* Pages show "Open via Telegram" message instead of modal */}
                   {/* F-013: Offline indicator */}
                   <OfflineIndicator />
-                  <Router basename="/app">
-                    <Routes>
-                      {/* Client Routes - КБЖУ трекер на главной (для всех) */}
-                      <Route path="/" element={<ClientLayout />}>
-                        <Route index element={<ClientDashboard />} />
-                        <Route path="log" element={<FoodLogPage />} />
-                        <Route path="meal/:id" element={<MealDetailsPage />} />
-                        <Route path="subscription" element={<SubscriptionPage />} />
-                        <Route path="profile" element={<ProfilePage />} />
-                        <Route path="settings" element={<SettingsPage />} />
-                        <Route path="settings/subscription" element={<SubscriptionDetailsPage />} />
-                        <Route path="settings/history" element={<PaymentHistoryPage />} />
-                      </Route>
+                  <AIProcessingProvider>
+                    <Router basename="/app">
+                      <Routes>
+                        {/* Client Routes - КБЖУ трекер на главной (для всех) */}
+                        <Route path="/" element={<ClientLayout />}>
+                          <Route index element={<ClientDashboard />} />
+                          <Route path="log" element={<FoodLogPage />} />
+                          <Route path="meal/:id" element={<MealDetailsPage />} />
+                          <Route path="subscription" element={<SubscriptionPage />} />
+                          <Route path="profile" element={<ProfilePage />} />
+                          <Route path="settings" element={<SettingsPage />} />
+                          <Route path="settings/subscription" element={<SubscriptionDetailsPage />} />
+                          <Route path="settings/history" element={<PaymentHistoryPage />} />
+                        </Route>
 
-                      {/* Trainer Panel Routes - панель тренера /panel */}
-                      <Route path="/panel" element={<Layout />}>
-                        <Route index element={<Dashboard />} />
-                        <Route path="applications" element={<ApplicationsPage />} />
-                        <Route path="clients" element={<ClientsPage />} />
-                        <Route path="invite-client" element={<InviteClientPage />} />
-                        <Route path="subscribers" element={<SubscribersPage />} />
-                      </Route>
-                    </Routes>
-                  </Router>
+                        {/* Trainer Panel Routes - панель тренера /panel */}
+                        <Route path="/panel" element={<Layout />}>
+                          <Route index element={<Dashboard />} />
+                          <Route path="applications" element={<ApplicationsPage />} />
+                          <Route path="clients" element={<ClientsPage />} />
+                          <Route path="invite-client" element={<InviteClientPage />} />
+                          <Route path="subscribers" element={<SubscribersPage />} />
+                        </Route>
+                      </Routes>
+                    </Router>
+                  </AIProcessingProvider>
                 </ToastProvider>
               </ClientsProvider>
             </BillingProvider>
