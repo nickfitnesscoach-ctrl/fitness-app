@@ -162,18 +162,15 @@ const FoodLogPage: React.FC = () => {
     };
 
     const handleCloseResults = () => {
+        // First cleanup (clears photoQueue)
+        cleanup();
+        // Then close modal
         closeResults();
-        // Option A: Just close modal (persistence). Do NOT cleanup status.
-        // User must explicitly click "Back to Camera" or "New Upload" to reset.
-        // But for "onClose" prop (clicking X or background), we usually just close window.
-        // If user wants to START NEW, they should hit button inside.
-
-        // Wait, current logic was: close -> return to camera state
-        // If we want to return to "Upload" screen, we need cleanup()
-        // If we want to keep results for later, we just closeResults().
-
-        // Let's stick to: "X" or backdrop -> just close modal.
-        // But if all done, maybe we want to cleanup?
+        // Navigate to diary with selected date after a small delay to ensure cleanup completes
+        const dateStr = selectedDate.toISOString().split('T')[0];
+        setTimeout(() => {
+            navigate(`/?date=${dateStr}`);
+        }, 0);
     };
 
     const handleBackToCamera = () => {
