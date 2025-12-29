@@ -22,7 +22,7 @@ const SubscriptionPage: React.FC = () => {
     const subscriptionStatus = useSubscriptionStatus(billing.subscription);
 
     const {
-        loadingPlanId,
+        loadingPlanCode,
         togglingAutoRenew,
         handleSelectPlan,
         handleToggleAutoRenew,
@@ -82,7 +82,7 @@ const SubscriptionPage: React.FC = () => {
                             isPro: subscriptionStatus.isPro,
                             isExpired: subscriptionStatus.isExpired,
                             expiresAt: billing.subscription?.expires_at ?? null,
-                            loadingPlanId,
+                            loadingPlanCode,
                             togglingAutoRenew,
                             handleSelectPlan,
                             handleToggleAutoRenew,
@@ -92,10 +92,10 @@ const SubscriptionPage: React.FC = () => {
 
                         return (
                             <PlanCard
-                                key={plan.id}
+                                key={plan.code}
                                 plan={plan}
                                 isCurrent={cardState.isCurrent}
-                                isLoading={loadingPlanId === plan.id}
+                                isLoading={loadingPlanCode === plan.code}
                                 onSelect={handleSelectPlan}
                                 customButtonText={cardState.customButtonText}
                                 disabled={cardState.disabled}

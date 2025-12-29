@@ -12,7 +12,7 @@ export { default as PaymentHistoryPage } from './pages/PaymentHistoryPage';
 
 // Components
 export { default as PlanCard } from './components/PlanCard';
-export type { Plan, PlanId } from './components/PlanCard';
+export type { PlanCode } from './components/PlanCard';
 export { SubscriptionHeader } from './components/subscription/SubscriptionHeader';
 export { default as AdminTestPaymentCard } from './components/billing/AdminTestPaymentCard';
 export { default as PaymentHistoryList } from './components/billing/PaymentHistoryList';

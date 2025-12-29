@@ -1,25 +1,14 @@
 import React from 'react';
 import { Check } from 'lucide-react';
+import type { SubscriptionPlan } from '../../../types/billing';
 
-export type PlanId = string;
-
-export interface Plan {
-    id: PlanId;
-    code: string; // Real API code
-    name: string;
-    priceText: string;
-    oldPriceText?: string;
-    priceSubtext?: string;
-    tag?: string;
-    features: string[];
-    isPopular?: boolean;
-}
+export type PlanCode = string;
 
 interface PlanCardProps {
-    plan: Plan;
+    plan: SubscriptionPlan;
     isCurrent: boolean;
     isLoading: boolean;
-    onSelect: (planId: PlanId) => void;
+    onSelect: (planCode: PlanCode) => void;
     customButtonText?: string;
     disabled?: boolean;
     bottomContent?: React.ReactNode;
@@ -34,8 +23,25 @@ const PlanCard: React.FC<PlanCardProps> = ({
     disabled,
     bottomContent
 }) => {
-    const isFree = plan.id === 'free';
-    const isYearly = plan.id === 'pro_yearly';
+    // Derive plan type from code (SSOT)
+    const isFree = plan.code === 'FREE';
+    const isYearly = plan.code === 'PRO_YEARLY';
+    const isMonthly = plan.code === 'PRO_MONTHLY';
+
+    // Derive display fields from SubscriptionPlan
+    const priceText = isFree
+        ? '0 ₽'
+        : isMonthly
+            ? `${plan.price} ₽ / мес`
+            : `${plan.price} ₽ / год`;
+
+    const oldPriceText = plan.old_price ? `${plan.old_price} ₽` : undefined;
+
+    const priceSubtext = isYearly
+        ? `≈ ${Math.round(plan.price / 12)} ₽ / мес`
+        : undefined;
+
+    const tag = plan.is_popular ? 'POPULAR' : (isYearly ? '🔥 2 месяца в подарок' : undefined);
 
     // Premium Styles based on plan type
     const cardClasses = isFree
@@ -49,9 +55,9 @@ const PlanCard: React.FC<PlanCardProps> = ({
     return (
         <div className={`relative rounded-2xl p-5 overflow-hidden flex flex-col transition-all duration-300 ring-1 ring-black/5 ${cardClasses}`}>
             {/* Tag Badge */}
-            {plan.tag && (
+            {tag && (
                 <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[10px] font-black tracking-widest uppercase z-10 ${badgeClasses}`}>
-                    {plan.tag}
+                    {tag}
                 </div>
             )}
 
@@ -65,15 +71,10 @@ const PlanCard: React.FC<PlanCardProps> = ({
 
                 <div className="flex items-end justify-between gap-2">
                     <div className="flex flex-col">
-                        <h2 className="text-xl font-extrabold tracking-tight mb-0.5">{plan.name}</h2>
-                        {isFree && (
-                            <p className="text-[11px] font-medium text-slate-500">
-                                3 фото/день · 7 дней истории
-                            </p>
-                        )}
+                        <h2 className="text-xl font-extrabold tracking-tight mb-0.5">{plan.display_name}</h2>
                         {!isFree && (
                             <p className={`text-[11px] font-bold uppercase tracking-wider ${isYearly ? 'text-amber-400' : 'text-slate-400'}`}>
-                                {isYearly ? 'Максимальная выгода' : 'Полный безлимит'}
+                                {isYearly ? 'Выбор пользователей' : 'Полный безлимит'}
                             </p>
                         )}
                     </div>
@@ -84,19 +85,19 @@ const PlanCard: React.FC<PlanCardProps> = ({
                         {!isFree && <div className="absolute inset-0 bg-white/5 blur-xl -z-10" />}
 
                         <div className="flex items-baseline gap-1.5">
-                            {plan.oldPriceText && (
+                            {oldPriceText && (
                                 <span className={`text-[11px] font-medium line-through decoration-1 ${isFree ? 'text-slate-300' : 'text-slate-600'}`}>
-                                    {plan.oldPriceText}
+                                    {oldPriceText}
                                 </span>
                             )}
                             <span className={`text-2xl font-black tabular-nums tracking-tighter ${!isFree ? 'text-white drop-shadow-sm' : 'text-slate-900'}`}>
-                                {plan.priceText.split(' ')[0]}
-                                <small className="text-xs font-bold ml-0.5 opacity-80 uppercase">{plan.priceText.split(' ').slice(1).join(' ')}</small>
+                                {priceText.split(' ')[0]}
+                                <small className="text-xs font-bold ml-0.5 opacity-80 uppercase">{priceText.split(' ').slice(1).join(' ')}</small>
                             </span>
                         </div>
-                        {plan.priceSubtext && (
+                        {priceSubtext && (
                             <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isFree ? 'text-slate-400' : 'text-slate-500'}`}>
-                                {plan.priceSubtext}
+                                {priceSubtext}
                             </p>
                         )}
                     </div>
@@ -106,7 +107,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
             {/* Features list - emphasized for PRO */}
             <div className={`mb-6 p-4 rounded-xl flex-grow ${isFree ? 'bg-slate-50/50' : 'bg-white/5 border border-white/5'}`}>
                 <ul className="space-y-3">
-                    {plan.features.map((feature, i) => {
+                    {(plan.features || []).map((feature, i) => {
                         // Detect if feature starts with an emoji to hide the checkmark
                         const hasEmoji = /^\p{Emoji}/u.test(feature);
 
@@ -132,7 +133,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
                     bottomContent
                 ) : (
                     <button
-                        onClick={() => onSelect(plan.id)}
+                        onClick={() => onSelect(plan.code)}
                         disabled={isCurrent || isLoading || disabled}
                         className={`w-full h-12 rounded-xl font-black text-[13px] uppercase tracking-wider transition-all active:scale-[0.98] flex items-center justify-center gap-2
                             ${disabled
@@ -154,7 +155,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
                         ) : isCurrent ? (
                             "Выбрано"
                         ) : (
-                            isFree ? "Начать тут" : (isYearly ? "Получить PRO навсегда*" : "Подключить PRO")
+                            isFree ? "ПРОДОЛЖИТЬ БЕСПЛАТНО" : (isYearly ? "ЗАБРАТЬ ПЛАН+ PRO" : "Попробовать PRO")
                         )}
                     </button>
                 )}
@@ -164,3 +165,4 @@ const PlanCard: React.FC<PlanCardProps> = ({
 };
 
 export default PlanCard;
+

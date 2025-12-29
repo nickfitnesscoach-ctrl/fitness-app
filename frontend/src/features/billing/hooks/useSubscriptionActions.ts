@@ -1,20 +1,22 @@
 import { useState, useRef } from 'react';
-import type { PlanId, Plan } from '../components/PlanCard';
+import type { SubscriptionPlan } from '../../../types/billing';
 import { api } from '../../../services/api';
 import { useBilling } from '../../../contexts/BillingContext';
 import { showToast } from '../utils/notify';
 import { setPollingFlagForPayment } from './usePaymentPolling';
 
+export type PlanCode = string;
+
 interface UseSubscriptionActionsParams {
-    plans: Plan[];
+    plans: SubscriptionPlan[];
     isBrowserDebug: boolean;
     webAppBrowserDebug: boolean;
 }
 
 interface UseSubscriptionActionsResult {
-    loadingPlanId: PlanId | null;
+    loadingPlanCode: PlanCode | null;
     togglingAutoRenew: boolean;
-    handleSelectPlan: (planId: PlanId) => Promise<void>;
+    handleSelectPlan: (planCode: PlanCode) => Promise<void>;
     handleToggleAutoRenew: () => Promise<void>;
     handleAddCard: () => Promise<void>;
 }
@@ -31,7 +33,7 @@ export const useSubscriptionActions = ({
     webAppBrowserDebug,
 }: UseSubscriptionActionsParams): UseSubscriptionActionsResult => {
     const billing = useBilling();
-    const [loadingPlanId, setLoadingPlanId] = useState<PlanId | null>(null);
+    const [loadingPlanCode, setLoadingPlanCode] = useState<PlanCode | null>(null);
     const [togglingAutoRenew, setTogglingAutoRenew] = useState(false);
 
     // In-flight request lock to prevent double-clicks
@@ -42,11 +44,11 @@ export const useSubscriptionActions = ({
      * Protected against double-click via in-flight lock
      * Sets polling flag for automatic status update after return from payment
      */
-    const handleSelectPlan = async (planId: PlanId) => {
-        const lockKey = `payment-${planId}`;
+    const handleSelectPlan = async (planCode: PlanCode) => {
+        const lockKey = `payment-${planCode}`;
 
         // Check both loading state and in-flight lock
-        if (loadingPlanId || inFlightRef.current.has(lockKey)) {
+        if (loadingPlanCode || inFlightRef.current.has(lockKey)) {
             return;
         }
 
@@ -62,12 +64,12 @@ export const useSubscriptionActions = ({
         inFlightRef.current.add(lockKey);
 
         try {
-            setLoadingPlanId(planId);
-            const plan = plans.find(p => p.id === planId);
+            setLoadingPlanCode(planCode);
+            const plan = plans.find(p => p.code === planCode);
             if (!plan) throw new Error("Plan not found");
 
             const { confirmation_url } = await api.createPayment({
-                plan_code: plan.code,
+                plan_code: planCode,
                 save_payment_method: true
             });
 
@@ -87,7 +89,7 @@ export const useSubscriptionActions = ({
         } finally {
             // Release lock
             inFlightRef.current.delete(lockKey);
-            setLoadingPlanId(null);
+            setLoadingPlanCode(null);
         }
     };
 
@@ -148,7 +150,7 @@ export const useSubscriptionActions = ({
     };
 
     return {
-        loadingPlanId,
+        loadingPlanCode,
         togglingAutoRenew,
         handleSelectPlan,
         handleToggleAutoRenew,

@@ -1,5 +1,6 @@
 import React from 'react';
-import type { Plan, PlanId } from '../components/PlanCard';
+import type { SubscriptionPlan } from '../../../types/billing';
+import type { PlanCode } from '../hooks/useSubscriptionActions';
 import { Loader2 } from 'lucide-react';
 import type { SubscriptionDetails, BillingMe } from '../../../types/billing';
 import { formatDate } from './date';
@@ -17,15 +18,15 @@ interface PlanCardState {
 }
 
 interface BuildPlanCardStateParams {
-    plan: Plan;
+    plan: SubscriptionPlan;
     subscription: SubscriptionDetails | null;
     billing: BillingContextData;
     isPro: boolean;
     isExpired: boolean;
     expiresAt: string | null;
-    loadingPlanId: PlanId | null;
+    loadingPlanCode: PlanCode | null;
     togglingAutoRenew: boolean;
-    handleSelectPlan: (planId: PlanId) => void;
+    handleSelectPlan: (planCode: PlanCode) => void;
     handleToggleAutoRenew: () => void;
     handleAddCard: () => void;
     navigate: (path: string) => void;
@@ -38,7 +39,7 @@ export const buildPlanCardState = ({
     isPro,
     isExpired,
     expiresAt,
-    loadingPlanId,
+    loadingPlanCode,
     togglingAutoRenew,
     handleSelectPlan,
     handleToggleAutoRenew,
@@ -59,7 +60,7 @@ export const buildPlanCardState = ({
         (subscription.plan === 'free' ? 'FREE' : 'PRO_MONTHLY');
 
     // FREE CARD
-    if (plan.id === 'free') {
+    if (plan.code === 'FREE') {
         if (subscription.plan === 'pro' && subscription.is_active) {
             isCurrent = false;
             disabled = true;
@@ -72,11 +73,11 @@ export const buildPlanCardState = ({
     }
     // PRO CARDS
     else {
-        // Map plan.id to proper plan codes (not legacy)
-        const planCode = plan.id === 'pro_monthly' ? 'PRO_MONTHLY' : 'PRO_YEARLY';
+        // plan.code is already 'PRO_MONTHLY' or 'PRO_YEARLY'
+        const currentPlanCode = plan.code;
 
         // If this specific PRO plan is active
-        if (userPlanCode === planCode) {
+        if (userPlanCode === currentPlanCode) {
             isCurrent = true;
 
             const autoRenew = subscription.autorenew_enabled;
@@ -162,14 +163,14 @@ export const buildPlanCardState = ({
                         </p>
                     </div>
                     <button
-                        onClick={() => handleSelectPlan(plan.id)}
-                        disabled={loadingPlanId === plan.id}
+                        onClick={() => handleSelectPlan(plan.code)}
+                        disabled={loadingPlanCode === plan.code}
                         className="w-full h-11 bg-white text-slate-900 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
                     >
-                        {loadingPlanId === plan.id ? (
+                        {loadingPlanCode === plan.code ? (
                             <Loader2 className="animate-spin" size={16} />
                         ) : (
-                            `Восстановить за ${plan.priceText.split(' ')[0]} ₽`
+                            `Восстановить за ${plan.price} ₽`
                         )}
                     </button>
                 </div>
