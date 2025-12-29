@@ -21,6 +21,7 @@ import SubscribersPage from './features/trainer-panel/pages/SubscribersPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import OfflineIndicator from './components/OfflineIndicator';
 import MealDetailsPage from './pages/MealDetailsPage';
+import WeeklyStatsPage from './pages/WeeklyStatsPage';
 // Billing feature module
 import { SubscriptionPage, SubscriptionDetailsPage, PaymentHistoryPage } from './features/billing';
 // AI Context
@@ -101,6 +102,7 @@ function App() {
                           <Route path="meal/:id" element={<MealDetailsPage />} />
                           <Route path="subscription" element={<SubscriptionPage />} />
                           <Route path="profile" element={<ProfilePage />} />
+                          <Route path="weekly-stats" element={<WeeklyStatsPage />} />
                           <Route path="settings" element={<SettingsPage />} />
                           <Route path="settings/subscription" element={<SubscriptionDetailsPage />} />
                           <Route path="settings/history" element={<PaymentHistoryPage />} />

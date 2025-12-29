@@ -2,8 +2,7 @@ import React from 'react';
 import { TrendingUp, ChevronRight } from 'lucide-react';
 
 interface WeeklyStatsCardProps {
-    isOpen: boolean;
-    onToggle: () => void;
+    onClick: () => void;
     avgCalories: number;
     avgProtein: number;
     avgFat: number;
@@ -11,59 +10,46 @@ interface WeeklyStatsCardProps {
 }
 
 const WeeklyStatsCard: React.FC<WeeklyStatsCardProps> = ({
-    isOpen,
-    onToggle,
+    onClick,
     avgCalories,
     avgProtein,
     avgFat,
     avgCarbs
 }) => {
     return (
-        <div className="bg-white rounded-3xl shadow-lg overflow-hidden mb-4 transition-all duration-300">
-            <div
-                className="py-0.5 px-4 flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
-                onClick={onToggle}
-            >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-500 rounded-xl flex items-center justify-center shrink-0 mt-1">
-                        <TrendingUp size={24} className="text-white" />
+        <div
+            className="bg-white rounded-[var(--radius-card)] shadow-sm border border-gray-100 overflow-hidden cursor-pointer active:scale-[0.98] transition-all"
+            onClick={onClick}
+        >
+            <div className="p-[var(--card-p)] flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shrink-0">
+                        <TrendingUp size={20} className="text-white" />
                     </div>
-                    <div className="min-w-0 flex flex-col justify-center">
-                        <h2 className="text-lg font-bold text-gray-900 truncate leading-tight">Среднее КБЖУ за неделю</h2>
-                        <p className="text-xs text-gray-500 leading-tight">Ваш прогресс</p>
+                    <div className="min-w-0">
+                        <h2 className="text-sm font-bold text-gray-900 leading-tight">Недельная статистика</h2>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-tighter">Среднее за 7 дней</p>
                     </div>
                 </div>
-                <ChevronRight
-                    size={24}
-                    className={`text-gray-400 transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-90' : ''}`}
-                />
+                <ChevronRight size={20} className="text-gray-300 transition-transform" />
             </div>
 
-            <div className={`grid grid-cols-2 gap-2 px-4 pb-4 transition-all duration-300 origin-top ${isOpen ? 'opacity-100 max-h-[500px] mt-0' : 'opacity-0 max-h-0 overflow-hidden mt-0 pb-0'
-                }`}>
-                <div className="flex flex-col p-3 bg-orange-50 rounded-xl">
-                    <span className="text-gray-600 text-xs mb-0.5">Калории</span>
-                    <span className="text-xl font-bold text-orange-600">{avgCalories}</span>
-                    <span className="text-xs text-gray-500">ккал/день</span>
-                </div>
-                <div className="flex flex-col p-3 bg-blue-50 rounded-xl">
-                    <span className="text-gray-600 text-xs mb-0.5">Белки</span>
-                    <span className="text-xl font-bold text-blue-600">{avgProtein}г</span>
-                    <span className="text-xs text-gray-500">в среднем</span>
-                </div>
-                <div className="flex flex-col p-3 bg-yellow-50 rounded-xl">
-                    <span className="text-gray-600 text-xs mb-0.5">Жиры</span>
-                    <span className="text-xl font-bold text-yellow-600">{avgFat}г</span>
-                    <span className="text-xs text-gray-500">в среднем</span>
-                </div>
-                <div className="flex flex-col p-3 bg-green-50 rounded-xl">
-                    <span className="text-gray-600 text-xs mb-0.5">Углеводы</span>
-                    <span className="text-xl font-bold text-green-600">{avgCarbs}г</span>
-                    <span className="text-xs text-gray-500">в среднем</span>
-                </div>
+            {/* Compact Metrics Strip */}
+            <div className="px-[var(--card-p)] pb-[var(--card-p)] grid grid-cols-4 gap-2 border-t border-gray-50 pt-3">
+                <Metric label="Ккал" value={avgCalories} color="text-orange-600" bgColor="bg-orange-50" />
+                <Metric label="Белки" value={`${avgProtein}г`} color="text-blue-600" bgColor="bg-blue-50" />
+                <Metric label="Жиры" value={`${avgFat}г`} color="text-yellow-600" bgColor="bg-yellow-50" />
+                <Metric label="Углев." value={`${avgCarbs}г`} color="text-green-600" bgColor="bg-green-50" />
             </div>
         </div>
     );
 };
+
+const Metric: React.FC<{ label: string, value: string | number, color: string, bgColor: string }> = ({ label, value, color, bgColor }) => (
+    <div className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-lg ${bgColor}`}>
+        <span className={`text-[11px] font-bold ${color} tabular-nums`}>{value}</span>
+        <span className="text-[8px] text-gray-400 font-medium uppercase">{label}</span>
+    </div>
+);
 
 export default WeeklyStatsCard;

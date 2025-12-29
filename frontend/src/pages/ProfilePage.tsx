@@ -27,7 +27,6 @@ const ProfilePage: React.FC = () => {
     const { isReady, isTelegramWebApp: webAppDetected, isBrowserDebug: webAppBrowserDebug } = useTelegramWebApp();
     const [isEditing, setIsEditing] = useState(false);
     const [isEditingGoals, setIsEditingGoals] = useState(false);
-    const [isWeeklyStatsOpen, setIsWeeklyStatsOpen] = useState(false);
 
     const [goals, setGoals] = useState<UserGoals | null>(null);
     const [editedGoals, setEditedGoals] = useState<UserGoals | null>(null);
@@ -206,7 +205,13 @@ const ProfilePage: React.FC = () => {
                 </div>
 
                 <GoalsSection goals={goals} editedGoals={editedGoals} isEditingGoals={isEditingGoals} isLoading={contextLoading} error={error} onEdit={handleEditGoals} onChangeBju={handleBJUChange} onAutoCalculate={handleAutoCalculate} onSave={handleSaveGoals} onCancel={handleCancelEdit} />
-                <WeeklyStatsCard isOpen={isWeeklyStatsOpen} onToggle={() => setIsWeeklyStatsOpen(!isWeeklyStatsOpen)} avgCalories={avgCalories} avgProtein={avgProtein} avgFat={avgFat} avgCarbs={avgCarbs} />
+                <WeeklyStatsCard
+                    onClick={() => navigate('/weekly-stats')}
+                    avgCalories={avgCalories}
+                    avgProtein={avgProtein}
+                    avgFat={avgFat}
+                    avgCarbs={avgCarbs}
+                />
 
                 <div className="bg-white rounded-[var(--radius-card)] shadow-sm border border-gray-100 p-[var(--card-p)] cursor-pointer active:scale-[0.98] transition-all" onClick={() => navigate('/settings')}>
                     <div className="flex items-center justify-between">
