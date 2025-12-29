@@ -119,7 +119,19 @@ export const getMealAnalysis = async (
                 protein: item.protein,
                 fat: item.fat,
                 carbohydrates: item.carbohydrates
-            }))
+            })),
+            // Multi-photo support
+            photos: (data.photos || []).map((photo: any) => ({
+                id: photo.id,
+                image_url: resolveImageUrl(photo.image_url),
+                status: photo.status,
+                status_display: photo.status_display,
+                error_message: photo.error_message,
+                created_at: photo.created_at
+            })),
+            photo_count: data.photo_count,
+            status: data.status,
+            status_display: data.status_display
         };
     } catch (error) {
         console.error('Error fetching meal analysis:', error);
