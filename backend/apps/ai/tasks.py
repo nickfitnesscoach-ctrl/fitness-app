@@ -135,7 +135,7 @@ def _on_task_failure(self, exc, task_id, args, kwargs, einfo):
 
 @shared_task(
     bind=True,
-    max_retries=3,
+    max_retries=1,
     retry_backoff=True,
     retry_backoff_max=60,
     retry_jitter=True,
