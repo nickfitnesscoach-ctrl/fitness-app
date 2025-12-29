@@ -106,16 +106,23 @@ const PlanCard: React.FC<PlanCardProps> = ({
             {/* Features list - emphasized for PRO */}
             <div className={`mb-6 p-4 rounded-xl flex-grow ${isFree ? 'bg-slate-50/50' : 'bg-white/5 border border-white/5'}`}>
                 <ul className="space-y-3">
-                    {plan.features.map((feature, i) => (
-                        <li key={i} className="flex items-start gap-3">
-                            <div className={`mt-0.5 shrink-0 w-4 h-4 rounded-full flex items-center justify-center ${isFree ? 'bg-slate-200 text-slate-500' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                <Check size={10} strokeWidth={4} />
-                            </div>
-                            <span className={`text-[13px] leading-snug font-medium ${isFree ? 'text-slate-600' : 'text-slate-200'}`}>
-                                {feature}
-                            </span>
-                        </li>
-                    ))}
+                    {plan.features.map((feature, i) => {
+                        // Detect if feature starts with an emoji to hide the checkmark
+                        const hasEmoji = /^\p{Emoji}/u.test(feature);
+
+                        return (
+                            <li key={i} className="flex items-start gap-3">
+                                {!hasEmoji && (
+                                    <div className={`mt-0.5 shrink-0 w-4 h-4 rounded-full flex items-center justify-center ${isFree ? 'bg-slate-200 text-slate-500' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                        <Check size={10} strokeWidth={4} />
+                                    </div>
+                                )}
+                                <span className={`text-[13px] leading-snug font-medium ${isFree ? 'text-slate-600' : 'text-slate-200'} ${hasEmoji ? 'ml-0' : ''}`}>
+                                    {feature}
+                                </span>
+                            </li>
+                        );
+                    })}
                 </ul>
             </div>
 
