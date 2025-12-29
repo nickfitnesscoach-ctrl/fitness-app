@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api, MealAnalysis, MealPhoto } from '../services/api';
 import PageHeader from '../components/PageHeader';
-import { Flame, Drumstick, Droplets, Wheat, Trash2, Edit2, ChevronLeft, ChevronRight, AlertCircle, XCircle, Loader2 } from 'lucide-react';
+import { Flame, Drumstick, Droplets, Wheat, Trash2, Edit2, ChevronLeft, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
 // F-019: Skeleton loaders for better loading UX
 import { SkeletonMealDetails } from '../components/Skeleton';
 // F-029: Toast notifications
@@ -227,29 +227,6 @@ const MealDetailsPage: React.FC = () => {
                 const safeIndex = Math.min(currentPhotoIndex, Math.max(0, displayPhotos.length - 1));
                 const currentPhoto = displayPhotos[safeIndex];
 
-                // Helper to render status badge for individual photo
-                // NOTE: PROCESSING/PENDING badges NOT shown for photos - meal-level status is used instead
-                const renderPhotoBadge = (status?: string) => {
-                    if (status === 'FAILED') {
-                        return (
-                            <div className="absolute top-4 left-4 bg-red-500 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5 shadow-lg">
-                                <AlertCircle size={16} />
-                                Ошибка
-                            </div>
-                        );
-                    }
-                    if (status === 'CANCELLED') {
-                        return (
-                            <div className="absolute top-4 left-4 bg-gray-500 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5 shadow-lg">
-                                <XCircle size={16} />
-                                Отменено
-                            </div>
-                        );
-                    }
-                    // No spinner for PROCESSING/PENDING - meal-level status is used
-                    return null;
-                };
-
                 // Meal-level processing badge (shown once, not per-photo)
                 const isMealProcessing = data.status === 'PROCESSING';
 
@@ -260,17 +237,10 @@ const MealDetailsPage: React.FC = () => {
                                 <img
                                     src={currentPhoto.url}
                                     alt={`${data.label} - фото ${safeIndex + 1}`}
-                                    className={`w-full h-full object-cover ${
-                                        currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
-                                            ? 'opacity-70'
-                                            : ''
-                                    }`}
+                                    className="w-full h-full object-cover"
                                 />
 
-                                {/* Status badge for photo errors (FAILED/CANCELLED) */}
-                                {renderPhotoBadge(currentPhoto.status)}
-
-                                {/* Meal-level processing badge */}
+                                {/* Meal-level processing badge (only for PROCESSING status) */}
                                 {isMealProcessing && (
                                     <div className="absolute top-4 left-4 bg-blue-500 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5 shadow-lg">
                                         <Loader2 size={16} className="animate-spin" />
@@ -331,13 +301,6 @@ const MealDetailsPage: React.FC = () => {
                                         </div>
                                     </>
                                 )}
-
-                                {/* Error message for failed photos */}
-                                {currentPhoto.status === 'FAILED' && currentPhoto.error && (
-                                    <div className="absolute bottom-20 left-4 right-4 bg-red-900/80 text-white px-3 py-2 rounded-lg text-sm">
-                                        {currentPhoto.error}
-                                    </div>
-                                )}
                             </>
                         ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -351,6 +314,24 @@ const MealDetailsPage: React.FC = () => {
                                 {data.label}
                             </span>
                         </div>
+                    </div>
+                );
+            })()}
+
+            {/* Info message if some photos failed */}
+            {(() => {
+                const failedCount = data.photos?.filter(p => p.status === 'FAILED' || p.status === 'CANCELLED').length || 0;
+                if (failedCount === 0) return null;
+
+                return (
+                    <div className="mx-4 mt-4 bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex items-start gap-2">
+                        <AlertCircle size={16} className="text-yellow-600 mt-0.5 shrink-0" />
+                        <p className="text-sm text-yellow-800">
+                            {failedCount === 1
+                                ? 'Одно из фото не удалось обработать и не учтено в расчётах'
+                                : `${failedCount} фото не удалось обработать и не учтены в расчётах`
+                            }
+                        </p>
                     </div>
                 );
             })()}
