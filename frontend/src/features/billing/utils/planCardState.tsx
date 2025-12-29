@@ -60,13 +60,14 @@ export const buildPlanCardState = ({
 
     // FREE CARD
     if (plan.id === 'free') {
-        if (userPlanCode === 'FREE') {
+        if (subscription.plan === 'pro' && subscription.is_active) {
+            isCurrent = false;
+            disabled = true;
+            customButtonText = "Базовый доступ";
+        } else if (subscription.plan === 'free') {
             isCurrent = true;
-            customButtonText = "Базовый бесплатный тариф";
             disabled = true;
-        } else {
-            customButtonText = "Базовый бесплатный тариф";
-            disabled = true;
+            customButtonText = "Ваш текущий тариф";
         }
     }
     // PRO CARDS
@@ -83,66 +84,62 @@ export const buildPlanCardState = ({
             const hasCard = paymentMethod?.is_attached ?? false;
 
             bottomContent = (
-                <div className="space-y-3 mt-auto">
+                <div className="space-y-4 mt-auto">
                     {/* Expiration Badge */}
-                    <div className="bg-white/10 rounded-lg p-3 text-center">
-                        <p className="text-sm font-medium text-white">
-                            Текущий план до {formatDate(expiresAt)}
+                    <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3 text-center">
+                        <p className="text-[13px] font-bold text-slate-100 uppercase tracking-wide">
+                            Доступ до {formatDate(expiresAt)}
                         </p>
                     </div>
 
                     {/* Auto-renew Status */}
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                         {hasCard && autoRenew ? (
                             // Variant 1: Auto-renew ON
                             <>
-                                <div className="flex items-center justify-center gap-2 text-sm text-green-400">
-                                    <span>🔄</span>
-                                    <span>Автопродление включено</span>
+                                <div className="flex items-center justify-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-widest">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    <span>Автопродление активно</span>
                                 </div>
-                                <p className="text-xs text-center text-gray-400">
-                                    {paymentMethod?.card_mask || 'Карта ••••'}
+                                <p className="text-[11px] text-center text-slate-500 font-medium">
+                                    Карта {paymentMethod?.card_mask || '•••• 0000'}
                                 </p>
                                 <button
                                     onClick={() => navigate('/settings')}
-                                    className="w-full text-center text-sm text-gray-300 hover:text-white underline decoration-gray-500 hover:decoration-white transition-all"
+                                    className="w-full text-center text-[11px] font-bold text-slate-400 hover:text-white transition-colors"
                                 >
-                                    Управлять автопродлением
+                                    УПРАВЛЯТЬ ПОДПИСКОЙ
                                 </button>
                             </>
                         ) : hasCard && !autoRenew ? (
                             // Variant 2: Auto-renew OFF
                             <>
-                                <div className="flex items-center justify-center gap-2 text-sm text-red-400">
-                                    <span>⛔</span>
+                                <div className="flex items-center justify-center gap-2 text-xs font-bold text-rose-400 uppercase tracking-widest">
+                                    <span>○</span>
                                     <span>Автопродление выключено</span>
                                 </div>
                                 <button
                                     onClick={handleToggleAutoRenew}
                                     disabled={togglingAutoRenew}
-                                    className="w-full py-2 bg-white text-black rounded-lg text-sm font-bold hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+                                    className="w-full h-10 bg-slate-100 text-slate-900 rounded-lg text-xs font-black hover:bg-white transition-colors flex items-center justify-center gap-2 uppercase tracking-tight"
                                 >
                                     {togglingAutoRenew && <Loader2 className="animate-spin" size={14} />}
-                                    Включить автопродление
+                                    Включить продление
                                 </button>
                             </>
                         ) : (
                             // Variant 3: No Card
                             <>
-                                <div className="flex items-center justify-center gap-2 text-sm text-yellow-500">
-                                    <span>❗</span>
-                                    <span>Автопродление недоступно</span>
+                                <div className="flex items-center justify-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-widest">
+                                    <span>⚠</span>
+                                    <span>Оплата не настроена</span>
                                 </div>
-                                <p className="text-xs text-center text-gray-400">
-                                    Привяжите карту
-                                </p>
                                 <button
                                     onClick={handleAddCard}
                                     disabled={togglingAutoRenew}
-                                    className="w-full py-2 bg-white text-black rounded-lg text-sm font-bold hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+                                    className="w-full h-10 bg-white text-slate-900 rounded-lg text-xs font-black hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 uppercase tracking-tight"
                                 >
-                                    {togglingAutoRenew && <Loader2 className="animate-spin" size={14} />}
-                                    Добавить карту
+                                    Привязать карту
                                 </button>
                             </>
                         )}
@@ -153,26 +150,26 @@ export const buildPlanCardState = ({
         // If User is PRO but on DIFFERENT plan (e.g. Monthly vs Yearly)
         else if (isPro) {
             disabled = true;
-            customButtonText = "У вас уже активен PRO";
+            customButtonText = "Доступно по подписке";
         }
         // State C: Expired Pro (User is Free now, but was Pro)
         else if (isExpired) {
             bottomContent = (
                 <div className="space-y-3 mt-auto">
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center">
-                        <p className="text-sm font-medium text-red-400">
-                            Доступ к PRO закончился {formatDate(expiresAt)}
+                    <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 text-center">
+                        <p className="text-xs font-bold text-rose-400 uppercase tracking-tight">
+                            Подписка истекла {formatDate(expiresAt)}
                         </p>
                     </div>
                     <button
                         onClick={() => handleSelectPlan(plan.id)}
                         disabled={loadingPlanId === plan.id}
-                        className="w-full py-3.5 bg-white text-black rounded-xl font-bold hover:bg-gray-100 transition-all flex items-center justify-center gap-2"
+                        className="w-full h-11 bg-white text-slate-900 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
                     >
                         {loadingPlanId === plan.id ? (
-                            <span className="animate-pulse">Загрузка...</span>
+                            <Loader2 className="animate-spin" size={16} />
                         ) : (
-                            `Вернуть PRO за ${plan.priceText}`
+                            `Восстановить за ${plan.priceText.split(' ')[0]} ₽`
                         )}
                     </button>
                 </div>

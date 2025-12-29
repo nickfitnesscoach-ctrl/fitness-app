@@ -16,12 +16,12 @@ export const useSubscriptionStatus = (subscription: SubscriptionDetails | null):
 
     let headerTitle = "Премиум доступ";
     let headerSubtitle = "Получи максимум от EatFit24";
-    let topStatusText = "Текущий тариф: Free";
+    let topStatusText = "Тариф: Базовый";
 
     if (isPro) {
-        topStatusText = `Текущий тариф: PRO до ${formatDate(expiresAt)}`;
+        topStatusText = `Pro активен до ${formatDate(expiresAt)}`;
     } else if (isExpired) {
-        topStatusText = `Подписка закончилась ${formatDate(expiresAt)}`;
+        topStatusText = `Истек ${formatDate(expiresAt)}`;
     }
 
     return {

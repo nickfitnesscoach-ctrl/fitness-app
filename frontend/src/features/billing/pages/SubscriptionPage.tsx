@@ -54,21 +54,22 @@ const SubscriptionPage: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <PageContainer className="py-6 space-y-[var(--section-gap)]">
+            <PageContainer withSafeTop={true} className="pt-2 pb-10 space-y-6">
                 <SubscriptionHeader
                     topStatusText={subscriptionStatus.topStatusText}
                     headerTitle={subscriptionStatus.headerTitle}
                     headerSubtitle={subscriptionStatus.headerSubtitle}
                 />
 
-                <div className="space-y-4">
+                <div className="flex flex-col gap-4">
                     {loadingPlans ? (
-                        <div className="flex justify-center py-12">
-                            <Loader2 className="animate-spin text-blue-500" size={40} />
+                        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                            <Loader2 className="animate-spin text-slate-400" size={32} />
+                            <p className="text-sm text-slate-400 font-medium">Загружаем тарифы...</p>
                         </div>
                     ) : error ? (
-                        <div className="text-center text-red-500 py-8 bg-red-50 rounded-[var(--radius-card)]">
-                            {error}
+                        <div className="text-center p-6 bg-red-50 rounded-2xl border border-red-100">
+                            <p className="text-sm text-red-600 font-medium">{error}</p>
                         </div>
                     ) : plans.map((plan) => {
                         const cardState = buildPlanCardState({
@@ -104,9 +105,12 @@ const SubscriptionPage: React.FC = () => {
                     })}
                 </div>
 
-                <p className="text-center text-[10px] text-gray-400 mt-4 uppercase tracking-tighter">
-                    Нажимая кнопку, вы соглашаетесь с условиями использования и политикой конфиденциальности.
-                </p>
+                <div className="px-4">
+                    <p className="text-center text-[10px] text-slate-400 leading-relaxed uppercase tracking-wider opacity-60">
+                        Нажимая кнопку, вы соглашаетесь с условиями использования и политикой конфиденциальности.
+                        Подписка продлевается автоматически, отмена в любое время.
+                    </p>
+                </div>
             </PageContainer>
         </div>
     );

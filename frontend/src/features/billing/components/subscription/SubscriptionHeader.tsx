@@ -12,16 +12,16 @@ export const SubscriptionHeader: React.FC<SubscriptionHeaderProps> = ({
     headerSubtitle
 }) => {
     return (
-        <div className="px-4 pt-2 pb-3 text-center mb-6">
-            <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-slate-500">
+        <div className="flex flex-col items-center text-center space-y-2 mb-4">
+            <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-slate-100 text-slate-600 border border-slate-200">
                 {topStatusText}
-            </p>
+            </div>
 
-            <h1 className="mt-1 text-[22px] font-bold leading-tight text-slate-900">
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
                 {headerTitle}
             </h1>
 
-            <p className="mt-2 text-sm leading-snug text-slate-600">
+            <p className="text-sm text-slate-500 max-w-[280px] leading-snug">
                 {headerSubtitle}
             </p>
         </div>

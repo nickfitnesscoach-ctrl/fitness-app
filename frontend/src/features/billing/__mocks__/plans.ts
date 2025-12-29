@@ -17,15 +17,16 @@ export const mockSubscriptionPlans: SubscriptionPlan[] = [
         advanced_stats: false,
         priority_support: false,
         features: [
-            '3 анализа еды в день',
-            'Базовая статистика',
-            'Дневник питания'
+            '3 анализа по фото в день',
+            'Базовый расчет КБЖУ',
+            'История за 7 дней',
+            'Ручной ввод безлимитно'
         ],
         is_popular: false,
     },
     {
         code: 'PRO_MONTHLY',
-        display_name: 'PRO месяц',
+        display_name: 'PRO Месяц',
         price: 299,
         duration_days: 30,
         daily_photo_limit: null, // unlimited
@@ -34,17 +35,18 @@ export const mockSubscriptionPlans: SubscriptionPlan[] = [
         advanced_stats: true,
         priority_support: true,
         features: [
-            'Безлимитные анализы еды',
-            'Персональные рекомендации',
-            'Подробная статистика',
-            'Приоритетная поддержка'
+            'Безлимит анализов по фото',
+            'Приоритетная обработка AI',
+            'Расширенная аналитика и тренды',
+            'Полная история приемов пищи',
+            'Персональные рекомендации'
         ],
         is_popular: true,
         old_price: 499,
     },
     {
         code: 'PRO_YEARLY',
-        display_name: 'PRO год',
+        display_name: 'PRO Год',
         price: 2990,
         duration_days: 365,
         daily_photo_limit: null, // unlimited
@@ -53,10 +55,11 @@ export const mockSubscriptionPlans: SubscriptionPlan[] = [
         advanced_stats: true,
         priority_support: true,
         features: [
-            'Все возможности PRO',
-            'Экономия 17%',
-            'Безлимитные анализы еды',
-            'Персональные рекомендации'
+            'Все преимущества PRO',
+            'Выгода более 15%',
+            'Безлимитный AI анализ',
+            'Приоритетная поддержка',
+            'Экспорт отчетов (скоро)'
         ],
         is_popular: false,
         old_price: 4990,
