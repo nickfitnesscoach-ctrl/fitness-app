@@ -173,12 +173,10 @@ const FoodLogPage: React.FC = () => {
     };
 
     const handleBackToCamera = () => {
-        // Explicit "I am done" action
+        // User wants to stay in camera and try again
         closeResults();
         cleanup();
-        // Navigate to diary with force refresh to update meal statuses
-        const dateStr = selectedDate.toISOString().split('T')[0];
-        navigate(`/?date=${dateStr}&refresh=1`);
+        // Stay on camera page - just close the modal
     };
 
     if (!isReady) {
