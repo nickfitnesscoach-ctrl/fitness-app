@@ -364,20 +364,10 @@ const MealDetailsPage: React.FC = () => {
                                         </div>
                                         <button
                                             onClick={() => handleEditClick(item)}
-                                            className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors"
                                             aria-label="Редактировать блюдо"
                                         >
                                             <Edit2 size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setItemToDelete(item.id);
-                                                setShowDeleteItemConfirm(true);
-                                            }}
-                                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                            aria-label="Удалить блюдо"
-                                        >
-                                            <Trash2 size={16} />
                                         </button>
                                     </div>
                                 </div>
