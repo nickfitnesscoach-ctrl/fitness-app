@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { api, MealAnalysis } from '../services/api';
+import { api, MealAnalysis, MealPhoto } from '../services/api';
 import PageHeader from '../components/PageHeader';
-import { Flame, Drumstick, Droplets, Wheat, Trash2, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Flame, Drumstick, Droplets, Wheat, Trash2, Edit2, ChevronLeft, ChevronRight, AlertCircle, XCircle, Loader2 } from 'lucide-react';
 // F-019: Skeleton loaders for better loading UX
 import { SkeletonMealDetails } from '../components/Skeleton';
 // F-029: Toast notifications
@@ -207,39 +207,84 @@ const MealDetailsPage: React.FC = () => {
 
             {/* Large Photo Gallery (supports multi-photo meals) */}
             {(() => {
-                // Get successful photos from multi-photo data or fallback to single photo
-                const photos = data.photos?.filter((p: any) => p.status === 'SUCCESS' && p.image_url) || [];
-                const photoUrls = photos.length > 0
-                    ? photos.map((p: any) => p.image_url)
-                    : data.photo_url
-                    ? [data.photo_url]
-                    : [];
+                // Show ALL photos (including FAILED/CANCELLED) - not just SUCCESS
+                // This ensures sync with diary card which also shows all photos
+                const allPhotos: MealPhoto[] = data.photos?.filter((p) => p.image_url) || [];
 
-                const hasMultiplePhotos = photoUrls.length > 1;
-                const safeIndex = Math.min(currentPhotoIndex, photoUrls.length - 1);
+                // Build display list: use photos array or fallback to single photo_url
+                const displayPhotos: { url: string; status?: string; error?: string | null }[] =
+                    allPhotos.length > 0
+                        ? allPhotos.map((p) => ({
+                            url: p.image_url!,
+                            status: p.status,
+                            error: p.error_message
+                        }))
+                        : data.photo_url
+                        ? [{ url: data.photo_url, status: 'SUCCESS' }]
+                        : [];
+
+                const hasMultiplePhotos = displayPhotos.length > 1;
+                const safeIndex = Math.min(currentPhotoIndex, Math.max(0, displayPhotos.length - 1));
+                const currentPhoto = displayPhotos[safeIndex];
+
+                // Helper to render status badge
+                const renderStatusBadge = (status?: string) => {
+                    if (status === 'FAILED') {
+                        return (
+                            <div className="absolute top-4 left-4 bg-red-500 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5 shadow-lg">
+                                <AlertCircle size={16} />
+                                Ошибка
+                            </div>
+                        );
+                    }
+                    if (status === 'CANCELLED') {
+                        return (
+                            <div className="absolute top-4 left-4 bg-gray-500 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5 shadow-lg">
+                                <XCircle size={16} />
+                                Отменено
+                            </div>
+                        );
+                    }
+                    if (status === 'PROCESSING' || status === 'PENDING') {
+                        return (
+                            <div className="absolute top-4 left-4 bg-blue-500 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5 shadow-lg">
+                                <Loader2 size={16} className="animate-spin" />
+                                Обработка...
+                            </div>
+                        );
+                    }
+                    return null;
+                };
 
                 return (
                     <div className="w-full aspect-[4/3] bg-gray-200 relative">
-                        {photoUrls.length > 0 ? (
+                        {displayPhotos.length > 0 && currentPhoto ? (
                             <>
                                 <img
-                                    src={photoUrls[safeIndex]}
+                                    src={currentPhoto.url}
                                     alt={`${data.label} - фото ${safeIndex + 1}`}
-                                    className="w-full h-full object-cover"
+                                    className={`w-full h-full object-cover ${
+                                        currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
+                                            ? 'opacity-70'
+                                            : ''
+                                    }`}
                                 />
+
+                                {/* Status badge for non-success photos */}
+                                {renderStatusBadge(currentPhoto.status)}
 
                                 {/* Photo navigation for multi-photo meals */}
                                 {hasMultiplePhotos && (
                                     <>
                                         {/* Photo counter */}
                                         <div className="absolute top-4 right-4 bg-black/60 text-white px-3 py-1 rounded-full text-sm font-medium">
-                                            {safeIndex + 1} / {photoUrls.length}
+                                            {safeIndex + 1} / {displayPhotos.length}
                                         </div>
 
                                         {/* Navigation arrows */}
                                         <button
                                             onClick={() => setCurrentPhotoIndex((prev) =>
-                                                prev === 0 ? photoUrls.length - 1 : prev - 1
+                                                prev === 0 ? displayPhotos.length - 1 : prev - 1
                                             )}
                                             className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full transition-colors"
                                             aria-label="Предыдущее фото"
@@ -248,7 +293,7 @@ const MealDetailsPage: React.FC = () => {
                                         </button>
                                         <button
                                             onClick={() => setCurrentPhotoIndex((prev) =>
-                                                prev === photoUrls.length - 1 ? 0 : prev + 1
+                                                prev === displayPhotos.length - 1 ? 0 : prev + 1
                                             )}
                                             className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full transition-colors"
                                             aria-label="Следующее фото"
@@ -256,20 +301,37 @@ const MealDetailsPage: React.FC = () => {
                                             <ChevronRight size={24} />
                                         </button>
 
-                                        {/* Dot indicators */}
+                                        {/* Dot indicators with status colors */}
                                         <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex gap-1.5">
-                                            {photoUrls.map((_: string, i: number) => (
-                                                <button
-                                                    key={i}
-                                                    onClick={() => setCurrentPhotoIndex(i)}
-                                                    className={`w-2 h-2 rounded-full transition-colors ${
-                                                        i === safeIndex ? 'bg-white' : 'bg-white/50'
-                                                    }`}
-                                                    aria-label={`Перейти к фото ${i + 1}`}
-                                                />
-                                            ))}
+                                            {displayPhotos.map((photo, i) => {
+                                                // Color dot based on photo status
+                                                let dotColor = 'bg-white';
+                                                if (photo.status === 'FAILED') dotColor = 'bg-red-400';
+                                                else if (photo.status === 'CANCELLED') dotColor = 'bg-gray-400';
+                                                else if (photo.status === 'PROCESSING' || photo.status === 'PENDING') dotColor = 'bg-blue-400';
+
+                                                return (
+                                                    <button
+                                                        key={i}
+                                                        onClick={() => setCurrentPhotoIndex(i)}
+                                                        className={`w-2.5 h-2.5 rounded-full transition-all ${dotColor} ${
+                                                            i === safeIndex
+                                                                ? 'ring-2 ring-white ring-offset-1 ring-offset-black/20'
+                                                                : 'opacity-60'
+                                                        }`}
+                                                        aria-label={`Перейти к фото ${i + 1}`}
+                                                    />
+                                                );
+                                            })}
                                         </div>
                                     </>
+                                )}
+
+                                {/* Error message for failed photos */}
+                                {currentPhoto.status === 'FAILED' && currentPhoto.error && (
+                                    <div className="absolute bottom-20 left-4 right-4 bg-red-900/80 text-white px-3 py-2 rounded-lg text-sm">
+                                        {currentPhoto.error}
+                                    </div>
                                 )}
                             </>
                         ) : (

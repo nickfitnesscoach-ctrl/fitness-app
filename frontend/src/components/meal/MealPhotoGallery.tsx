@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
-import type { MealPhoto } from '../../types/meal';
+import { ChevronLeft, ChevronRight, Image as ImageIcon, AlertCircle, XCircle, Loader2 } from 'lucide-react';
+import type { MealPhoto } from '../../services/api/types';
 
 interface MealPhotoGalleryProps {
     photos: MealPhoto[];
@@ -8,6 +8,8 @@ interface MealPhotoGalleryProps {
     fallbackPhotoUrl?: string | null;
     /** Size preset */
     size?: 'sm' | 'md' | 'lg';
+    /** Show all photos including FAILED/CANCELLED (default: true) */
+    showAllPhotos?: boolean;
 }
 
 const SIZE_CLASSES = {
@@ -19,28 +21,30 @@ const SIZE_CLASSES = {
 /**
  * Horizontal swipeable gallery for multi-photo meals.
  * Shows a single image when only one photo exists.
+ * Shows ALL photos (including FAILED/CANCELLED) with status badges.
  */
 export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
     photos,
     fallbackPhotoUrl,
     size = 'md',
+    showAllPhotos = true,
 }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
 
-    // Filter to only show successful photos with URLs
-    const successfulPhotos = photos.filter(
-        (p) => p.status === 'SUCCESS' && p.image_url
-    );
+    // Show all photos with URLs (including FAILED/CANCELLED for sync with details page)
+    const displayPhotos = showAllPhotos
+        ? photos.filter((p) => p.image_url)
+        : photos.filter((p) => p.status === 'SUCCESS' && p.image_url);
 
     // Use fallback if no multi-photo data
-    const hasPhotos = successfulPhotos.length > 0;
-    const photoUrls = hasPhotos
-        ? successfulPhotos.map((p) => p.image_url!)
+    const hasPhotos = displayPhotos.length > 0;
+    const photoList = hasPhotos
+        ? displayPhotos
         : fallbackPhotoUrl
-        ? [fallbackPhotoUrl]
+        ? [{ id: 0, image_url: fallbackPhotoUrl, status: 'SUCCESS' as const }]
         : [];
 
-    if (photoUrls.length === 0) {
+    if (photoList.length === 0) {
         // No photos - show placeholder
         return (
             <div
@@ -51,40 +55,82 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
         );
     }
 
-    if (photoUrls.length === 1) {
-        // Single photo - just show it
+    const currentPhoto = photoList[currentIndex] || photoList[0];
+
+    // Helper to render mini status badge
+    const renderMiniBadge = (status: string) => {
+        if (status === 'FAILED') {
+            return (
+                <div className="absolute top-0.5 left-0.5 bg-red-500 text-white p-0.5 rounded">
+                    <AlertCircle size={10} />
+                </div>
+            );
+        }
+        if (status === 'CANCELLED') {
+            return (
+                <div className="absolute top-0.5 left-0.5 bg-gray-500 text-white p-0.5 rounded">
+                    <XCircle size={10} />
+                </div>
+            );
+        }
+        if (status === 'PROCESSING' || status === 'PENDING') {
+            return (
+                <div className="absolute top-0.5 left-0.5 bg-blue-500 text-white p-0.5 rounded">
+                    <Loader2 size={10} className="animate-spin" />
+                </div>
+            );
+        }
+        return null;
+    };
+
+    if (photoList.length === 1) {
+        // Single photo - show with status badge if needed
         return (
-            <img
-                src={photoUrls[0]}
-                alt="Фото еды"
-                className={`${SIZE_CLASSES[size]} object-cover rounded-lg`}
-            />
+            <div className="relative">
+                <img
+                    src={currentPhoto.image_url!}
+                    alt="Фото еды"
+                    className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${
+                        currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
+                            ? 'opacity-70'
+                            : ''
+                    }`}
+                />
+                {renderMiniBadge(currentPhoto.status)}
+            </div>
         );
     }
 
     // Multiple photos - show gallery with navigation
     const goToPrev = (e: React.MouseEvent) => {
         e.stopPropagation();
-        setCurrentIndex((prev) => (prev === 0 ? photoUrls.length - 1 : prev - 1));
+        setCurrentIndex((prev) => (prev === 0 ? photoList.length - 1 : prev - 1));
     };
 
     const goToNext = (e: React.MouseEvent) => {
         e.stopPropagation();
-        setCurrentIndex((prev) => (prev === photoUrls.length - 1 ? 0 : prev + 1));
+        setCurrentIndex((prev) => (prev === photoList.length - 1 ? 0 : prev + 1));
     };
 
     return (
         <div className="relative group">
             {/* Main image */}
             <img
-                src={photoUrls[currentIndex]}
-                alt={`Фото еды ${currentIndex + 1} из ${photoUrls.length}`}
-                className={`${SIZE_CLASSES[size]} object-cover rounded-lg`}
+                src={currentPhoto.image_url!}
+                alt={`Фото еды ${currentIndex + 1} из ${photoList.length}`}
+                className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${
+                    currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
+                        ? 'opacity-70'
+                        : ''
+                }`}
             />
+
+            {/* Status badge */}
+            {renderMiniBadge(currentPhoto.status)}
 
             {/* Photo counter badge */}
             <div className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-[10px] px-1 rounded">
-                {currentIndex + 1}/{photoUrls.length}
+                {currentIndex + 1}/{photoList.length}
             </div>
 
             {/* Navigation arrows (visible on hover) */}
@@ -106,43 +152,79 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
     );
 };
 
+interface MealPhotoStripProps extends MealPhotoGalleryProps {}
+
 /**
  * Compact photo strip showing all photos in a row.
  * Good for meal cards where space is limited.
+ * Shows ALL photos (including FAILED/CANCELLED) with status badges.
  */
-export const MealPhotoStrip: React.FC<MealPhotoGalleryProps> = ({
+export const MealPhotoStrip: React.FC<MealPhotoStripProps> = ({
     photos,
     fallbackPhotoUrl,
+    showAllPhotos = true,
 }) => {
-    // Filter to only show successful photos with URLs
-    const successfulPhotos = photos.filter(
-        (p) => p.status === 'SUCCESS' && p.image_url
-    );
+    // Show all photos with URLs (including FAILED/CANCELLED for sync with details page)
+    const allPhotos = showAllPhotos
+        ? photos.filter((p) => p.image_url)
+        : photos.filter((p) => p.status === 'SUCCESS' && p.image_url);
 
     // Use fallback if no multi-photo data
-    const photoUrls = successfulPhotos.length > 0
-        ? successfulPhotos.map((p) => p.image_url!)
+    const photoList = allPhotos.length > 0
+        ? allPhotos
         : fallbackPhotoUrl
-        ? [fallbackPhotoUrl]
+        ? [{ id: 0, image_url: fallbackPhotoUrl, status: 'SUCCESS' as const }]
         : [];
 
-    if (photoUrls.length === 0) {
+    if (photoList.length === 0) {
         return null;
     }
 
     // Show up to 3 photos in a strip
-    const displayPhotos = photoUrls.slice(0, 3);
-    const remainingCount = photoUrls.length - displayPhotos.length;
+    const displayPhotos = photoList.slice(0, 3);
+    const remainingCount = photoList.length - displayPhotos.length;
+
+    // Helper to render mini status badge for strip
+    const renderStripBadge = (status: string) => {
+        if (status === 'FAILED') {
+            return (
+                <div className="absolute top-0 left-0 bg-red-500 text-white p-0.5 rounded-tl-md rounded-br">
+                    <AlertCircle size={8} />
+                </div>
+            );
+        }
+        if (status === 'CANCELLED') {
+            return (
+                <div className="absolute top-0 left-0 bg-gray-500 text-white p-0.5 rounded-tl-md rounded-br">
+                    <XCircle size={8} />
+                </div>
+            );
+        }
+        if (status === 'PROCESSING' || status === 'PENDING') {
+            return (
+                <div className="absolute top-0 left-0 bg-blue-500 text-white p-0.5 rounded-tl-md rounded-br">
+                    <Loader2 size={8} className="animate-spin" />
+                </div>
+            );
+        }
+        return null;
+    };
 
     return (
         <div className="flex items-center gap-1">
-            {displayPhotos.map((url, i) => (
-                <img
-                    key={i}
-                    src={url}
-                    alt={`Фото ${i + 1}`}
-                    className="w-10 h-10 object-cover rounded-md"
-                />
+            {displayPhotos.map((photo, i) => (
+                <div key={photo.id || i} className="relative">
+                    <img
+                        src={photo.image_url!}
+                        alt={`Фото ${i + 1}`}
+                        className={`w-10 h-10 object-cover rounded-md ${
+                            photo.status === 'FAILED' || photo.status === 'CANCELLED'
+                                ? 'opacity-70'
+                                : ''
+                        }`}
+                    />
+                    {renderStripBadge(photo.status)}
+                </div>
             ))}
             {remainingCount > 0 && (
                 <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center text-xs text-gray-500 font-medium">

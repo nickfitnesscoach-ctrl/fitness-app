@@ -69,11 +69,29 @@ export interface RecognizedItemAnalysis {
     carbohydrates: number;
 }
 
+export type MealPhotoStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
+
+export interface MealPhoto {
+    id: number;
+    image_url: string | null;
+    status: MealPhotoStatus;
+    status_display?: string;
+    error_message?: string | null;
+    created_at?: string;
+}
+
+export type MealStatus = 'DRAFT' | 'PROCESSING' | 'COMPLETE';
+
 export interface MealAnalysis {
     id: number;
     photo_url: string | null;
     label: string;
     recognized_items: RecognizedItemAnalysis[];
+    // Multi-photo support
+    photos?: MealPhoto[];
+    photo_count?: number;
+    status?: MealStatus;
+    status_display?: string;
 }
 
 // ============================================================

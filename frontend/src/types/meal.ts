@@ -14,7 +14,7 @@ export interface FoodItem {
     carbohydrates: number | string;
 }
 
-export type MealPhotoStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED';
+export type MealPhotoStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
 export interface MealPhoto {
     id: number;
