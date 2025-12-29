@@ -13,7 +13,7 @@ Multi-Photo Meal Architecture:
 
 Главные правила:
 - НЕ удаляем Meal при ошибке одного фото (другие могут успеть)
-- Ретраи только на timeout/5xx (временные проблемы)
+- БЕЗ автоматических retry — пользователь нажмёт "Повторить" вручную
 - Граммовка всегда >= 1 (иначе упадёт валидатор FoodItem)
 - DecimalField сохраняем через Decimal(str(x))
 - Никаких секретов в логах
@@ -115,32 +115,7 @@ def _update_meal_photo_failed(meal_photo_id: int | None, error_code: str, error_
         logger.error("[AI] Failed to update MealPhoto %s: %s", meal_photo_id, str(e))
 
 
-def _on_task_failure(self, exc, task_id, args, kwargs, einfo):
-    """
-    Celery on_failure callback.
-    Ensures MealPhoto is marked FAILED if task fails after all retries.
-    """
-    meal_photo_id = kwargs.get("meal_photo_id")
-    if meal_photo_id:
-        logger.error(
-            "[AI] Task %s failed permanently, marking MealPhoto %s as FAILED: %s",
-            task_id,
-            meal_photo_id,
-            str(exc),
-        )
-        _update_meal_photo_failed(
-            meal_photo_id, "TASK_FAILED", "Произошла ошибка при обработке. Попробуйте позже."
-        )
-
-
-@shared_task(
-    bind=True,
-    max_retries=1,
-    retry_backoff=True,
-    retry_backoff_max=60,
-    retry_jitter=True,
-    on_failure=_on_task_failure,
-)
+@shared_task(bind=True)
 def recognize_food_async(
     self,
     *,
@@ -331,29 +306,26 @@ def recognize_food_async(
     except Exception as e:
         logger.error("[AI] Proxy error: %r rid=%s", e, rid)
 
-        if isinstance(e, (AIProxyTimeoutError, AIProxyServerError)):
-            # Временные проблемы — ретраим
-            logger.warning(
-                "[AI] retryable error task=%s meal_id=%s photo_id=%s rid=%s err=%s",
-                task_id,
-                meal_id,
-                meal_photo_id,
-                rid,
-                str(e),
-            )
-            raise self.retry(exc=e)
+        # Определяем сообщение в зависимости от типа ошибки
+        if isinstance(e, AIProxyTimeoutError):
+            error_code = "AI_TIMEOUT"
+            error_message = "Сервер не ответил вовремя. Попробуйте ещё раз."
+        elif isinstance(e, AIProxyServerError):
+            error_code = "AI_SERVER_ERROR"
+            error_message = "Сервер временно недоступен. Попробуйте ещё раз."
+        else:
+            error_code = "AI_ERROR"
+            error_message = "Произошла ошибка при обработке фото. Попробуйте позже."
 
-        # Постоянная ошибка — помечаем фото как FAILED
-        _update_meal_photo_failed(
-            meal_photo_id, "AI_ERROR", "Произошла ошибка при обработке фото. Попробуйте позже."
-        )
+        # Сразу помечаем фото как FAILED (без retry — пользователь нажмёт "Повторить" сам)
+        _update_meal_photo_failed(meal_photo_id, error_code, error_message)
         return {
             "meal_id": meal_id,
             "meal_photo_id": meal_photo_id,
             "items": [],
             "totals": {},
-            "error": "AI_ERROR",
-            "error_message": "Произошла ошибка при обработке фото. Попробуйте позже.",
+            "error": error_code,
+            "error_message": error_message,
             "owner_id": user_id,
         }
 

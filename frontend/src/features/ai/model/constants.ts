@@ -76,6 +76,10 @@ export const AI_ERROR_CODES = {
     NETWORK_ERROR: 'NETWORK_ERROR',
     EMPTY_RESULT: 'EMPTY_RESULT',
     CANCELLED: 'CANCELLED',
+    // Backend timeout/server errors (no auto-retry)
+    AI_TIMEOUT: 'AI_TIMEOUT',
+    AI_SERVER_ERROR: 'AI_SERVER_ERROR',
+    AI_ERROR: 'AI_ERROR',
     // Preprocess errors
     PREPROCESS_DECODE_FAILED: 'PREPROCESS_DECODE_FAILED',
     PREPROCESS_TIMEOUT: 'PREPROCESS_TIMEOUT',
@@ -105,6 +109,10 @@ export const AI_ERROR_MESSAGES: Record<string, string> = {
     [AI_ERROR_CODES.TASK_FAILURE]: 'Ошибка обработки фото',
     [AI_ERROR_CODES.NETWORK_ERROR]: 'Ошибка сети. Проверьте интернет-соединение.',
     [AI_ERROR_CODES.EMPTY_RESULT]: 'Мы не смогли распознать еду на фото. Попробуйте сделать фото крупнее.',
+    // Backend timeout/server errors
+    [AI_ERROR_CODES.AI_TIMEOUT]: 'Сервер не ответил вовремя. Попробуйте ещё раз.',
+    [AI_ERROR_CODES.AI_SERVER_ERROR]: 'Сервер временно недоступен. Попробуйте ещё раз.',
+    [AI_ERROR_CODES.AI_ERROR]: 'Произошла ошибка при обработке фото. Попробуйте позже.',
     // Preprocess errors
     [AI_ERROR_CODES.PREPROCESS_DECODE_FAILED]: 'Не удалось обработать фото. Попробуйте другое или сделайте скриншот.',
     [AI_ERROR_CODES.PREPROCESS_TIMEOUT]: 'Фото слишком тяжёлое. Попробуйте другое или сделайте скриншот.',
