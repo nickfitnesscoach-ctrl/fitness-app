@@ -41,8 +41,8 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
     const photoList = hasPhotos
         ? displayPhotos
         : fallbackPhotoUrl
-        ? [{ id: 0, image_url: fallbackPhotoUrl, status: 'SUCCESS' as const }]
-        : [];
+            ? [{ id: 0, image_url: fallbackPhotoUrl, status: 'SUCCESS' as const }]
+            : [];
 
     if (photoList.length === 0) {
         // No photos - show placeholder
@@ -85,11 +85,10 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
                 <img
                     src={currentPhoto.image_url!}
                     alt="Фото еды"
-                    className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${
-                        currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
+                    className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
                             ? 'opacity-70'
                             : ''
-                    }`}
+                        }`}
                 />
                 {renderMiniBadge(currentPhoto.status)}
             </div>
@@ -113,11 +112,10 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
             <img
                 src={currentPhoto.image_url!}
                 alt={`Фото еды ${currentIndex + 1} из ${photoList.length}`}
-                className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${
-                    currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
+                className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
                         ? 'opacity-70'
                         : ''
-                }`}
+                    }`}
             />
 
             {/* Status badge */}
@@ -147,7 +145,7 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
     );
 };
 
-interface MealPhotoStripProps extends MealPhotoGalleryProps {}
+interface MealPhotoStripProps extends MealPhotoGalleryProps { }
 
 /**
  * Compact photo strip showing all photos in a row.
@@ -168,56 +166,77 @@ export const MealPhotoStrip: React.FC<MealPhotoStripProps> = ({
     const photoList = allPhotos.length > 0
         ? allPhotos
         : fallbackPhotoUrl
-        ? [{ id: 0, image_url: fallbackPhotoUrl, status: 'SUCCESS' as const }]
-        : [];
+            ? [{ id: 0, image_url: fallbackPhotoUrl, status: 'SUCCESS' as const }]
+            : [];
 
     if (photoList.length === 0) {
-        return null;
+        return <div className="w-16 min-w-16" />; // Return placeholder to maintain grid
     }
 
-    // Show up to 2 photos in a strip (3 causes layout issues)
+    // Design:
+    // 1 photo: covers the w-16 h-10 area
+    // 2+ photos: shows two w-7 h-7 photos (overlapping or side-by-side)
+    // +N: absolute badge on the second photo or container
+
     const displayPhotos = photoList.slice(0, 2);
-    const remainingCount = photoList.length - displayPhotos.length;
+    const remainingCount = photoList.length - 2;
 
     // Helper to render mini status badge for strip
-    // NOTE: PROCESSING/PENDING badges NOT shown here - meal-level spinner is used instead
     const renderStripBadge = (status: string) => {
         if (status === 'FAILED') {
             return (
-                <div className="absolute top-0 left-0 bg-red-500 text-white p-0.5 rounded-tl-md rounded-br">
+                <div className="absolute top-0 left-0 bg-red-500 text-white p-0.5 rounded-tl-md rounded-br shadow-sm z-10">
                     <AlertCircle size={8} />
                 </div>
             );
         }
         if (status === 'CANCELLED') {
             return (
-                <div className="absolute top-0 left-0 bg-gray-500 text-white p-0.5 rounded-tl-md rounded-br">
+                <div className="absolute top-0 left-0 bg-gray-500 text-white p-0.5 rounded-tl-md rounded-br shadow-sm z-10">
                     <XCircle size={8} />
                 </div>
             );
         }
-        // No spinner for PROCESSING/PENDING - meal-level status is used
         return null;
     };
 
     return (
-        <div className="flex items-center gap-1">
-            {displayPhotos.map((photo, i) => (
-                <div key={photo.id || i} className="relative">
+        <div className="relative w-16 min-w-16 flex items-center h-10">
+            {photoList.length === 1 ? (
+                /* Single photo - full width of the w-16 area */
+                <div className="relative w-16 h-10">
                     <img
-                        src={photo.image_url!}
-                        alt={`Фото ${i + 1}`}
-                        className={`w-10 h-10 object-cover rounded-md ${
-                            photo.status === 'FAILED' || photo.status === 'CANCELLED'
+                        src={photoList[0].image_url!}
+                        alt="Фото"
+                        className={`w-full h-full object-cover rounded-lg ${photoList[0].status === 'FAILED' || photoList[0].status === 'CANCELLED'
                                 ? 'opacity-70'
                                 : ''
-                        }`}
+                            }`}
                     />
-                    {renderStripBadge(photo.status)}
+                    {renderStripBadge(photoList[0].status)}
                 </div>
-            ))}
+            ) : (
+                /* Multiple photos - two blocks */
+                <div className="flex -space-x-3">
+                    {displayPhotos.map((photo, i) => (
+                        <div key={photo.id || i} className="relative">
+                            <img
+                                src={photo.image_url!}
+                                alt={`Фото ${i + 1}`}
+                                className={`w-9 h-9 object-cover rounded-lg border-2 border-white shadow-sm ${photo.status === 'FAILED' || photo.status === 'CANCELLED'
+                                        ? 'opacity-70'
+                                        : ''
+                                    }`}
+                            />
+                            {renderStripBadge(photo.status)}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* +N Badge as absolute overlay */}
             {remainingCount > 0 && (
-                <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center text-xs text-gray-500 font-medium">
+                <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-md shadow-sm border border-white min-w-6 text-center leading-none">
                     +{remainingCount}
                 </div>
             )}

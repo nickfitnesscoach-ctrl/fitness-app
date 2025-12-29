@@ -43,30 +43,39 @@ export const MealsList: React.FC<MealsListProps> = ({
                             >
                                 <div
                                     onClick={() => onOpenMeal(meal.id)}
-                                    className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors active:scale-[0.98]"
+                                    className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-colors active:scale-[0.98] shadow-sm"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        {/* Photo gallery for multi-photo meals */}
+                                    {/* 1. Photos (Fixed) */}
+                                    <div className="w-16 min-w-16 flex items-center">
                                         <MealPhotoStrip
                                             photos={meal.photos || []}
                                             fallbackPhotoUrl={meal.photo_url}
                                         />
-                                        <div>
-                                            <p className="font-medium text-gray-900 flex items-center gap-2">
-                                                {MEAL_TYPE_LABELS[meal.meal_type] || meal.meal_type}
-                                                {isProcessing && (
-                                                    <Loader2 size={14} className="animate-spin text-blue-500" />
-                                                )}
-                                            </p>
-                                            <p className="text-sm text-gray-500">
-                                                {isProcessing ? 'Обработка...' : `${items.length} ${items.length === 1 ? 'блюдо' : 'блюд'}`}
-                                            </p>
+                                    </div>
+
+                                    {/* 2. Text (Flexible) */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-semibold text-gray-900 flex items-center gap-2 truncate">
+                                            {MEAL_TYPE_LABELS[meal.meal_type] || meal.meal_type}
+                                            {isProcessing && (
+                                                <Loader2 size={14} className="animate-spin text-blue-500 shrink-0" />
+                                            )}
+                                        </div>
+                                        <div className="text-sm text-gray-500 truncate mt-0.5">
+                                            {isProcessing ? 'Обработка...' : `${items.length} ${items.length === 1 ? 'блюдо' : 'блюд'}`}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
+
+                                    {/* 3. Kcal (Fixed) */}
+                                    <div className="w-[84px] min-w-[84px] text-right whitespace-nowrap tabular-nums">
                                         <span className="font-bold text-orange-600">
-                                            {Math.round(mealCalories)} ккал
+                                            {Math.round(mealCalories)}
                                         </span>
+                                        <span className="text-xs text-orange-400 font-medium ml-1">ккал</span>
+                                    </div>
+
+                                    {/* 4. Chevron (Fixed) */}
+                                    <div className="w-6 min-w-6 flex justify-end">
                                         <ChevronRight size={18} className="text-gray-400" />
                                     </div>
                                 </div>
