@@ -181,11 +181,6 @@ const PhotoStatusCard: React.FC<PhotoStatusCardProps> = ({ photo, onRetry }) => 
                 {isPending && (
                     <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
                 )}
-                {isSuccess && (
-                    <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
-                        <Check className="w-4 h-4 text-white" />
-                    </div>
-                )}
                 {isError && !isCancelled && (
                     <button
                         onClick={() => onRetry(photo.id)}
