@@ -43,7 +43,6 @@ const FoodLogPage: React.FC = () => {
         startBatch,
         retryPhoto,
         retrySelected,
-        removePhoto,
         cancelBatch,
         cleanup,
         openResults,
@@ -340,16 +339,11 @@ const FoodLogPage: React.FC = () => {
                 {showResults && (
                     <BatchResultsModal
                         photoQueue={photoQueue}
-                        onRetry={(id) => {
-                            // Just mark for retry (toggle selection), don't auto-start
-                            retryPhoto(id);
-                        }}
                         onRetrySelected={(ids) => {
                             closeResults();
                             retrySelected(ids);
                         }}
                         onClose={handleCloseResults}
-                        onRemove={removePhoto}
                         onBackToCamera={handleBackToCamera}
                     />
                 )}
