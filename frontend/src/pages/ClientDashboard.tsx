@@ -12,6 +12,7 @@ import { SkeletonMealsList } from '../components/Skeleton';
 import { DailyCaloriesCard } from '../components/dashboard/DailyCaloriesCard';
 import { MacrosGrid, MacroInfo } from '../components/dashboard/MacrosGrid';
 import { MealsList } from '../components/dashboard/MealsList';
+import { PageContainer } from '../components/shared/PageContainer';
 
 import { getProgress, getProgressColor } from '../utils/progress';
 
@@ -143,11 +144,11 @@ const ClientDashboard: React.FC = () => {
 
     return (
         <PullToRefresh onRefresh={handleRefresh} disabled={dailyMeals.loading}>
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pb-24">
-                <div className="max-w-lg mx-auto space-y-6">
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+                <PageContainer className="py-6 space-y-[var(--section-gap)]">
                     <Calendar selectedDate={dailyMeals.selectedDate} onDateSelect={dailyMeals.setSelectedDate} />
 
-                    <div className="text-center pt-4">
+                    <div className="text-center pt-2">
                         <h1 className="text-2xl font-bold text-gray-900">
                             Привет, {user?.first_name || 'друг'}!
                         </h1>
@@ -157,7 +158,7 @@ const ClientDashboard: React.FC = () => {
                     </div>
 
                     {dailyMeals.error && (
-                        <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl text-center">
+                        <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-[var(--radius-card)] text-center">
                             {dailyMeals.error}
                         </div>
                     )}
@@ -173,7 +174,7 @@ const ClientDashboard: React.FC = () => {
 
                     <button
                         onClick={() => navigate('/log', { state: { selectedDate: dailyMeals.selectedDate.toISOString().split('T')[0] } })}
-                        className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg active:scale-95 transition-transform"
+                        className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-4 rounded-[var(--radius-card)] font-bold flex items-center justify-center gap-3 shadow-lg active:scale-95 transition-transform"
                     >
                         <Plus size={24} />
                         <span>Добавить прием пищи</span>
@@ -192,20 +193,20 @@ const ClientDashboard: React.FC = () => {
                     )}
 
                     {!goals && (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4">
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-[var(--radius-card)] p-[var(--card-p)]">
                             <p className="text-yellow-800 font-medium mb-2">Цели не установлены</p>
                             <p className="text-yellow-600 text-sm mb-3">
                                 Установите дневные цели КБЖУ в профиле для отслеживания прогресса
                             </p>
                             <button
                                 onClick={() => navigate('/profile')}
-                                className="bg-yellow-500 text-white px-4 py-2 rounded-xl font-medium text-sm"
+                                className="bg-yellow-500 text-white px-4 py-2 rounded-xl font-medium text-sm transition-colors active:scale-95"
                             >
                                 Установить цели
                             </button>
                         </div>
                     )}
-                </div>
+                </PageContainer>
             </div>
         </PullToRefresh>
     );

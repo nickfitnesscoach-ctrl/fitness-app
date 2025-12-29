@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useBilling } from '../contexts/BillingContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
+import { PageContainer } from '../components/shared/PageContainer';
 
 import {
     SelectedPhotosList,
@@ -51,8 +52,6 @@ const FoodLogPage: React.FC = () => {
     } = useAIProcessing();
 
     // Listen to global limit event if needed, or handle errors locally via context.
-    // For now, simpler: if context has error code DAILY_LIMIT_REACHED in queue, show modal?
-    // Let's keep it simple: if daily limit error appears in queue, we can show modal.
     useEffect(() => {
         const hasLimitError = photoQueue.some(p => p.errorCode === 'DAILY_LIMIT_REACHED');
         if (hasLimitError && !showLimitModal) {
@@ -63,11 +62,7 @@ const FoodLogPage: React.FC = () => {
     // unmount cleanup: ONLY revoke local preview urls
     useEffect(() => {
         return () => {
-            // DO NOT call cleanup() here - we want persistence!
-            // revoke local preview urls (if they haven't been passed to hook yet)
             selectedFiles.forEach((f) => {
-                // We only own these if we are in "select" mode.
-                // If we started batch, ownership moved (files cleared).
                 if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
             });
         };
@@ -91,20 +86,12 @@ const FoodLogPage: React.FC = () => {
         }
     }, [photoQueue, hasInFlight, showResults, openResults, selectedFiles, billing]);
 
-    // Clear selected files when results are shown
-    useEffect(() => {
-        if (showResults && selectedFiles.length > 0) {
-            setSelectedFiles([]);
-        }
-    }, [showResults, selectedFiles]);
-
     const buildFileWithComment = async (file: File): Promise<FileWithComment> => {
         if (isHeicFile(file)) {
             try {
                 const converted = await convertHeicToJpeg(file);
                 return { file: converted, comment: '', previewUrl: URL.createObjectURL(converted) };
             } catch {
-                // even in fallback, create preview for original
                 return { file, comment: '', previewUrl: URL.createObjectURL(file) };
             }
         }
@@ -150,22 +137,17 @@ const FoodLogPage: React.FC = () => {
     const handleAnalyze = () => {
         if (selectedFiles.length === 0) return;
 
-        // startBatch: hook takes ownership of previewUrl
         startBatch(selectedFiles, {
             date: selectedDate.toISOString().split('T')[0],
             mealType: mealType
         });
 
-        // parent drops references WITHOUT revoke
         setSelectedFiles([]);
     };
 
     const handleCloseResults = () => {
-        // First cleanup (clears photoQueue)
         cleanup();
-        // Then close modal
         closeResults();
-        // Navigate to diary with selected date and force refresh to update meal statuses
         const dateStr = selectedDate.toISOString().split('T')[0];
         setTimeout(() => {
             navigate(`/?date=${dateStr}&refresh=1`);
@@ -173,15 +155,13 @@ const FoodLogPage: React.FC = () => {
     };
 
     const handleBackToCamera = () => {
-        // User wants to stay in camera and try again
         closeResults();
         cleanup();
-        // Stay on camera page - just close the modal
     };
 
     if (!isReady) {
         return (
-            <div className="min-h-screen min-h-dvh flex items-center justify-center">
+            <div className="min-h-screen flex items-center justify-center">
                 <div className="animate-spin w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
             </div>
         );
@@ -189,7 +169,7 @@ const FoodLogPage: React.FC = () => {
 
     if (!webAppDetected && !isBrowserDebug && !webAppBrowserDebug) {
         return (
-            <div className="min-h-screen min-h-dvh flex items-center justify-center p-4">
+            <div className="min-h-screen flex items-center justify-center p-4">
                 <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center max-w-md">
                     <h2 className="text-xl font-bold text-orange-900 mb-2">Откройте через Telegram</h2>
                     <p className="text-orange-700">
@@ -200,13 +180,12 @@ const FoodLogPage: React.FC = () => {
         );
     }
 
-    // Show processing if there's anything in flight, OR if we have active queue (completed) and NOT showing results yet
     const showProcessing = hasInFlight && !showResults;
 
     return (
-        <div className="min-h-screen min-h-dvh bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))]">
-            <div className="max-w-lg mx-auto">
-                <div className="bg-white rounded-3xl shadow-sm p-4 mb-6">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+            <PageContainer className="py-6 space-y-[var(--section-gap)]">
+                <div className="bg-white rounded-[var(--radius-card)] shadow-sm p-[var(--card-p)] border border-gray-100">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <h3 className="text-sm font-semibold text-gray-700 mb-2">Дата</h3>
@@ -249,8 +228,8 @@ const FoodLogPage: React.FC = () => {
                         onCancel={cancelBatch}
                     />
                 ) : selectedFiles.length > 0 ? (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                        <div className="bg-white rounded-3xl p-6 shadow-sm">
+                    <div className="space-y-[var(--section-gap)] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div className="bg-white rounded-[var(--radius-card)] p-[var(--card-p)] shadow-sm border border-gray-100">
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-lg font-bold text-gray-900">Выбранные фото ({selectedFiles.length})</h2>
                                 <button onClick={clearSelectedFiles} className="text-gray-400 hover:text-gray-600">
@@ -290,9 +269,9 @@ const FoodLogPage: React.FC = () => {
                         </div>
                     </div>
                 ) : (
-                    <div className="space-y-6">
+                    <div className="space-y-[var(--section-gap)]">
                         {isDesktop && (
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4">
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-[var(--radius-card)] p-[var(--card-p)]">
                                 <div className="flex items-start gap-3">
                                     <AlertCircle className="text-yellow-600 shrink-0 mt-0.5" size={20} />
                                     <div>
@@ -307,7 +286,7 @@ const FoodLogPage: React.FC = () => {
 
                         <UploadDropzone onFilesSelected={handleFilesSelected} maxFiles={AI_LIMITS.MAX_PHOTOS_PER_UPLOAD} isDesktop={isDesktop} />
 
-                        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+                        <div className="bg-blue-50 border border-blue-200 rounded-[var(--radius-card)] p-[var(--card-p)]">
                             <p className="text-blue-800 text-sm text-center">
                                 {isDesktop
                                     ? '💡 Загрузите фото еды с хорошим освещением для точного распознавания'
@@ -316,7 +295,7 @@ const FoodLogPage: React.FC = () => {
                         </div>
 
                         {error && (
-                            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mt-4">
+                            <div className="bg-red-50 border border-red-200 rounded-[var(--radius-card)] p-[var(--card-p)] mt-4">
                                 <p className="text-red-600 text-center font-medium">{error}</p>
                             </div>
                         )}
@@ -348,7 +327,7 @@ const FoodLogPage: React.FC = () => {
 
                 {billing.data && !billing.loading && (
                     <div
-                        className={`mt-8 rounded-xl p-3 text-sm ${billing.isPro ? 'bg-purple-50 border border-purple-100' : billing.isLimitReached ? 'bg-red-50 border border-red-100' : 'bg-blue-50 border border-blue-100'
+                        className={`mt-4 rounded-[var(--radius-card)] p-[var(--card-p)] text-sm ${billing.isPro ? 'bg-purple-50 border border-purple-100' : billing.isLimitReached ? 'bg-red-50 border border-red-100' : 'bg-blue-50 border border-blue-100'
                             }`}
                     >
                         {billing.isPro ? (
@@ -358,7 +337,7 @@ const FoodLogPage: React.FC = () => {
                                     <span className="font-medium text-purple-900">PRO активен</span>
                                 </div>
                                 {billing.data.expires_at && (
-                                    <span className="text-purple-600 text-xs">
+                                    <span className="text-purple-600 text-xs text-right">
                                         до {new Date(billing.data.expires_at).toLocaleDateString('ru-RU')}
                                     </span>
                                 )}
@@ -385,7 +364,7 @@ const FoodLogPage: React.FC = () => {
                         )}
                     </div>
                 )}
-            </div>
+            </PageContainer>
         </div>
     );
 };

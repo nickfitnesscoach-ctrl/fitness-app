@@ -14,8 +14,8 @@ export const MealsList: React.FC<MealsListProps> = ({
     onOpenMeal,
 }) => {
     return (
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-[var(--radius-card)] p-[var(--card-p)] shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-[var(--card-p)]">
                 <h2 className="text-lg font-bold text-gray-900">Сегодня</h2>
                 <span className="text-sm text-gray-500">{meals.length} приемов пищи</span>
             </div>
@@ -43,7 +43,7 @@ export const MealsList: React.FC<MealsListProps> = ({
                             >
                                 <div
                                     onClick={() => onOpenMeal(meal.id)}
-                                    className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-colors active:scale-[0.98] shadow-sm"
+                                    className="flex items-center gap-3 p-[var(--card-p)] bg-white border border-gray-100 rounded-[var(--radius-card)] cursor-pointer hover:bg-gray-50 transition-colors active:scale-[0.98] shadow-sm"
                                 >
                                     {/* 1. Photos (Fixed) */}
                                     <div className="w-16 min-w-16 flex items-center">

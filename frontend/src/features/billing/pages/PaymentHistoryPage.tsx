@@ -2,6 +2,7 @@ import React from 'react';
 import PageHeader from '../../../components/PageHeader';
 import PaymentHistoryList from '../components/billing/PaymentHistoryList';
 import { usePaymentHistory } from '../hooks/usePaymentHistory';
+import { PageContainer } from '../../../components/shared/PageContainer';
 
 const PaymentHistoryPage: React.FC = () => {
     const { payments, loading } = usePaymentHistory(20);
@@ -18,11 +19,11 @@ const PaymentHistoryPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 pb-24">
+        <div className="min-h-screen bg-gray-50">
             <PageHeader title="История оплат" fallbackRoute="/settings/subscription" />
-            <div className="p-4 space-y-4">
+            <PageContainer className="py-6 space-y-[var(--section-gap)]">
                 <PaymentHistoryList payments={payments} />
-            </div>
+            </PageContainer>
         </div>
     );
 };

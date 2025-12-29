@@ -15,66 +15,58 @@ import { Home, Camera, CreditCard, User } from 'lucide-react';
 const ClientLayout: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
-            <main className="flex-1 pb-16 md:pb-20">
+            <main className="flex-1" style={{ paddingBottom: 'calc(var(--tap-h) + var(--safe-bottom) + 12px)' }}>
                 <Outlet />
             </main>
 
             {/* Bottom Navigation Bar */}
-            <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 pb-[calc(12px+env(safe-area-inset-bottom))] flex justify-between items-center z-50">
+            <nav
+                className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-100 flex justify-between items-center z-50 px-page"
+                style={{
+                    paddingBottom: 'var(--safe-bottom)',
+                    height: 'calc(var(--tap-h) + var(--safe-bottom) + 12px)',
+                }}
+            >
                 <NavLink
                     to="/"
                     end
                     className={({ isActive }) =>
-                        `flex flex-col items-center gap-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`
+                        `flex-1 flex flex-col items-center justify-center gap-1 h-full transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400'}`
                     }
                 >
-                    <Home size={24} />
-                    <span className="text-xs font-medium">Дневник</span>
+                    <Home size={22} />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider">Дневник</span>
                 </NavLink>
 
                 <NavLink
                     to="/log"
                     className={({ isActive }) =>
-                        `flex flex-col items-center gap-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`
+                        `flex-1 flex flex-col items-center justify-center gap-1 h-full transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400'}`
                     }
                 >
-                    <Camera size={24} />
-                    <span className="text-xs font-medium">Камера</span>
+                    <Camera size={22} />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider">Камера</span>
                 </NavLink>
 
                 <NavLink
                     to="/subscription"
                     className={({ isActive }) =>
-                        `flex flex-col items-center gap-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`
+                        `flex-1 flex flex-col items-center justify-center gap-1 h-full transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400'}`
                     }
                 >
-                    <CreditCard size={24} />
-                    <span className="text-xs font-medium">Подписка</span>
+                    <CreditCard size={22} />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider">Тариф</span>
                 </NavLink>
 
                 <NavLink
                     to="/profile"
                     className={({ isActive }) =>
-                        `flex flex-col items-center gap-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`
+                        `flex-1 flex flex-col items-center justify-center gap-1 h-full transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400'}`
                     }
                 >
-                    <User size={24} />
-                    <span className="text-xs font-medium">Профиль</span>
+                    <User size={22} />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider">Профиль</span>
                 </NavLink>
-
-                {/* Settings Link - Hidden for normal users */}
-                {/* TODO: Implement proper admin check */}
-                {false && (
-                    <NavLink
-                        to="/settings"
-                        className={({ isActive }) =>
-                            `flex flex-col items-center gap-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`
-                        }
-                    >
-                        <User size={24} /> {/* Placeholder icon */}
-                        <span className="text-xs font-medium">Настройки</span>
-                    </NavLink>
-                )}
             </nav>
         </div>
     );
