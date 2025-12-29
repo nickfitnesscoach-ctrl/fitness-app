@@ -31,6 +31,11 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
 }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
 
+    // Touch swipe state
+    const [touchStart, setTouchStart] = useState<number | null>(null);
+    const [touchEnd, setTouchEnd] = useState<number | null>(null);
+    const minSwipeDistance = 50;
+
     // Show all photos with URLs (including FAILED/CANCELLED for sync with details page)
     const displayPhotos = showAllPhotos
         ? photos.filter((p) => p.image_url)
@@ -106,8 +111,40 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
         setCurrentIndex((prev) => (prev === photoList.length - 1 ? 0 : prev + 1));
     };
 
+    // Touch swipe handlers
+    const onTouchStart = (e: React.TouchEvent) => {
+        setTouchEnd(null);
+        setTouchStart(e.targetTouches[0].clientX);
+    };
+
+    const onTouchMove = (e: React.TouchEvent) => {
+        setTouchEnd(e.targetTouches[0].clientX);
+    };
+
+    const onTouchEnd = () => {
+        if (!touchStart || !touchEnd) return;
+
+        const distance = touchStart - touchEnd;
+        const isLeftSwipe = distance > minSwipeDistance;
+        const isRightSwipe = distance < -minSwipeDistance;
+
+        if (isLeftSwipe) {
+            // Swipe left - next photo
+            setCurrentIndex((prev) => (prev === photoList.length - 1 ? 0 : prev + 1));
+        }
+        if (isRightSwipe) {
+            // Swipe right - previous photo
+            setCurrentIndex((prev) => (prev === 0 ? photoList.length - 1 : prev - 1));
+        }
+    };
+
     return (
-        <div className="relative group">
+        <div
+            className="relative group"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+        >
             {/* Main image */}
             <img
                 src={currentPhoto.image_url!}
@@ -125,22 +162,6 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
             <div className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-[10px] px-1 rounded">
                 {currentIndex + 1}/{photoList.length}
             </div>
-
-            {/* Navigation arrows (visible on hover) */}
-            <button
-                onClick={goToPrev}
-                className="absolute left-0 top-1/2 -translate-y-1/2 bg-black/40 text-white p-0.5 rounded-r opacity-0 group-hover:opacity-100 transition-opacity"
-                aria-label="Предыдущее фото"
-            >
-                <ChevronLeft size={14} />
-            </button>
-            <button
-                onClick={goToNext}
-                className="absolute right-0 top-1/2 -translate-y-1/2 bg-black/40 text-white p-0.5 rounded-l opacity-0 group-hover:opacity-100 transition-opacity"
-                aria-label="Следующее фото"
-            >
-                <ChevronRight size={14} />
-            </button>
         </div>
     );
 };

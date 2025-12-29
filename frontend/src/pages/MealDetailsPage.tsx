@@ -38,6 +38,43 @@ const MealDetailsPage: React.FC = () => {
     // Photo gallery state (multi-photo meals)
     const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
+    // Touch swipe state
+    const [touchStart, setTouchStart] = useState<number | null>(null);
+    const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+    // Minimum swipe distance (in px) to trigger navigation
+    const minSwipeDistance = 50;
+
+    const onTouchStart = (e: React.TouchEvent) => {
+        setTouchEnd(null);
+        setTouchStart(e.targetTouches[0].clientX);
+    };
+
+    const onTouchMove = (e: React.TouchEvent) => {
+        setTouchEnd(e.targetTouches[0].clientX);
+    };
+
+    const onTouchEnd = (displayPhotosLength: number) => {
+        if (!touchStart || !touchEnd) return;
+
+        const distance = touchStart - touchEnd;
+        const isLeftSwipe = distance > minSwipeDistance;
+        const isRightSwipe = distance < -minSwipeDistance;
+
+        if (isLeftSwipe) {
+            // Swipe left - next photo
+            setCurrentPhotoIndex((prev) =>
+                prev === displayPhotosLength - 1 ? 0 : prev + 1
+            );
+        }
+        if (isRightSwipe) {
+            // Swipe right - previous photo
+            setCurrentPhotoIndex((prev) =>
+                prev === 0 ? displayPhotosLength - 1 : prev - 1
+            );
+        }
+    };
+
     // Helper: Navigate back to date from location state
     const navigateBackToDate = () => {
         const returnDate = (location.state as any)?.returnDate;
@@ -231,7 +268,12 @@ const MealDetailsPage: React.FC = () => {
                 const isMealProcessing = data.status === 'PROCESSING';
 
                 return (
-                    <div className="w-full aspect-[4/3] bg-gray-200 relative">
+                    <div
+                        className="w-full aspect-[4/3] bg-gray-200 relative"
+                        onTouchStart={hasMultiplePhotos ? onTouchStart : undefined}
+                        onTouchMove={hasMultiplePhotos ? onTouchMove : undefined}
+                        onTouchEnd={hasMultiplePhotos ? () => onTouchEnd(displayPhotos.length) : undefined}
+                    >
                         {displayPhotos.length > 0 && currentPhoto ? (
                             <>
                                 <img
@@ -255,26 +297,6 @@ const MealDetailsPage: React.FC = () => {
                                         <div className="absolute top-4 right-4 bg-black/60 text-white px-3 py-1 rounded-full text-sm font-medium">
                                             {safeIndex + 1} / {displayPhotos.length}
                                         </div>
-
-                                        {/* Navigation arrows */}
-                                        <button
-                                            onClick={() => setCurrentPhotoIndex((prev) =>
-                                                prev === 0 ? displayPhotos.length - 1 : prev - 1
-                                            )}
-                                            className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full transition-colors"
-                                            aria-label="Предыдущее фото"
-                                        >
-                                            <ChevronLeft size={24} />
-                                        </button>
-                                        <button
-                                            onClick={() => setCurrentPhotoIndex((prev) =>
-                                                prev === displayPhotos.length - 1 ? 0 : prev + 1
-                                            )}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full transition-colors"
-                                            aria-label="Следующее фото"
-                                        >
-                                            <ChevronRight size={24} />
-                                        </button>
 
                                         {/* Dot indicators with status colors */}
                                         <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex gap-1.5">
