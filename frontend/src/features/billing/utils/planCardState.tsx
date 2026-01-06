@@ -1,4 +1,3 @@
-// billing/utils/planCardState.tsx
 import React from 'react';
 import type { SubscriptionPlan, SubscriptionDetails, BillingMe } from '../../../types/billing';
 import type { PlanCode } from './types';
@@ -36,6 +35,11 @@ function ProPanelShell({ children }: { children: React.ReactNode }) {
     return <div className="space-y-3">{children}</div>;
 }
 
+const PLAN_CODES: PlanCode[] = ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'];
+function isPlanCode(v: any): v is PlanCode {
+    return typeof v === 'string' && PLAN_CODES.includes(v as PlanCode);
+}
+
 export const buildPlanCardState = ({
     plan,
     subscription,
@@ -59,13 +63,14 @@ export const buildPlanCardState = ({
         return { isCurrent, disabled, customButtonText, bottomContent };
     }
 
-    const userPlanCode: PlanCode =
-        (billing.billingMe?.plan_code as PlanCode) ||
-        (subscription.plan === 'free' ? 'FREE' : 'PRO_MONTHLY');
+    const subscriptionIsProActive = subscription.plan === 'pro' && Boolean(subscription.is_active);
 
-    // FREE card
+    // Detect exact plan code ONLY if backend provided it
+    const userPlanCode = isPlanCode(billing.billingMe?.plan_code) ? (billing.billingMe!.plan_code as PlanCode) : null;
+
+    // FREE card behavior
     if (plan.code === 'FREE') {
-        if (subscription.plan === 'pro' && subscription.is_active) {
+        if (subscriptionIsProActive) {
             disabled = true;
             customButtonText = 'Базовый доступ';
         } else if (subscription.plan === 'free') {
@@ -76,11 +81,53 @@ export const buildPlanCardState = ({
         return { isCurrent, disabled, customButtonText, bottomContent };
     }
 
-    // PRO cards
     const planCode = plan.code as PlanCode;
 
-    // Active PRO on this exact plan
-    if (userPlanCode === planCode) {
+    // If user has PRO active but plan_code is unknown -> do NOT guess monthly/yearly.
+    if (subscriptionIsProActive && !userPlanCode) {
+        disabled = true;
+        customButtonText = 'PRO активен';
+
+        const autoRenew = subscription.autorenew_enabled;
+        const paymentMethod = subscription.payment_method;
+        const hasCard = paymentMethod?.is_attached ?? false;
+
+        bottomContent = (
+            <ProPanelShell>
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3 text-center">
+                    <p className="text-[12px] sm:text-[13px] font-bold text-slate-100 uppercase tracking-wide">
+                        Доступ до {formatDate(expiresAt)}
+                    </p>
+                </div>
+
+                <button
+                    onClick={() => navigate('/settings')}
+                    className="w-full text-center text-[11px] font-bold text-slate-400 hover:text-white transition-colors uppercase tracking-wide"
+                >
+                    Управлять подпиской
+                </button>
+
+                {!hasCard ? (
+                    <div className="text-[11px] text-center text-amber-400 font-bold uppercase tracking-widest">
+                        Оплата не настроена
+                    </div>
+                ) : autoRenew ? (
+                    <div className="text-[11px] text-center text-emerald-400 font-bold uppercase tracking-widest">
+                        Автопродление активно
+                    </div>
+                ) : (
+                    <div className="text-[11px] text-center text-rose-400 font-bold uppercase tracking-widest">
+                        Автопродление выключено
+                    </div>
+                )}
+            </ProPanelShell>
+        );
+
+        return { isCurrent, disabled, customButtonText, bottomContent };
+    }
+
+    // Active PRO on exact plan
+    if (userPlanCode && userPlanCode === planCode) {
         isCurrent = true;
 
         const autoRenew = subscription.autorenew_enabled;
@@ -147,14 +194,14 @@ export const buildPlanCardState = ({
         return { isCurrent, disabled, customButtonText, bottomContent };
     }
 
-    // User is PRO but on different plan (disable others)
+    // User is PRO (active) but on a different plan -> disable other cards
     if (isPro) {
         disabled = true;
         customButtonText = 'Доступно по подписке';
         return { isCurrent, disabled, customButtonText, bottomContent };
     }
 
-    // Expired PRO
+    // Expired PRO -> show restore CTA
     if (isExpired) {
         bottomContent = (
             <ProPanelShell>
@@ -169,7 +216,11 @@ export const buildPlanCardState = ({
                     disabled={loadingPlanCode === planCode}
                     className="w-full h-11 bg-white text-slate-900 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                    {loadingPlanCode === planCode ? <Loader2 className="animate-spin" size={16} /> : `Восстановить за ${plan.price} ₽`}
+                    {loadingPlanCode === planCode ? (
+                        <Loader2 className="animate-spin" size={16} />
+                    ) : (
+                        `Восстановить за ${plan.price} ₽`
+                    )}
                 </button>
             </ProPanelShell>
         );

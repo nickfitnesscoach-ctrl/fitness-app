@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useBilling } from '../../../contexts/BillingContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { api } from '../../../services/api';
@@ -25,11 +25,6 @@ interface UseSubscriptionDetailsResult {
     handleCreateTestPayment: () => Promise<void>;
 }
 
-/**
- * Custom hook for managing subscription details page logic
- * Encapsulates all business logic for subscription management
- * Includes anti-double-click protection via in-flight request tracking
- */
 export const useSubscriptionDetails = (): UseSubscriptionDetailsResult => {
     const billing = useBilling();
     const auth = useAuth();
@@ -37,125 +32,118 @@ export const useSubscriptionDetails = (): UseSubscriptionDetailsResult => {
     const [togglingAutoRenew, setTogglingAutoRenew] = useState(false);
     const [creatingTestPayment, setCreatingTestPayment] = useState(false);
 
-    // In-flight request lock to prevent double-clicks
     const inFlightRef = useRef<Set<string>>(new Set());
 
     const subscription = billing.subscription;
 
-    // Computed values
     const isPro = subscription?.plan === 'pro';
     const expiresAt = subscription?.expires_at ?? null;
     const expiresAtFormatted = formatShortDate(expiresAt);
+
     const autoRenewEnabled = subscription?.autorenew_enabled ?? false;
     const autoRenewAvailable = subscription?.autorenew_available ?? false;
+
     const paymentMethod = subscription?.payment_method;
     const hasCard = paymentMethod?.is_attached ?? false;
 
     const isAdmin = auth.isAdmin ?? false;
     const testLivePaymentAvailable = billing.billingMe?.test_live_payment_available ?? false;
 
-    /**
-     * Format card info label for display
-     */
     const cardInfoLabel = useMemo(() => {
-        if (!hasCard || !paymentMethod) {
-            return 'Карта не привязана';
-        }
-
+        if (!hasCard || !paymentMethod) return 'Карта не привязана';
         const mask = paymentMethod.card_mask || '••••';
         const brand = paymentMethod.card_brand || 'Card';
         return `${mask} · ${brand}`;
     }, [hasCard, paymentMethod]);
 
-    /**
-     * Toggle auto-renew subscription
-     * Protected against double-click
-     */
     const handleToggleAutoRenew = async (): Promise<void> => {
-        const lockKey = 'toggle-autorenew';
-
-        if (togglingAutoRenew || inFlightRef.current.has(lockKey)) {
-            return;
-        }
+        const lockKey = 'autorenew:toggle';
+        if (togglingAutoRenew || inFlightRef.current.has(lockKey)) return;
 
         if (!autoRenewAvailable) {
-            showToast("Привяжите карту для включения автопродления");
+            showToast('Автопродление недоступно — привяжите карту');
             return;
         }
 
         inFlightRef.current.add(lockKey);
+        setTogglingAutoRenew(true);
 
         try {
-            setTogglingAutoRenew(true);
             await billing.setAutoRenew(!autoRenewEnabled);
-            showToast(autoRenewEnabled ? "Автопродление отключено" : "Автопродление включено");
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : "Не удалось изменить настройки";
+            showToast(autoRenewEnabled ? 'Автопродление отключено' : 'Автопродление включено');
+        } catch (error) {
+            console.error('[billing] setAutoRenew error:', error);
+            const message = error instanceof Error ? error.message : 'Не удалось изменить настройки';
             showToast(message);
         } finally {
-            inFlightRef.current.delete(lockKey);
             setTogglingAutoRenew(false);
+            inFlightRef.current.delete(lockKey);
         }
     };
 
-    /**
-     * Handle payment method click - bind card or show message
-     * Protected against double-click
-     */
     const handlePaymentMethodClick = async (): Promise<void> => {
-        const lockKey = 'payment-method';
+        const lockKey = 'payment-method:click';
+        if (inFlightRef.current.has(lockKey)) return;
 
-        if (inFlightRef.current.has(lockKey)) {
-            return;
-        }
-
-        if (!hasCard) {
-            inFlightRef.current.add(lockKey);
-
-            try {
-                await billing.addPaymentMethod();
-            } catch (error) {
-                // Try to parse structured error response
-                let errorMessage = "Ошибка при запуске привязки карты";
-                try {
-                    const errorData = JSON.parse((error as Error).message);
-                    errorMessage = errorData.message || errorMessage;
-                } catch {
-                    // If not JSON, use message as is
-                    errorMessage = (error as Error).message || errorMessage;
-                }
-                showToast(errorMessage);
-            } finally {
-                inFlightRef.current.delete(lockKey);
-            }
-        } else {
-            showToast("Смена карты будет доступна позже");
-        }
-    };
-
-    /**
-     * Create test payment (admin only)
-     * Protected against double-click
-     */
-    const handleCreateTestPayment = async (): Promise<void> => {
-        const lockKey = 'test-payment';
-
-        if (creatingTestPayment || inFlightRef.current.has(lockKey)) {
+        // пока не поддерживаем смену карты — только привязка
+        if (hasCard) {
+            showToast('Смена карты будет доступна позже');
             return;
         }
 
         inFlightRef.current.add(lockKey);
+        try {
+            await billing.addPaymentMethod();
+        } catch (error) {
+            console.error('[billing] addPaymentMethod error:', error);
+            let errorMessage = 'Ошибка при запуске привязки карты';
+            if (error instanceof Error && error.message) {
+                try {
+                    const data = JSON.parse(error.message);
+                    errorMessage = data?.message || errorMessage;
+                } catch {
+                    errorMessage = error.message || errorMessage;
+                }
+            }
+            showToast(errorMessage);
+        } finally {
+            inFlightRef.current.delete(lockKey);
+        }
+    };
+
+    const handleCreateTestPayment = async (): Promise<void> => {
+        const lockKey = 'admin:test-payment';
+        if (creatingTestPayment || inFlightRef.current.has(lockKey)) return;
+
+        // defense-in-depth (не только UI)
+        if (!isAdmin || !testLivePaymentAvailable) {
+            showToast('Недостаточно прав');
+            return;
+        }
+
+        inFlightRef.current.add(lockKey);
+        setCreatingTestPayment(true);
 
         try {
-            setCreatingTestPayment(true);
-            await api.createTestLivePayment();
-            // Redirect handled by api method
-        } catch (error: unknown) {
+            // API может редиректить внутри себя; если вернёт URL — откроем
+            const res: any = await api.createTestLivePayment();
+            const url = res?.confirmation_url;
+
+            if (typeof url === 'string' && url.length > 0) {
+                const isTMA = typeof window !== 'undefined' && Boolean(window.Telegram?.WebApp?.initData);
+                if (isTMA && window.Telegram?.WebApp?.openLink) {
+                    window.Telegram.WebApp.openLink(url);
+                } else {
+                    window.location.href = url;
+                }
+            }
+        } catch (error) {
+            console.error('[billing] createTestLivePayment error:', error);
             const message = error instanceof Error ? error.message : 'Ошибка при создании тестового платежа';
             showToast(message);
         } finally {
-            inFlightRef.current.delete(lockKey);
             setCreatingTestPayment(false);
+            inFlightRef.current.delete(lockKey);
         }
     };
 
@@ -167,10 +155,12 @@ export const useSubscriptionDetails = (): UseSubscriptionDetailsResult => {
         autoRenewAvailable,
         hasCard,
         cardInfoLabel,
+
         isAdmin,
         testLivePaymentAvailable,
         togglingAutoRenew,
         creatingTestPayment,
+
         handleToggleAutoRenew,
         handlePaymentMethodClick,
         handleCreateTestPayment,

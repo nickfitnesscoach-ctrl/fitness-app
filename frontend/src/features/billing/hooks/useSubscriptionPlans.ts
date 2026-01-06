@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { SubscriptionPlan } from '../../../types/billing';
 import type { PlanCode } from '../utils/types';
 import { api } from '../../../services/api';
@@ -12,73 +12,75 @@ interface UseSubscriptionPlansResult {
 
 const ORDER: PlanCode[] = ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'];
 
-/**
- * Check if mocks should be used:
- * 1. VITE_BILLING_MOCKS=1 in .env
- * 2. ?debug=1 or ?mocks=1 in URL (browser only)
- */
-const shouldUseMocks = (): boolean => {
-    if (import.meta.env.VITE_BILLING_MOCKS === '1') {
-        return true;
-    }
-    if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('debug') === '1' || params.get('mocks') === '1') {
-            return true;
-        }
-    }
-    return false;
-};
-
-/**
- * Type guard to filter valid plan codes from API response
- */
 function isPlanCode(code: string): code is PlanCode {
     return ORDER.includes(code as PlanCode);
 }
 
 /**
- * Fetch subscription plans from API or use mocks in dev mode.
- * 
- * SSOT: Features come ONLY from API (or mocks).
- * This hook does NOT generate/modify feature texts.
+ * Mocks policy:
+ * - DEV only: can enable mocks via VITE_BILLING_MOCKS=1 or URL params (?debug=1 / ?mocks=1)
+ * - PROD: mocks are NEVER enabled by URL params
  */
+function shouldUseMocks(): boolean {
+    const isDev = Boolean(import.meta.env.DEV);
+
+    if (import.meta.env.VITE_BILLING_MOCKS === '1') {
+        // allow explicit env toggle in any env (you decide), but it's safer to keep only DEV
+        return isDev;
+    }
+
+    if (isDev && typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('debug') === '1' || params.get('mocks') === '1';
+    }
+
+    return false;
+}
+
 export const useSubscriptionPlans = (): UseSubscriptionPlansResult => {
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        const fetchPlans = async () => {
-            try {
-                setLoading(true);
+    const useMocks = useMemo(() => shouldUseMocks(), []);
 
-                // DEV: return mocks if enabled
-                if (shouldUseMocks()) {
-                    console.log('[DEV] Using mock subscription plans');
-                    const sortedMocks = [...mockSubscriptionPlans]
-                        .sort((a, b) => ORDER.indexOf(a.code as PlanCode) - ORDER.indexOf(b.code as PlanCode));
-                    setPlans(sortedMocks);
+    useEffect(() => {
+        let cancelled = false;
+
+        const load = async () => {
+            setLoading(true);
+            setError(null);
+
+            try {
+                if (useMocks) {
+                    const sortedMocks = [...mockSubscriptionPlans].sort(
+                        (a, b) => ORDER.indexOf(a.code as PlanCode) - ORDER.indexOf(b.code as PlanCode),
+                    );
+                    if (!cancelled) setPlans(sortedMocks);
                     return;
                 }
 
-                // PROD: fetch from API
                 const apiPlans = await api.getSubscriptionPlans();
 
-                const sortedPlans = apiPlans
-                    .filter(p => isPlanCode(p.code))
+                const sortedPlans = (apiPlans || [])
+                    .filter((p) => p?.code && isPlanCode(p.code))
                     .sort((a, b) => ORDER.indexOf(a.code as PlanCode) - ORDER.indexOf(b.code as PlanCode));
 
-                setPlans(sortedPlans);
+                if (!cancelled) setPlans(sortedPlans);
             } catch (e) {
-                console.error(e);
-                setError('Не удалось загрузить тарифы, попробуйте позже');
+                console.error('[billing] getSubscriptionPlans error:', e);
+                if (!cancelled) setError('Не удалось загрузить тарифы, попробуйте позже');
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
-        fetchPlans();
-    }, []);
+
+        load();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [useMocks]);
 
     return { plans, loading, error };
 };

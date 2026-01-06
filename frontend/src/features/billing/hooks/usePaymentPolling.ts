@@ -1,79 +1,78 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../../services/api';
 import { useBilling } from '../../../contexts/BillingContext';
 
 interface UsePaymentPollingOptions {
-    /** Polling interval in milliseconds (default: 3000) */
-    intervalMs?: number;
-    /** Maximum polling duration in milliseconds (default: 90000 = 90s) */
-    timeoutMs?: number;
-    /** Target plan code to detect (if not provided, any non-FREE is considered success) */
+    intervalMs?: number;   // default 3000
+    timeoutMs?: number;    // default 90000
     targetPlanCode?: string;
+    flagTtlMs?: number;    // default 10 minutes
 }
 
 interface UsePaymentPollingResult {
-    /** Whether polling is currently active */
     isPolling: boolean;
-    /** Start polling for subscription update */
-    startPolling: () => void;
-    /** Stop polling manually */
+    startPolling: (params?: { targetPlanCode?: string }) => void;
     stopPolling: () => void;
-    /** Whether timeout was reached without success */
     isTimedOut: boolean;
-    /** Number of poll attempts made */
     pollCount: number;
 }
 
-/**
- * Hook for polling subscription status after payment.
- *
- * After a user completes payment and returns to the app, this hook
- * polls /billing/me/ to detect when the subscription has been activated.
- *
- * Usage:
- * ```tsx
- * const { isPolling, startPolling, isTimedOut } = usePaymentPolling();
- *
- * const handlePayment = async () => {
- *   const { confirmation_url } = await api.createPayment(...);
- *   startPolling(); // Start polling before redirect
- *   window.location.href = confirmation_url;
- * };
- *
- * // After return from payment:
- * if (isTimedOut) {
- *   return <Button onClick={() => billing.refresh()}>Обновить статус</Button>;
- * }
- * ```
- */
+const LS_KEY = 'billing_payment_poll_v2';
+
+type PollFlag = {
+    ts: number;
+    targetPlanCode?: string;
+};
+
+function readFlag(): PollFlag | null {
+    try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || typeof data.ts !== 'number') return null;
+        return data as PollFlag;
+    } catch {
+        return null;
+    }
+}
+
+function writeFlag(flag: PollFlag): void {
+    localStorage.setItem(LS_KEY, JSON.stringify(flag));
+}
+
+export function setPollingFlagForPayment(params?: { targetPlanCode?: string }) {
+    writeFlag({ ts: Date.now(), targetPlanCode: params?.targetPlanCode });
+}
+
+export function clearPollingFlag() {
+    localStorage.removeItem(LS_KEY);
+}
+
 export const usePaymentPolling = (options: UsePaymentPollingOptions = {}): UsePaymentPollingResult => {
     const {
         intervalMs = 3000,
         timeoutMs = 90000,
         targetPlanCode,
+        flagTtlMs = 10 * 60 * 1000,
     } = options;
 
     const billing = useBilling();
+
     const [isPolling, setIsPolling] = useState(false);
     const [isTimedOut, setIsTimedOut] = useState(false);
     const [pollCount, setPollCount] = useState(0);
 
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const startTimeRef = useRef<number | null>(null);
     const mountedRef = useRef(true);
+    const activeTargetRef = useRef<string | undefined>(targetPlanCode);
 
     const stopPolling = useCallback(() => {
-        if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-        }
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-        }
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        intervalRef.current = null;
+        timeoutRef.current = null;
         setIsPolling(false);
-        startTimeRef.current = null;
     }, []);
 
     const pollOnce = useCallback(async () => {
@@ -81,54 +80,47 @@ export const usePaymentPolling = (options: UsePaymentPollingOptions = {}): UsePa
 
         try {
             const me = await api.getBillingMe();
-            setPollCount(prev => prev + 1);
+            setPollCount((p) => p + 1);
 
-            if (!mountedRef.current) return;
-
-            const isSuccess = targetPlanCode
-                ? me.plan_code === targetPlanCode
-                : me.plan_code !== 'FREE';
+            const t = activeTargetRef.current;
+            const isSuccess = t ? me.plan_code === t : me.plan_code !== 'FREE';
 
             if (isSuccess) {
-                console.log('[usePaymentPolling] Subscription activated:', me.plan_code);
+                clearPollingFlag();
                 stopPolling();
-                // Refresh full billing context
                 await billing.refresh();
             }
-        } catch (error) {
-            console.warn('[usePaymentPolling] Poll error:', error);
-            // Continue polling on error
+        } catch (err) {
+            // errors are ok; keep polling
+            console.warn('[billing] polling error:', err);
         }
-    }, [targetPlanCode, stopPolling, billing]);
+    }, [billing, stopPolling]);
 
-    const startPolling = useCallback(() => {
-        // Reset state
-        setIsPolling(true);
-        setIsTimedOut(false);
-        setPollCount(0);
-        startTimeRef.current = Date.now();
+    const startPolling = useCallback(
+        (params?: { targetPlanCode?: string }) => {
+            activeTargetRef.current = params?.targetPlanCode ?? targetPlanCode;
 
-        // Clear any existing timers
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            setIsPolling(true);
+            setIsTimedOut(false);
+            setPollCount(0);
 
-        // Start interval
-        intervalRef.current = setInterval(pollOnce, intervalMs);
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-        // Set timeout
-        timeoutRef.current = setTimeout(() => {
-            if (mountedRef.current) {
-                console.log('[usePaymentPolling] Timeout reached');
+            intervalRef.current = setInterval(pollOnce, intervalMs);
+            timeoutRef.current = setTimeout(() => {
+                if (!mountedRef.current) return;
                 stopPolling();
+                clearPollingFlag();
                 setIsTimedOut(true);
-            }
-        }, timeoutMs);
+            }, timeoutMs);
 
-        // Poll immediately on start
-        pollOnce();
-    }, [intervalMs, timeoutMs, pollOnce, stopPolling]);
+            // immediate first poll
+            pollOnce();
+        },
+        [intervalMs, timeoutMs, pollOnce, stopPolling, targetPlanCode],
+    );
 
-    // Cleanup on unmount
     useEffect(() => {
         mountedRef.current = true;
         return () => {
@@ -138,16 +130,21 @@ export const usePaymentPolling = (options: UsePaymentPollingOptions = {}): UsePa
         };
     }, []);
 
-    // Also check if we should poll on mount (in case user returned from payment)
-    // This is triggered by a localStorage flag set before payment redirect
+    // Resume polling after return from payment (flag set BEFORE redirect)
     useEffect(() => {
-        const shouldPoll = localStorage.getItem('billing_poll_active');
-        if (shouldPoll === 'true') {
-            console.log('[usePaymentPolling] Resuming polling after return');
-            localStorage.removeItem('billing_poll_active');
-            startPolling();
+        const flag = readFlag();
+        if (!flag) return;
+
+        const age = Date.now() - flag.ts;
+        if (age < 0 || age > flagTtlMs) {
+            clearPollingFlag();
+            return;
         }
-    }, [startPolling]);
+
+        // Resume only once
+        clearPollingFlag();
+        startPolling({ targetPlanCode: flag.targetPlanCode });
+    }, [flagTtlMs, startPolling]);
 
     return {
         isPolling,
@@ -156,24 +153,4 @@ export const usePaymentPolling = (options: UsePaymentPollingOptions = {}): UsePa
         isTimedOut,
         pollCount,
     };
-};
-
-/**
- * Set flag before redirecting to payment to trigger polling on return.
- *
- * Usage:
- * ```ts
- * setPollingFlagForPayment();
- * window.Telegram.WebApp.openLink(confirmation_url);
- * ```
- */
-export const setPollingFlagForPayment = () => {
-    localStorage.setItem('billing_poll_active', 'true');
-};
-
-/**
- * Clear polling flag (e.g., on payment cancel).
- */
-export const clearPollingFlag = () => {
-    localStorage.removeItem('billing_poll_active');
 };
