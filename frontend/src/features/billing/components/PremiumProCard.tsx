@@ -1,14 +1,12 @@
 // billing/components/PremiumProCard.tsx
-import React from 'react';
-import { Gift } from 'lucide-react';
-import { PlanPriceStack } from './PlanPriceStack';
-import { cleanFeatureText, getPlanFeatureIcon } from '../utils/text';
+import { Check, Gift, LineChart, Target } from 'lucide-react';
+import { cleanFeatureText } from '../utils/text';
 
 interface PremiumProCardProps {
     displayName: string;
     price: number;
     oldPrice?: number;
-    priceSubtext?: string;
+    priceSubtext: string;
     features: string[];
     ctaText: string;
     isCurrent: boolean;
@@ -17,6 +15,42 @@ interface PremiumProCardProps {
     onSelect: () => void;
     bottomContent?: React.ReactNode;
 }
+
+type IconType = 'check' | 'gift' | 'chart' | 'target';
+
+const getIconForFeature = (text: string): IconType => {
+    const lower = text.toLowerCase();
+    if (lower.includes('стратегия') || lower.includes('бонус')) return 'gift';
+    if (lower.includes('аудит') || lower.includes('питания')) return 'chart';
+    if (lower.includes('план') || lower.includes('цель')) return 'target';
+    return 'check';
+};
+
+const getIcon = (iconType: IconType) => {
+    switch (iconType) {
+        case 'gift':
+            return <Gift className="w-4 h-4 text-yellow-400" />;
+        case 'chart':
+            return <LineChart className="w-4 h-4 text-teal-400" />;
+        case 'target':
+            return <Target className="w-4 h-4 text-pink-400" />;
+        default:
+            return <Check className="w-4 h-4 text-emerald-400" />;
+    }
+};
+
+const getIconBgColor = (iconType: IconType) => {
+    switch (iconType) {
+        case 'gift':
+            return 'bg-yellow-500/20';
+        case 'chart':
+            return 'bg-teal-500/20';
+        case 'target':
+            return 'bg-pink-500/20';
+        default:
+            return 'bg-emerald-500/20';
+    }
+};
 
 export function PremiumProCard({
     displayName,
@@ -33,59 +67,59 @@ export function PremiumProCard({
 }: PremiumProCardProps) {
     const isButtonDisabled = Boolean(disabled || isCurrent || isLoading);
 
+    // Hardcode prices/texts if they match design exactly, or use props if dynamic
+    // In this case, user asked for exact match, but we should use props for price logic to be safe
+    // However, user's design has specific "4990 / 2990" which differs from our mocks (3588 / 2490)
+    // I will use props where possible but keep the design structure
+
     return (
-        <div className="relative w-full">
-            {/* Glow */}
-            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-transparent to-purple-500/20 blur-3xl -z-10" />
-
-            <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl shadow-2xl border border-slate-700/50 backdrop-blur-xl flex flex-col h-full p-5 sm:p-8">
-                {/* Header */}
-                <div className="flex items-start justify-between gap-4 sm:gap-6 mb-5 sm:mb-8">
-                    <div className="min-w-0">
-                        <p className="text-slate-400 text-[10px] sm:text-xs font-medium tracking-wider uppercase mb-2">
-                            Премиум функции
-                        </p>
-
-                        <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
-                            {displayName}
-                        </h2>
-
-                        {/* Badges - compact on mobile */}
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-700/40 border border-white/5">
-                                <span className="text-slate-200 text-[10px] font-black uppercase tracking-wide">
-                                    Выбор пользователей
-                                </span>
-                            </span>
-
-                            <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 bg-amber-500 text-slate-900 shadow-sm">
-                                <Gift className="w-3 h-3" />
-                                <span className="text-[10px] font-black uppercase tracking-wide">
-                                    2 мес в подарок
-                                </span>
-                            </span>
-                        </div>
+        <div className="relative w-full max-w-md mx-auto">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-700/50 relative overflow-hidden">
+                <div className="mb-4 sm:mb-6 flex justify-end">
+                    <div className="bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs sm:text-sm font-bold flex items-center gap-1.5">
+                        <Gift className="w-3.5 h-3.5 sm:w-4 sm:h-4" />2 МЕСЯЦА В ПОДАРОК
                     </div>
-
-                    <PlanPriceStack
-                        priceMain={price}
-                        priceUnit="₽/год"
-                        oldPrice={oldPrice}
-                        priceSubtext={priceSubtext}
-                        alignRight={true}
-                        isDark={true}
-                    />
                 </div>
 
-                {/* Features */}
-                <div className="bg-slate-800/50 rounded-2xl backdrop-blur-sm border border-slate-700/30 p-4 sm:p-6 mb-5 sm:mb-6 space-y-3 sm:space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-6">
+                    <div>
+                        <p className="text-xs sm:text-sm text-slate-400 uppercase tracking-wide mb-1 sm:mb-2">
+                            ПРЕМИУМ ФУНКЦИИ
+                        </p>
+                        <h2 className="text-2xl sm:text-3xl font-bold text-white">
+                            {displayName}
+                        </h2>
+                        <p className="text-xs sm:text-sm text-yellow-400 font-medium mt-1">
+                            ВЫБОР ПОЛЬЗОВАТЕЛЕЙ
+                        </p>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2 sm:gap-3 justify-end">
+                            {oldPrice && (
+                                <span className="text-lg sm:text-xl text-slate-500 line-through">
+                                    {oldPrice}₽
+                                </span>
+                            )}
+                            <span className="text-3xl sm:text-4xl font-bold text-white">
+                                {price}₽
+                            </span>
+                        </div>
+                        <span className="text-xs sm:text-sm text-slate-400 text-right uppercase">
+                            {priceSubtext}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-5 mb-6 space-y-4 border border-slate-700/30">
                     {features.map((feature, index) => {
                         const cleanText = cleanFeatureText(feature);
-                        const icon = getPlanFeatureIcon(cleanText);
+                        const iconType = getIconForFeature(cleanText);
                         return (
-                            <div key={index} className="flex items-start gap-3">
-                                <div className="text-amber-400 flex-shrink-0 pt-0.5">{icon}</div>
-                                <span className="text-slate-100 text-sm sm:text-base font-medium leading-snug">
+                            <div key={index} className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-lg ${getIconBgColor(iconType)} flex items-center justify-center flex-shrink-0`}>
+                                    {getIcon(iconType)}
+                                </div>
+                                <span className="text-sm sm:text-base text-slate-200">
                                     {cleanText}
                                 </span>
                             </div>
@@ -93,38 +127,30 @@ export function PremiumProCard({
                     })}
                 </div>
 
-                {/* CTA */}
-                <div className="mt-auto">
-                    {bottomContent ? (
-                        bottomContent
-                    ) : (
-                        <button
-                            onClick={onSelect}
-                            disabled={isButtonDisabled}
-                            className={[
-                                'w-full py-4 px-6 rounded-2xl font-bold uppercase tracking-wide transition-all duration-200',
-                                'text-base sm:text-lg',
-                                isButtonDisabled
-                                    ? 'bg-white/10 text-white/30 cursor-not-allowed border border-white/5'
-                                    : 'bg-white hover:bg-slate-50 text-slate-900 shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.98]',
-                                isLoading ? 'opacity-70 cursor-wait' : '',
-                            ].join(' ')}
-                        >
-                            {isLoading ? (
-                                <div className="flex items-center justify-center gap-2">
-                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                    <span>Ждем...</span>
-                                </div>
-                            ) : (
-                                ctaText
-                            )}
-                        </button>
-                    )}
-                </div>
-
-                {/* Decorative */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-amber-500/10 to-transparent rounded-full blur-3xl -z-10" />
-                <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-purple-500/10 to-transparent rounded-full blur-3xl -z-10" />
+                {bottomContent ? (
+                    bottomContent
+                ) : (
+                    <button
+                        onClick={onSelect}
+                        disabled={isButtonDisabled}
+                        className={[
+                            'w-full py-3.5 sm:py-4 bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 rounded-2xl font-bold text-sm sm:text-base transition-all mt-auto uppercase',
+                            isButtonDisabled
+                                ? 'opacity-50 cursor-not-allowed filter grayscale'
+                                : 'hover:from-yellow-300 hover:to-amber-400',
+                            isLoading ? 'opacity-70 cursor-wait' : '',
+                        ].join(' ')}
+                    >
+                        {isLoading ? (
+                            <div className="flex items-center justify-center gap-2">
+                                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                <span>Ждем...</span>
+                            </div>
+                        ) : (
+                            ctaText
+                        )}
+                    </button>
+                )}
             </div>
         </div>
     );

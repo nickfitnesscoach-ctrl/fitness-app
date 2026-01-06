@@ -1,5 +1,5 @@
 // billing/components/PremiumMonthCard.tsx
-import { Check } from 'lucide-react';
+import { UtensilsCrossed, Zap, TrendingUp, Target } from 'lucide-react';
 import { cleanFeatureText } from '../utils/text';
 
 interface PremiumMonthCardProps {
@@ -13,6 +13,30 @@ interface PremiumMonthCardProps {
     onSelect: () => void;
     bottomContent?: React.ReactNode;
 }
+
+type IconType = 'utensils' | 'zap' | 'trending' | 'target';
+
+const getIconForFeature = (text: string): IconType => {
+    const lower = text.toLowerCase();
+    if (lower.includes('свобода') || lower.includes('питания')) return 'utensils';
+    if (lower.includes('мгновенный') || lower.includes('подсчет')) return 'zap';
+    if (lower.includes('анализ') || lower.includes('прогресса')) return 'trending';
+    if (lower.includes('адаптивный') || lower.includes('цель')) return 'target';
+    return 'zap';
+};
+
+const getIcon = (iconType: IconType) => {
+    switch (iconType) {
+        case 'utensils':
+            return <UtensilsCrossed className="w-4 h-4 text-emerald-400" />;
+        case 'zap':
+            return <Zap className="w-4 h-4 text-emerald-400" />;
+        case 'trending':
+            return <TrendingUp className="w-4 h-4 text-emerald-400" />;
+        case 'target':
+            return <Target className="w-4 h-4 text-emerald-400" />;
+    }
+};
 
 export function PremiumMonthCard({
     displayName,
@@ -29,51 +53,44 @@ export function PremiumMonthCard({
 
     return (
         <div className="relative w-full max-w-md mx-auto">
-            {/* Glow effect */}
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/20 via-transparent to-cyan-500/20 blur-3xl -z-10" />
-
-            <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl p-8 shadow-2xl border border-slate-700/50 backdrop-blur-xl">
-                {/* Header with title and price */}
-                <div className="flex items-start justify-between mb-8">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-700/50">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-6">
                     <div>
-                        <p className="text-slate-400 text-xs font-medium tracking-wider uppercase mb-2">
-                            Премиум функций
+                        <p className="text-xs sm:text-sm text-slate-400 uppercase tracking-wide mb-1 sm:mb-2">
+                            ПРЕМИУМ ФУНКЦИИ
                         </p>
-                        <h2 className="text-4xl font-bold text-white mb-2 tracking-tight">
+                        <h2 className="text-2xl sm:text-3xl font-bold text-white">
                             {displayName}
                         </h2>
-                        <div className="inline-flex items-center bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 px-3 py-1 rounded-full border border-emerald-500/30">
-                            <span className="text-emerald-400 text-xs font-bold uppercase tracking-wide">
-                                Полный безлимит
-                            </span>
-                        </div>
+                        <p className="text-xs sm:text-sm text-emerald-400 font-medium mt-1 uppercase">
+                            ПОЛНЫЙ БЕЗЛИМИТ
+                        </p>
                     </div>
-
-                    <div className="text-right flex-shrink-0">
-                        <div className="flex items-baseline gap-1">
-                            <span className="text-5xl font-bold text-white bg-gradient-to-br from-white to-slate-300 bg-clip-text text-transparent">
-                                {price}
-                            </span>
-                            <span className="text-xl font-bold text-slate-300">₽/мес</span>
-                        </div>
+                    <div className="flex items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
+                        <span className="text-3xl sm:text-4xl font-bold text-white">
+                            {price}₽
+                        </span>
+                        <span className="text-sm text-slate-400 uppercase">/МЕС</span>
                     </div>
                 </div>
 
-                {/* Features list */}
-                <div className="bg-slate-800/50 rounded-2xl p-6 backdrop-blur-sm border border-slate-700/30 mb-6 space-y-4">
-                    {features.map((feature, index) => (
-                        <div key={index} className="flex items-center gap-3 group">
-                            <div className="text-emerald-400 flex-shrink-0 transition-transform group-hover:scale-110">
-                                <Check className="w-5 h-5" />
+                <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-5 mb-6 space-y-4 border border-slate-700/30">
+                    {features.map((feature, index) => {
+                        const cleanText = cleanFeatureText(feature);
+                        const iconType = getIconForFeature(cleanText);
+                        return (
+                            <div key={index} className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                                    {getIcon(iconType)}
+                                </div>
+                                <span className="text-sm sm:text-base text-slate-200">
+                                    {cleanText}
+                                </span>
                             </div>
-                            <span className="text-slate-100 text-base font-medium">
-                                {cleanFeatureText(feature)}
-                            </span>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
-                {/* CTA Button */}
                 {bottomContent ? (
                     bottomContent
                 ) : (
@@ -81,10 +98,10 @@ export function PremiumMonthCard({
                         onClick={onSelect}
                         disabled={isButtonDisabled}
                         className={[
-                            'w-full font-bold text-lg py-4 px-6 rounded-2xl transition-all duration-200 uppercase tracking-wide',
+                            'w-full py-3.5 sm:py-4 bg-white text-slate-900 rounded-2xl font-bold text-sm sm:text-base transition-colors mt-auto uppercase',
                             isButtonDisabled
-                                ? 'bg-white/10 text-white/30 cursor-not-allowed'
-                                : 'bg-white hover:bg-slate-50 text-slate-900 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]',
+                                ? 'opacity-50 cursor-not-allowed bg-slate-700 text-slate-500 hover:bg-slate-700'
+                                : 'hover:bg-slate-100',
                             isLoading ? 'opacity-70 cursor-wait' : '',
                         ].join(' ')}
                     >
@@ -98,12 +115,7 @@ export function PremiumMonthCard({
                         )}
                     </button>
                 )}
-
-                {/* Decorative elements */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-full blur-3xl -z-10" />
-                <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-cyan-500/10 to-transparent rounded-full blur-3xl -z-10" />
             </div>
         </div>
     );
 }
-

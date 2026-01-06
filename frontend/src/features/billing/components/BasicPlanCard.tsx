@@ -1,6 +1,6 @@
 // billing/components/BasicPlanCard.tsx
-import { PlanPriceStack } from './PlanPriceStack';
-import { cleanFeatureText, getPlanFeatureIcon } from '../utils/text';
+import { Zap, Calculator, Calendar } from 'lucide-react';
+import { cleanFeatureText } from '../utils/text';
 
 interface BasicPlanCardProps {
     displayName: string;
@@ -12,6 +12,27 @@ interface BasicPlanCardProps {
     disabled?: boolean;
     onSelect: () => void;
 }
+
+type IconType = 'zap' | 'calculator' | 'calendar';
+
+const getIconForFeature = (text: string): IconType => {
+    const lower = text.toLowerCase();
+    if (lower.includes('ai') || lower.includes('распозн') || lower.includes('фото')) return 'zap';
+    if (lower.includes('кбжу') || lower.includes('расчет') || lower.includes('калор')) return 'calculator';
+    if (lower.includes('истор') || lower.includes('дней') || lower.includes('дня')) return 'calendar';
+    return 'zap';
+};
+
+const getIcon = (iconType: IconType) => {
+    switch (iconType) {
+        case 'zap':
+            return <Zap className="w-5 h-5 text-gray-600 flex-shrink-0" />;
+        case 'calculator':
+            return <Calculator className="w-5 h-5 text-gray-600 flex-shrink-0" />;
+        case 'calendar':
+            return <Calendar className="w-5 h-5 text-gray-600 flex-shrink-0" />;
+    }
+};
 
 export function BasicPlanCard({
     displayName,
@@ -26,68 +47,57 @@ export function BasicPlanCard({
     const isButtonDisabled = Boolean(disabled || isCurrent || isLoading);
 
     return (
-        <div className="relative w-full">
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200 flex flex-col h-full p-5 sm:p-8">
-                {/* Header */}
-                <div className="flex items-start justify-between gap-4 sm:gap-6 mb-5 sm:mb-8">
-                    <div className="min-w-0">
-                        <p className="text-slate-400 text-[10px] sm:text-xs font-medium tracking-wider uppercase mb-2">
-                            Ограниченный доступ
+        <div className="relative w-full max-w-md mx-auto">
+            <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-6">
+                    <div>
+                        <p className="text-xs sm:text-sm text-gray-500 uppercase tracking-wide mb-1 sm:mb-2">
+                            ЛИМИТИРОВАННЫЙ ДОСТУП
                         </p>
-                        <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-tight">
+                        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
                             {displayName}
                         </h2>
-
-                        <div className="mt-3 inline-flex items-center px-3 py-1 rounded-full bg-slate-100 border border-slate-200">
-                            <span className="text-slate-600 text-[10px] sm:text-xs font-bold uppercase tracking-wide">
-                                Базовый план
-                            </span>
-                        </div>
                     </div>
-
-                    <PlanPriceStack priceMain={price} priceUnit="₽" alignRight={true} />
+                    <div className="flex items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
+                        <span className="text-3xl sm:text-4xl font-bold text-gray-900">
+                            {price}₽
+                        </span>
+                    </div>
                 </div>
 
-                {/* Features */}
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:p-6 mb-5 sm:mb-6 space-y-3 sm:space-y-4">
+                <div className="bg-gray-50 rounded-2xl p-5 mb-6 space-y-4">
                     {features.map((feature, index) => {
                         const cleanText = cleanFeatureText(feature);
-                        const icon = getPlanFeatureIcon(cleanText);
+                        const iconType = getIconForFeature(cleanText);
                         return (
-                            <div key={index} className="flex items-start gap-3">
-                                <div className="text-slate-500 flex-shrink-0 pt-0.5">{icon}</div>
-                                <span className="text-slate-700 text-sm sm:text-base font-medium leading-snug">
-                                    {cleanText}
-                                </span>
+                            <div key={index} className="flex items-center gap-3">
+                                {getIcon(iconType)}
+                                <span className="text-sm sm:text-base text-gray-700">{cleanText}</span>
                             </div>
                         );
                     })}
                 </div>
 
-                {/* CTA */}
-                <div className="mt-auto">
-                    <button
-                        onClick={onSelect}
-                        disabled={isButtonDisabled}
-                        className={[
-                            'w-full py-4 px-6 rounded-2xl font-bold uppercase tracking-wide transition-all duration-200',
-                            'text-base sm:text-lg',
-                            isButtonDisabled
-                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                : 'bg-transparent hover:bg-slate-50 text-slate-900 border border-slate-300 hover:border-slate-400 shadow-sm hover:shadow active:scale-[0.98]',
-                            isLoading ? 'opacity-70 cursor-wait' : '',
-                        ].join(' ')}
-                    >
-                        {isLoading ? (
-                            <div className="flex items-center justify-center gap-2">
-                                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                <span>Ждем...</span>
-                            </div>
-                        ) : (
-                            ctaText
-                        )}
-                    </button>
-                </div>
+                <button
+                    onClick={onSelect}
+                    disabled={isButtonDisabled}
+                    className={[
+                        'w-full py-3.5 sm:py-4 bg-transparent border-2 border-gray-900 text-gray-900 rounded-2xl font-bold text-sm sm:text-base transition-colors mt-auto uppercase',
+                        isButtonDisabled
+                            ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-200 text-gray-400'
+                            : 'hover:bg-gray-900 hover:text-white',
+                        isLoading ? 'opacity-70 cursor-wait' : '',
+                    ].join(' ')}
+                >
+                    {isLoading ? (
+                        <div className="flex items-center justify-center gap-2">
+                            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                            <span>Ждем...</span>
+                        </div>
+                    ) : (
+                        ctaText
+                    )}
+                </button>
             </div>
         </div>
     );

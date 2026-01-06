@@ -22,14 +22,14 @@ export const mockSubscriptionPlans: SubscriptionPlan[] = [
         advanced_stats: false,
         priority_support: false,
         features: [
-            '📸 3 фото в день',
-            '📊 История за 7 дней',
-            '🤖 AI-распознавание еды',
+            '3 AI-распознавания в день',
+            'Базовый расчет КБЖУ',
+            'История питания (7 дней)',
         ],
     },
     {
         code: 'PRO_MONTHLY',
-        display_name: 'Премиум',
+        display_name: 'PRO Месяц',
         price: 299,
         duration_days: 30,
         daily_photo_limit: null,
@@ -46,8 +46,8 @@ export const mockSubscriptionPlans: SubscriptionPlan[] = [
     },
     {
         code: 'PRO_YEARLY',
-        display_name: 'Премиум Годовой',
-        price: 2490,
+        display_name: 'PRO Год',
+        price: 2990,
         duration_days: 365,
         daily_photo_limit: null,
         history_days: -1,
@@ -55,13 +55,12 @@ export const mockSubscriptionPlans: SubscriptionPlan[] = [
         advanced_stats: true,
         priority_support: true,
         is_popular: true,
-        old_price: 3588,  // 299 × 12
+        old_price: 4990,
         features: [
-            '📸 Безлимитные фото',
-            '📊 Вся история без ограничений',
-            '📈 Расширенная статистика и отчёты',
-            '⭐ Приоритетная поддержка 24/7',
-            '🎁 2 месяца в подарок',
+            'Все функции PRO-доступа',
+            'Бонус: Стратегия с тренером',
+            'Аудит твоего питания',
+            'План выхода на цель',
         ],
     },
 ];
