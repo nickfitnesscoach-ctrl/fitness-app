@@ -1,3 +1,4 @@
+// billing/components/SubscriptionHeader.tsx
 import React from 'react';
 
 interface SubscriptionHeaderProps {
@@ -9,19 +10,19 @@ interface SubscriptionHeaderProps {
 export const SubscriptionHeader: React.FC<SubscriptionHeaderProps> = ({
     topStatusText,
     headerTitle,
-    headerSubtitle
+    headerSubtitle,
 }) => {
     return (
-        <div className="flex flex-col items-center text-center space-y-2">
+        <div className="flex flex-col items-center text-center gap-2">
             <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-slate-100 text-slate-600 border border-slate-200">
                 {topStatusText}
             </div>
 
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight leading-tight">
                 {headerTitle}
             </h1>
 
-            <p className="text-sm text-slate-500 max-w-[280px] leading-snug">
+            <p className="text-sm text-slate-500 max-w-[320px] leading-snug">
                 {headerSubtitle}
             </p>
         </div>

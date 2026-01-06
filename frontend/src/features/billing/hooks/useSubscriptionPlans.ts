@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { SubscriptionPlan } from '../../../types/billing';
+import type { PlanCode } from '../utils/types';
 import { api } from '../../../services/api';
-import { IS_DEV } from '../../../config/env';
-import { mockSubscriptionPlans } from '../__mocks__/plans';
 
 interface UseSubscriptionPlansResult {
     plans: SubscriptionPlan[];
@@ -10,7 +9,14 @@ interface UseSubscriptionPlansResult {
     error: string | null;
 }
 
-const ORDER: SubscriptionPlan['code'][] = ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'];
+const ORDER: PlanCode[] = ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'];
+
+/**
+ * Type guard to filter valid plan codes from API response
+ */
+function isPlanCode(code: string): code is PlanCode {
+    return ORDER.includes(code as PlanCode);
+}
 
 export const useSubscriptionPlans = (): UseSubscriptionPlansResult => {
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -22,12 +28,11 @@ export const useSubscriptionPlans = (): UseSubscriptionPlansResult => {
             try {
                 setLoading(true);
 
-                // DEV MODE: Use mock plans from separate file
-                const apiPlans = IS_DEV ? mockSubscriptionPlans : await api.getSubscriptionPlans();
+                const apiPlans = await api.getSubscriptionPlans();
 
                 const sortedPlans = apiPlans
-                    .filter(p => ORDER.includes(p.code))
-                    .sort((a, b) => ORDER.indexOf(a.code) - ORDER.indexOf(b.code));
+                    .filter(p => isPlanCode(p.code))
+                    .sort((a, b) => ORDER.indexOf(a.code as PlanCode) - ORDER.indexOf(b.code as PlanCode));
 
                 setPlans(sortedPlans);
             } catch (e) {

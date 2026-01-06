@@ -12,7 +12,6 @@ export { default as PaymentHistoryPage } from './pages/PaymentHistoryPage';
 
 // Components
 export { default as PlanCard } from './components/PlanCard';
-export type { PlanCode } from './components/PlanCard';
 export { SubscriptionHeader } from './components/SubscriptionHeader';
 export { default as AdminTestPaymentCard } from './components/AdminTestPaymentCard';
 export { default as PaymentHistoryList } from './components/PaymentHistoryList';
@@ -30,6 +29,4 @@ export { formatBillingDate, formatShortDate, formatDate } from './utils/date';
 export { showToast, showSuccess, showError } from './utils/notify';
 export { assertBillingPlanCode, validatePlanCode, isPlanCodePro } from './utils/validation';
 export { buildPlanCardState } from './utils/planCardState';
-
-// Mocks (for development)
-export { mockSubscriptionPlans } from './__mocks__/plans';
+export type { PlanCode } from './utils/types';

@@ -1,10 +1,10 @@
+// billing/components/PlanCard.tsx
 import React from 'react';
 import type { SubscriptionPlan } from '../../../types/billing';
+import type { PlanCode } from '../utils/types';
 import { BasicPlanCard } from './BasicPlanCard';
 import { PremiumMonthCard } from './PremiumMonthCard';
 import { PremiumProCard } from './PremiumProCard';
-
-export type PlanCode = 'FREE' | 'PRO_MONTHLY' | 'PRO_YEARLY';
 
 interface PlanCardProps {
     plan: SubscriptionPlan;
@@ -23,10 +23,10 @@ const PlanCard: React.FC<PlanCardProps> = ({
     onSelect,
     customButtonText,
     disabled,
-    bottomContent
+    bottomContent,
 }) => {
-    switch (plan.code) {
-        case 'FREE': {
+    switch (plan.code as PlanCode) {
+        case 'FREE':
             return (
                 <BasicPlanCard
                     displayName={plan.display_name}
@@ -36,11 +36,11 @@ const PlanCard: React.FC<PlanCardProps> = ({
                     isCurrent={isCurrent}
                     isLoading={isLoading}
                     disabled={disabled}
-                    onSelect={() => onSelect(plan.code as PlanCode)}
+                    onSelect={() => onSelect('FREE')}
                 />
             );
-        }
-        case 'PRO_MONTHLY': {
+
+        case 'PRO_MONTHLY':
             return (
                 <PremiumMonthCard
                     displayName={plan.display_name}
@@ -50,28 +50,28 @@ const PlanCard: React.FC<PlanCardProps> = ({
                     isCurrent={isCurrent}
                     isLoading={isLoading}
                     disabled={disabled}
-                    onSelect={() => onSelect(plan.code as PlanCode)}
+                    onSelect={() => onSelect('PRO_MONTHLY')}
                     bottomContent={bottomContent}
                 />
             );
-        }
-        case 'PRO_YEARLY': {
+
+        case 'PRO_YEARLY':
             return (
                 <PremiumProCard
                     displayName={plan.display_name}
                     price={plan.price}
                     oldPrice={plan.old_price}
-                    priceSubtext={`≈ ${Math.round(plan.price / 12)} ₽ / мес`}
+                    priceSubtext={`≈ ${Math.round(plan.price / 12)} ₽/мес`}
                     features={plan.features ?? []}
                     ctaText={customButtonText ?? (isCurrent ? 'Выбрано' : 'Забрать план+ PRO')}
                     isCurrent={isCurrent}
                     isLoading={isLoading}
                     disabled={disabled}
-                    onSelect={() => onSelect(plan.code as PlanCode)}
+                    onSelect={() => onSelect('PRO_YEARLY')}
                     bottomContent={bottomContent}
                 />
             );
-        }
+
         default:
             return null;
     }

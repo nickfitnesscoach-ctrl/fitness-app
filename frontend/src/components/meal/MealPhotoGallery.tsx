@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon, AlertCircle, XCircle } from 'lucide-react';
+import { Image as ImageIcon, AlertCircle, XCircle } from 'lucide-react';
 import type { MealPhoto } from '../../services/api/types';
 
 interface MealPhotoGalleryProps {
@@ -91,8 +91,8 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
                     src={currentPhoto.image_url!}
                     alt="Фото еды"
                     className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
-                            ? 'opacity-70'
-                            : ''
+                        ? 'opacity-70'
+                        : ''
                         }`}
                 />
                 {renderMiniBadge(currentPhoto.status)}
@@ -100,16 +100,7 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
         );
     }
 
-    // Multiple photos - show gallery with navigation
-    const goToPrev = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setCurrentIndex((prev) => (prev === 0 ? photoList.length - 1 : prev - 1));
-    };
-
-    const goToNext = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setCurrentIndex((prev) => (prev === photoList.length - 1 ? 0 : prev + 1));
-    };
+    // Multiple photos - show gallery with touch swipe navigation
 
     // Touch swipe handlers
     const onTouchStart = (e: React.TouchEvent) => {
@@ -150,8 +141,8 @@ export const MealPhotoGallery: React.FC<MealPhotoGalleryProps> = ({
                 src={currentPhoto.image_url!}
                 alt={`Фото еды ${currentIndex + 1} из ${photoList.length}`}
                 className={`${SIZE_CLASSES[size]} object-cover rounded-lg ${currentPhoto.status === 'FAILED' || currentPhoto.status === 'CANCELLED'
-                        ? 'opacity-70'
-                        : ''
+                    ? 'opacity-70'
+                    : ''
                     }`}
             />
 
@@ -230,8 +221,8 @@ export const MealPhotoStrip: React.FC<MealPhotoStripProps> = ({
                         src={photoList[0].image_url!}
                         alt="Фото"
                         className={`w-full h-full object-cover rounded-lg ${photoList[0].status === 'FAILED' || photoList[0].status === 'CANCELLED'
-                                ? 'opacity-70'
-                                : ''
+                            ? 'opacity-70'
+                            : ''
                             }`}
                     />
                     {renderStripBadge(photoList[0].status)}
@@ -245,8 +236,8 @@ export const MealPhotoStrip: React.FC<MealPhotoStripProps> = ({
                                 src={photo.image_url!}
                                 alt={`Фото ${i + 1}`}
                                 className={`w-9 h-9 object-cover rounded-lg border-2 border-white shadow-sm ${photo.status === 'FAILED' || photo.status === 'CANCELLED'
-                                        ? 'opacity-70'
-                                        : ''
+                                    ? 'opacity-70'
+                                    : ''
                                     }`}
                             />
                             {renderStripBadge(photo.status)}

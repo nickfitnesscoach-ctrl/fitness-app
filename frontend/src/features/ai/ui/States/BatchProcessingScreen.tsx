@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Check, X, Loader2 } from 'lucide-react';
+import { RefreshCw, X, Loader2 } from 'lucide-react';
 import type { PhotoQueueItem } from '../../model';
 import { PHOTO_STATUS_LABELS, AI_ERROR_CODES } from '../../model';
 

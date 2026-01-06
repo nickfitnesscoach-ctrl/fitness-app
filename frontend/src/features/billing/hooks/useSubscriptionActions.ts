@@ -1,11 +1,10 @@
 import { useState, useRef } from 'react';
 import type { SubscriptionPlan } from '../../../types/billing';
+import type { PlanCode } from '../utils/types';
 import { api } from '../../../services/api';
 import { useBilling } from '../../../contexts/BillingContext';
 import { showToast } from '../utils/notify';
 import { setPollingFlagForPayment } from './usePaymentPolling';
-
-export type PlanCode = string;
 
 interface UseSubscriptionActionsParams {
     plans: SubscriptionPlan[];
