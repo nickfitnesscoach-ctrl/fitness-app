@@ -118,10 +118,7 @@ jobs:
       - name: Migration gate — no uncommitted migrations
         run: |
           echo "🔍 Checking for uncommitted migrations…"
-          uv run python manage.py makemigrations --check --dry-run
-          if [ $? -eq 0 ]; then
-            echo "✅ No uncommitted migrations detected"
-          else
+          uv run python manage.py makemigrations --check --dry-run && echo "✅ No uncommitted migrations detected" || {
             echo "❌ BLOCKER: Uncommitted migrations found!"
             echo ""
             echo "Models changed but migrations not created."
@@ -130,7 +127,7 @@ jobs:
             echo "  git add backend/apps/*/migrations/*.py"
             echo "  git commit -m 'feat: add migration for ...'"
             exit 1
-          fi
+          }
 
       - name: Run migrations
         run: |

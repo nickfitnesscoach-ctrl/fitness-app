@@ -28,8 +28,33 @@ else
 fi
 echo ""
 
-# Check 2: Migration plan
-echo "📋 Check 2: Migration plan"
+# Check 2: UV lock consistency
+echo "📋 Check 2: UV lock file consistency"
+echo "Running: uv sync --frozen"
+if uv sync --frozen 2>/dev/null; then
+    echo "✅ uv.lock is consistent with pyproject.toml"
+else
+    echo "❌ BLOCKER: uv.lock is out of sync!"
+    echo "   Run: uv lock"
+    echo "   Then: git add uv.lock && git commit"
+    exit 1
+fi
+echo ""
+
+# Check 3: Python syntax validation
+echo "📋 Check 3: Python syntax validation (compileall)"
+echo "Running: python -m compileall -q ."
+if python -m compileall -q .; then
+    echo "✅ No syntax errors detected"
+else
+    echo "❌ BLOCKER: Python syntax errors found!"
+    echo "   Fix syntax errors before deploying"
+    exit 1
+fi
+echo ""
+
+# Check 4: Migration plan
+echo "📋 Check 4: Migration plan"
 echo "Running: python manage.py migrate --plan"
 PLAN_OUTPUT=$(python manage.py migrate --plan)
 echo "$PLAN_OUTPUT"
@@ -40,8 +65,8 @@ else
 fi
 echo ""
 
-# Check 3: No unapplied migrations locally
-echo "📋 Check 3: Check for unapplied migrations"
+# Check 5: No unapplied migrations locally
+echo "📋 Check 5: Check for unapplied migrations"
 UNAPPLIED=$(python manage.py showmigrations | grep '\[ \]' || true)
 if [ -z "$UNAPPLIED" ]; then
     echo "✅ All migrations applied locally"
@@ -52,15 +77,15 @@ else
 fi
 echo ""
 
-# Check 4: Django system check for production
-echo "📋 Check 4: Django production checks"
+# Check 6: Django system check for production
+echo "📋 Check 6: Django production checks"
 echo "Running: python manage.py check --deploy --settings=config.settings.production"
 # Note: This might fail if production env vars aren't set locally, so we don't fail on error
 python manage.py check --deploy --settings=config.settings.production || echo "⚠️  Production checks failed (might be due to missing prod env vars)"
 echo ""
 
-# Check 5: Verify git status
-echo "📋 Check 5: Git status"
+# Check 7: Verify git status
+echo "📋 Check 7: Git status"
 cd "$PROJECT_ROOT"
 GIT_STATUS=$(git status --porcelain)
 if [ -z "$GIT_STATUS" ]; then
@@ -77,8 +102,8 @@ else
 fi
 echo ""
 
-# Check 6: Verify current branch and remote
-echo "📋 Check 6: Git branch and remote"
+# Check 8: Verify current branch and remote
+echo "📋 Check 8: Git branch and remote"
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo "Current branch: $CURRENT_BRANCH"
 git fetch origin --quiet

@@ -411,21 +411,43 @@ docker stats --no-stream | grep eatfit24
 
 **Rule**: "If it runs on the server — it's UTC."
 
+**Configuration** (from `config/settings/base.py`):
+```python
+TIME_ZONE = "Europe/Moscow"  # Display timezone for Celery Beat crontab
+USE_TZ = True                # Store everything in UTC internally
+CELERY_TIMEZONE = TIME_ZONE  # Celery uses same display timezone
+```
+
 **Enforcement**:
 - ✅ **CI guard**: GitHub Actions rejects `datetime.now()` / `datetime.utcnow()`
 - ✅ **Code standard**: Always use `timezone.now()` in Django
-- ✅ **Database**: All timestamps stored as UTC
-- ✅ **Celery Beat**: Crontab uses `Europe/Moscow` (from Django `TIME_ZONE`)
+- ✅ **Database**: All timestamps stored as UTC (PostgreSQL `timezone = 'UTC'`)
+- ✅ **Celery Beat**: Crontab schedules in `Europe/Moscow`, executes in UTC
+- ✅ **System clock**: Server runs in UTC (`TZ=UTC` in Docker containers)
+
+**How it works**:
+- **Storage layer** (PostgreSQL, Django ORM): Always UTC
+- **Processing layer** (Python, Celery workers): Aware datetimes in UTC
+- **Display layer** (Celery Beat crontab): Interprets schedules in `Europe/Moscow`
+- **User layer** (Frontend): Converts UTC to user's local timezone
 
 **Verification**:
 ```bash
-# Server timezone
+# Server timezone (should be UTC)
 docker exec eatfit24-backend date
-# Should show: UTC
+# Expected: Wed Jan  7 12:00:00 UTC 2026
 
-# Database timezone
+# Database timezone (should be UTC)
 docker exec eatfit24-db psql -U eatfit24 -c "SHOW timezone;"
-# Should show: UTC
+# Expected: UTC
+
+# Django timezone config
+docker exec eatfit24-backend python manage.py shell -c "from django.conf import settings; print(f'TIME_ZONE={settings.TIME_ZONE}, USE_TZ={settings.USE_TZ}')"
+# Expected: TIME_ZONE=Europe/Moscow, USE_TZ=True
+
+# Celery timezone config
+docker logs eatfit24-celery-worker --tail 50 | grep -i timezone
+# Expected: timezone: Europe/Moscow, enable_utc: True
 ```
 
 ## CI/CD Pipeline
