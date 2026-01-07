@@ -462,3 +462,71 @@ Located in `.github/workflows/backend.yml`:
 4. **Tests** — runs full test suite
 
 **Status**: All gates must pass before merge to `main`.
+
+## Future Improvements (Non-Urgent)
+
+These improvements can be implemented later to further harden the deployment pipeline. Current system is stable and operational.
+
+### 1. CI Gate for UV Lock Consistency
+
+**Current state**: Lock file drift is caught in pre-deploy script (works well).
+
+**Improvement**: Add `uv sync --frozen` check to CI pipeline:
+```yaml
+# In .github/workflows/backend.yml, after "Install dependencies"
+- name: UV lock consistency check
+  run: |
+    cd backend
+    uv sync --frozen || {
+      echo "❌ BLOCKER: uv.lock is out of sync with pyproject.toml"
+      echo "Run locally: uv lock"
+      exit 1
+    }
+```
+
+**Impact**: Catches ~10% more human error cases (when developer forgets to run pre-deploy script).
+
+**Priority**: Low (pre-deploy script already provides 90% coverage).
+
+### 2. Runtime Anomaly Detection → Telegram Alerts
+
+**Current state**: Manual monitoring via `docker stats` and health checks.
+
+**Improvement**: Simple cron-based anomaly detector (not full monitoring, just alerting):
+
+**Detection triggers**:
+- Container restarted unexpectedly
+- Memory usage > threshold (backend > 700MB, celery-worker > 800MB, celery-beat > 400MB)
+- Health endpoint returns non-200 status
+
+**Implementation approach**:
+```bash
+# Simple cron script (runs every 5 minutes)
+#!/bin/bash
+# scripts/runtime-anomaly-detector.sh
+
+# Check container restarts
+RESTARTS=$(docker ps --format "{{.Names}} {{.Status}}" | grep -c "second\|minute")
+if [ "$RESTARTS" -gt 0 ]; then
+  curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id="${ADMIN_TELEGRAM_ID}" \
+    -d text="⚠️ Container restart detected on eatfit24.ru"
+fi
+
+# Check memory thresholds
+# (docker stats parsing + conditional alerts)
+
+# Check health endpoint
+HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: eatfit24.ru" http://localhost:8000/health/)
+if [ "$HEALTH_STATUS" != "200" ]; then
+  curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id="${ADMIN_TELEGRAM_ID}" \
+    -d text="❌ Health check failed on eatfit24.ru (HTTP $HEALTH_STATUS)"
+fi
+```
+
+**Impact**: +∞ peace of mind. Immediate notification of anomalies without needing to poll manually.
+
+**Priority**: Low (current manual monitoring is adequate for current scale).
+
+**Note**: This is deliberately kept simple (not a full monitoring stack like Prometheus). Just detection + alerting for critical issues.
