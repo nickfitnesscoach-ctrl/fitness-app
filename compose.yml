@@ -101,7 +101,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: eatfit24-celery-worker
-    command: /app/.venv/bin/celery -A config worker -l INFO --concurrency=2 --max-memory-per-child=300000 --max-tasks-per-child=100 -Q ai,billing,default
+    command: celery -A config worker -l INFO --concurrency=2 --max-memory-per-child=300000 --max-tasks-per-child=100 -Q ai,billing,default
     depends_on:
       backend:
         condition: service_healthy
@@ -129,7 +129,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: eatfit24-celery-beat
-    command: /app/.venv/bin/celery -A config beat -l INFO --schedule=/app/celerybeat-data/celerybeat-schedule
+    command: celery -A config beat -l INFO --schedule=/app/celerybeat-data/celerybeat-schedule
     depends_on:
       backend:
         condition: service_healthy
