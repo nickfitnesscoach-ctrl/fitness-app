@@ -73,7 +73,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
       - backend_static:/app/staticfiles
-      - /opt/eatfit24/media:/app/media
+      - /var/lib/eatfit24/media:/app/media
     ports:
       # Bind to localhost only (not exposed to internet, only accessible from host)
       - "127.0.0.1:8000:8000"
@@ -211,7 +211,7 @@ volumes:
     name: eatfit24-redis-data
   backend_static:
     name: eatfit24-backend-static
-  # backend_media removed - using bind mount /opt/eatfit24/media instead for nginx access
+  # backend_media removed - using bind mount /var/lib/eatfit24/media for production data separation
   celerybeat_data:
     name: eatfit24-celerybeat-data
 
