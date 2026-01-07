@@ -266,6 +266,7 @@ Production containers (from `compose.yml`):
 ## Utility Scripts
 
 Located in `scripts/`:
+- `pre-deploy-check.sh` — **CRITICAL**: Pre-deployment gate for backend (run before every deploy)
 - `reset-celery-beat.sh` — Reset Celery Beat after schedule changes
 - `check-production-health.sh` — Health check for all services
 - `fix-critical-security.sh` — Security hardening script
@@ -275,8 +276,167 @@ Located in `scripts/`:
 
 ## Pre-Deploy Checklist (Backend)
 
-1. `git status` — clean working tree
-2. `docker compose ps` — all services healthy
-3. `docker exec eatfit24-backend-1 date` — verify UTC
-4. `python manage.py migrate --plan` — check pending migrations
-5. `docker exec eatfit24-redis-1 redis-cli PING` — Redis responsive
+**CRITICAL: Always run `scripts/pre-deploy-check.sh` before deploying backend changes.**
+
+Manual verification (if script not available):
+
+1. **Migration gate** (BLOCKER):
+   ```bash
+   cd backend
+   python manage.py makemigrations --check --dry-run  # Must pass
+   python manage.py migrate --plan                     # Check pending migrations
+   python manage.py showmigrations | grep '\[ \]'     # No unapplied migrations
+   ```
+
+2. **Git status**:
+   ```bash
+   git status                  # Clean working tree
+   git log -1                  # Verify commit to deploy
+   ```
+
+3. **Production health**:
+   ```bash
+   docker compose ps                                   # All services healthy
+   docker exec eatfit24-backend date                   # Verify UTC
+   docker exec eatfit24-redis redis-cli PING           # Redis responsive
+   curl -k https://eatfit24.ru/health/ | jq .         # Health endpoint OK
+   ```
+
+## Deployment Invariants
+
+These rules MUST be enforced to prevent production issues:
+
+### 1. Migration Discipline
+
+**Rule**: Production NEVER runs `makemigrations`. Migrations are generated locally and committed.
+
+**Enforcement**:
+- ✅ **CI gate**: GitHub Actions runs `makemigrations --check` on every push
+- ✅ **Pre-deploy script**: `scripts/pre-deploy-check.sh` verifies no uncommitted migrations
+- ✅ **Entrypoint contract**: `RUN_MIGRATIONS=1` (numeric) applies committed migrations only
+
+**Workflow**:
+```bash
+# 1. Detect changes
+python manage.py makemigrations --check --dry-run
+
+# 2. Generate migration (if needed)
+python manage.py makemigrations [app_name]
+
+# 3. Review migration file
+cat backend/apps/[app]/migrations/XXXX_*.py
+
+# 4. Test locally
+python manage.py migrate
+
+# 5. Commit and deploy
+git add backend/apps/*/migrations/*.py
+git commit -m "feat([app]): add migration for [description]"
+git push
+```
+
+**Recovery**: If uncommitted migration detected on prod:
+```bash
+# On local machine
+python manage.py makemigrations
+git add backend/apps/*/migrations/*.py
+git commit -m "feat: add missing migration"
+git push
+
+# On production server
+cd /opt/EatFit24
+git pull
+docker compose up -d backend  # Triggers migration via entrypoint.sh
+```
+
+### 2. Environment Variable Contract
+
+**Rule**: `entrypoint.sh` expects numeric flags (1/0), not booleans (true/false).
+
+**Required flags** (in `.env`):
+```bash
+RUN_MIGRATIONS=1        # NOT "true"
+RUN_COLLECTSTATIC=1     # NOT "true"
+MIGRATIONS_STRICT=1     # NOT "true"
+```
+
+**Why**: Shell comparison `[ "$RUN_MIGRATIONS" = "1" ]` is string-based, not truthy.
+
+**Verification**:
+```bash
+# On production
+docker exec eatfit24-backend env | grep "RUN_"
+# Should show: RUN_MIGRATIONS=1, RUN_COLLECTSTATIC=1
+```
+
+### 3. Service Detection in Compose
+
+**Rule**: Service commands must match entrypoint.sh detection logic.
+
+**Example** (compose.yml):
+```yaml
+services:
+  celery-worker:
+    command: celery -A config worker ...  # ✅ Correct: starts with "celery"
+    # NOT: /app/.venv/bin/celery ...      # ❌ Wrong: $1 is full path
+```
+
+**Why**: `entrypoint.sh` checks `if [ "$1" = "celery" ]` to skip migrations for Celery services.
+
+**Verification**:
+```bash
+# Check actual running process
+docker exec eatfit24-celery-worker ps aux | grep celery
+# Should show: celery worker, NOT gunicorn
+```
+
+### 4. Memory Baseline & Alerting
+
+**Current baseline** (as of 2026-01-07):
+- `backend`: ~300MB / 1.5G (19%)
+- `celery-worker`: ~270MB / 1G (27%)
+- `celery-beat`: ~270MB / 512M (54%)
+
+**Alert thresholds**:
+- `backend` > 700MB → investigate memory leak
+- `celery-worker` > 800MB → check AI queue backlog
+- `celery-beat` > 400MB → restart service
+
+**Monitoring** (manual for now):
+```bash
+docker stats --no-stream | grep eatfit24
+```
+
+### 5. Time & Timezone Invariant
+
+**Rule**: "If it runs on the server — it's UTC."
+
+**Enforcement**:
+- ✅ **CI guard**: GitHub Actions rejects `datetime.now()` / `datetime.utcnow()`
+- ✅ **Code standard**: Always use `timezone.now()` in Django
+- ✅ **Database**: All timestamps stored as UTC
+- ✅ **Celery Beat**: Crontab uses `Europe/Moscow` (from Django `TIME_ZONE`)
+
+**Verification**:
+```bash
+# Server timezone
+docker exec eatfit24-backend date
+# Should show: UTC
+
+# Database timezone
+docker exec eatfit24-db psql -U eatfit24 -c "SHOW timezone;"
+# Should show: UTC
+```
+
+## CI/CD Pipeline
+
+### GitHub Actions Gates
+
+Located in `.github/workflows/backend.yml`:
+
+1. **Datetime guard** — blocks `datetime.now()` / `datetime.utcnow()`
+2. **Migration gate** — blocks uncommitted migrations (NEW)
+3. **Django checks** — validates models and settings
+4. **Tests** — runs full test suite
+
+**Status**: All gates must pass before merge to `main`.
