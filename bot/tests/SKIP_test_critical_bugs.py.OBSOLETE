@@ -1,0 +1,349 @@
+"""
+Tests for critical bug fixes (P1 priority).
+
+Tests for:
+- BUG-2025-001: KeyError при парсинге callback_data без валидации
+- BUG-2025-002: Потенциальный AttributeError при отсутствии callback.from_user
+- BUG-2025-003: Unhandled exception при недоступности БД
+- BUG-2025-004: HTTP timeout на AI request
+- BUG-2025-005: Race condition при множественных нажатиях кнопки подтверждения
+"""
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from aiogram.types import CallbackQuery, User
+from aiogram.fsm.context import FSMContext
+
+from app.handlers.personal_plan import (
+    process_gender,
+    process_activity,
+    process_body_now,
+    process_body_ideal,
+    process_tz_button,
+    confirm_and_generate,
+)
+from app.states import SurveyStates
+
+
+# =============================================================================
+# BUG-2025-001: Валидация callback_data
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_process_gender_invalid_callback_data_missing_value(callback_query, state):
+    """Test that process_gender handles callback_data without value."""
+    callback_query.data = "gender:"  # Missing value after colon
+    callback_query.answer = AsyncMock()
+
+    await process_gender(callback_query, state)
+
+    # Should call answer with error
+    callback_query.answer.assert_called_once()
+    assert "Некорректные данные" in str(callback_query.answer.call_args)
+
+    # Should not save to state
+    data = await state.get_data()
+    assert "gender" not in data
+
+
+@pytest.mark.asyncio
+async def test_process_gender_invalid_callback_data_wrong_value(callback_query, state):
+    """Test that process_gender handles invalid gender value."""
+    callback_query.data = "gender:invalid"  # Invalid gender
+    callback_query.answer = AsyncMock()
+
+    await process_gender(callback_query, state)
+
+    # Should call answer with error
+    callback_query.answer.assert_called_once()
+    assert "Некорректные данные" in str(callback_query.answer.call_args)
+
+    # Should not save to state
+    data = await state.get_data()
+    assert "gender" not in data
+
+
+@pytest.mark.asyncio
+async def test_process_gender_valid_callback_data(callback_query, state):
+    """Test that process_gender works correctly with valid data."""
+    callback_query.data = "gender:male"
+    callback_query.answer = AsyncMock()
+    callback_query.message.delete = AsyncMock()
+    callback_query.message.answer = AsyncMock(return_value=MagicMock(message_id=123))
+
+    await process_gender(callback_query, state)
+
+    # Should save to state
+    data = await state.get_data()
+    assert data["gender"] == "male"
+
+
+@pytest.mark.asyncio
+async def test_process_activity_invalid_callback_data(callback_query, state, bot):
+    """Test that process_activity handles invalid callback_data."""
+    callback_query.data = "activity"  # Missing colon
+    callback_query.answer = AsyncMock()
+
+    await process_activity(callback_query, state, bot)
+
+    # Should call answer with error
+    callback_query.answer.assert_called_once()
+    assert "Некорректные данные" in str(callback_query.answer.call_args)
+
+
+@pytest.mark.asyncio
+async def test_process_activity_invalid_value(callback_query, state, bot):
+    """Test that process_activity handles invalid activity value."""
+    callback_query.data = "activity:invalid_value"
+    callback_query.answer = AsyncMock()
+
+    await process_activity(callback_query, state, bot)
+
+    # Should call answer with error
+    callback_query.answer.assert_called_once()
+    assert "Некорректный уровень активности" in str(callback_query.answer.call_args)
+
+
+@pytest.mark.asyncio
+async def test_process_body_now_invalid_variant_id(callback_query, state, bot):
+    """Test that process_body_now handles non-integer variant_id."""
+    callback_query.data = "body:not_a_number"
+    callback_query.answer = AsyncMock()
+    await state.update_data(gender="female")
+
+    await process_body_now(callback_query, state, bot)
+
+    # Should call answer with error
+    callback_query.answer.assert_called_once()
+    assert "Некорректный ID варианта" in str(callback_query.answer.call_args)
+
+
+@pytest.mark.asyncio
+async def test_process_body_ideal_missing_colon(callback_query, state, bot):
+    """Test that process_body_ideal handles callback_data without colon."""
+    callback_query.data = "body123"  # No colon
+    callback_query.answer = AsyncMock()
+    await state.update_data(gender="male")
+
+    await process_body_ideal(callback_query, state, bot)
+
+    # Should call answer with error
+    callback_query.answer.assert_called_once()
+    assert "Некорректные данные" in str(callback_query.answer.call_args)
+
+
+@pytest.mark.asyncio
+async def test_process_tz_button_invalid_format(callback_query, state):
+    """Test that process_tz_button handles invalid callback_data."""
+    callback_query.data = "tz"  # Missing colon
+    callback_query.answer = AsyncMock()
+
+    await process_tz_button(callback_query, state)
+
+    # Should call answer with error
+    callback_query.answer.assert_called_once()
+    assert "Некорректные данные" in str(callback_query.answer.call_args)
+
+
+# =============================================================================
+# BUG-2025-002: AttributeError при отсутствии callback.from_user
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_confirm_and_generate_missing_from_user(callback_query, state, bot):
+    """Test that confirm_and_generate handles missing callback.from_user."""
+    # Set up state with required data
+    await state.set_state(SurveyStates.CONFIRM)
+    await state.update_data(
+        gender="male",
+        age=25,
+        height_cm=180,
+        weight_kg=75.0,
+        target_weight_kg=70.0,
+        activity="moderate",
+        body_now_id=1,
+        body_ideal_id=1,
+        tz="Europe/Moscow",
+        utc_offset_minutes=180
+    )
+
+    # Simulate missing from_user
+    callback_query.from_user = None
+    callback_query.answer = AsyncMock()
+
+    # Should handle gracefully and return early
+    await confirm_and_generate(callback_query, state, bot)
+
+    # Should call answer with error message
+    callback_query.answer.assert_called_once()
+    assert "данные пользователя недоступны" in str(callback_query.answer.call_args)
+
+
+# =============================================================================
+# BUG-2025-003: Unhandled exception при недоступности БД
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_confirm_and_generate_db_failure_after_ai_generation(callback_query, state, bot):
+    """Test that confirm_and_generate handles DB failure after AI generation."""
+    # Set up state
+    await state.set_state(SurveyStates.CONFIRM)
+    await state.update_data(
+        gender="female",
+        age=30,
+        height_cm=165,
+        weight_kg=60.0,
+        target_weight_kg=55.0,
+        activity="light",
+        body_now_id=2,
+        body_ideal_id=1,
+        tz="Asia/Tokyo",
+        utc_offset_minutes=540
+    )
+
+    callback_query.message.edit_text = AsyncMock(return_value=MagicMock(message_id=789))
+    callback_query.message.answer = AsyncMock()
+    callback_query.answer = AsyncMock()
+
+    ai_response_text = "Generated plan with important information"
+
+    # Mock AI client - succeeds
+    with patch("bot.services.ai.openrouter_client") as mock_ai:
+        mock_ai.generate_plan = AsyncMock(return_value={
+            "success": True,
+            "text": ai_response_text,
+            "model": "test-model",
+            "prompt_version": "v1.0"
+        })
+
+        # Mock database - fails
+        with patch("bot.services.database.async_session_maker") as mock_db:
+            mock_db.return_value.__aenter__.side_effect = Exception("Database connection failed")
+
+            # Should not raise exception
+            await confirm_and_generate(callback_query, state, bot)
+
+            # Should send warning message with plan text to user
+            callback_query.message.answer.assert_called()
+            call_args = str(callback_query.message.answer.call_args)
+            assert "не сохранён в базе данных" in call_args
+            assert ai_response_text in call_args
+
+
+# =============================================================================
+# BUG-2025-005: Race condition при множественных нажатиях
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_confirm_and_generate_prevents_double_click(callback_query, state, bot):
+    """Test that confirm_and_generate prevents race condition from double-clicking."""
+    # Set up state
+    await state.set_state(SurveyStates.CONFIRM)
+    await state.update_data(
+        gender="male",
+        age=28,
+        height_cm=175,
+        weight_kg=80.0,
+        activity="active",
+        body_now_id=3,
+        body_ideal_id=2,
+        tz="America/New_York",
+        utc_offset_minutes=-300
+    )
+
+    callback_query.message.edit_text = AsyncMock(return_value=MagicMock(message_id=999))
+    callback_query.answer = AsyncMock()
+
+    # First call - should work
+    with patch("bot.services.ai.openrouter_client") as mock_ai:
+        mock_ai.generate_plan = AsyncMock(return_value={
+            "success": True,
+            "text": "Plan",
+            "model": "test",
+            "prompt_version": "v1"
+        })
+
+        with patch("bot.services.database.async_session_maker") as mock_db:
+            # Create proper async context manager mock
+            mock_session = AsyncMock()
+            mock_db.return_value.__aenter__.return_value = mock_session
+            mock_db.return_value.__aexit__.return_value = AsyncMock()
+
+            with patch("bot.services.database.UserRepository") as mock_user_repo:
+                mock_user_repo.get_or_create = AsyncMock(return_value=MagicMock(id=1))
+
+                with patch("bot.services.database.SurveyRepository") as mock_survey_repo:
+                    mock_survey_repo.create_survey_answer = AsyncMock(return_value=MagicMock(id=1))
+
+                    with patch("bot.services.database.PlanRepository") as mock_plan_repo:
+                        mock_plan_repo.create_plan = AsyncMock(return_value=MagicMock(id=1))
+
+                        # First call
+                        await confirm_and_generate(callback_query, state, bot)
+
+                        # State should now be cleared (after successful completion)
+                        current_state = await state.get_state()
+                        assert current_state is None  # State cleared after completion
+
+                        # Reset for second test
+                        await state.set_state(SurveyStates.CONFIRM)
+                        callback_query.answer.reset_mock()
+
+                        # Second call (simulating double-click) - should be prevented
+                        # First click sets to GENERATE immediately
+                        await state.set_state(SurveyStates.GENERATE)
+                        await confirm_and_generate(callback_query, state, bot)
+
+                        # Should show alert
+                        callback_query.answer.assert_called_once()
+                        assert "подождите" in str(callback_query.answer.call_args)
+
+
+@pytest.mark.asyncio
+async def test_confirm_and_generate_state_change_immediate(callback_query, state, bot):
+    """Test that confirm_and_generate changes state immediately to prevent race conditions."""
+    await state.set_state(SurveyStates.CONFIRM)
+    await state.update_data(
+        gender="female",
+        age=35,
+        height_cm=160,
+        weight_kg=55.0,
+        activity="sedentary",
+        body_now_id=1,
+        body_ideal_id=1,
+        tz="Europe/London",
+        utc_offset_minutes=0
+    )
+
+    callback_query.message.edit_text = AsyncMock(return_value=MagicMock(message_id=111))
+    callback_query.answer = AsyncMock()
+
+    # Mock AI to never return (simulating slow response)
+    with patch("bot.services.ai.openrouter_client") as mock_ai:
+        import asyncio
+
+        async def slow_generate(*args, **kwargs):
+            await asyncio.sleep(10)  # Simulate slow AI
+            return {"success": True, "text": "Plan", "model": "test", "prompt_version": "v1"}
+
+        mock_ai.generate_plan = slow_generate
+
+        # Start the task but don't wait for it
+        task = asyncio.create_task(confirm_and_generate(callback_query, state, bot))
+
+        # Wait a tiny bit for state to change
+        await asyncio.sleep(0.1)
+
+        # State should already be GENERATE (changed immediately)
+        current_state = await state.get_state()
+        assert current_state == SurveyStates.GENERATE
+
+        # Cancel the task
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
