@@ -75,7 +75,7 @@ Telegram → Bot (aiogram) → Django API
 ### Backend Structure (`backend/`)
 - `apps/` — Django applications:
   - `ai/` — AI services (OpenRouter integration)
-  - `ai_proxy/` — AI request proxy and rate limiting
+  - `ai_proxy/` — AI request proxy, rate limiting, image normalization
   - `billing/` — Subscriptions, YooKassa payments, webhooks
   - `common/` — Shared utilities and base classes
   - `core/` — Core application logic
@@ -84,6 +84,7 @@ Telegram → Bot (aiogram) → Django API
   - `users/` — User management
 - `config/` — Django settings and Celery config
   - `settings/` — Split settings: `base.py`, `local.py`, `production.py`, `test.py`
+  - `celery.py` — Celery configuration, task routing, beat schedule
 - Celery queues: `ai`, `billing`, `default`
 
 ### Bot Structure (`bot/`)
@@ -100,6 +101,20 @@ Telegram → Bot (aiogram) → Django API
 - `hooks/` — Custom hooks
 
 ## Critical Conventions
+
+### Billing System
+The billing module handles subscriptions, payments, and YooKassa integration. Key principles:
+- **Webhook = source of truth** — Payment succeeds only after webhook confirmation
+- **Price from DB** — Never trust amounts from frontend
+- **YooKassaService** — Single point of integration with payment gateway
+- **Atomic limits** — Race condition protection for usage limits
+
+Detailed documentation in `backend/apps/billing/docs/`:
+- `architecture.md` — Module structure
+- `payment-flow.md` — Payment lifecycle
+- `webhooks.md` — Webhook handling
+- `security.md` — Security constraints
+- `operations.md` — Operational procedures
 
 ### Time & Timezone
 **"If it runs on the server — it's UTC."**
@@ -142,11 +157,17 @@ Key variables:
 - `POSTGRES_PASSWORD` — Required, shared by backend and bot
 - `SECRET_KEY` — Django secret (generate with: `openssl rand -hex 32`)
 - `TELEGRAM_BOT_TOKEN` — Bot token (from @BotFather)
+- `TELEGRAM_BOT_API_SECRET` — Bot API secret (generate with: `openssl rand -hex 32`)
+- `BOT_ADMIN_ID`, `ADMIN_IDS`, `TELEGRAM_ADMINS` — Admin Telegram IDs
 - `OPENROUTER_API_KEY` — AI API key
 - `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` — Payment gateway credentials
 - `YOOKASSA_MODE` — `test` or `prod`
+- `YOOKASSA_RETURN_URL` — Return URL after payment
 - `BILLING_RECURRING_ENABLED` — `true`/`false` - enable auto-renew subscriptions
 - `WEBHOOK_TRUST_XFF` — `true` in production (trust X-Forwarded-For from nginx)
+- `WEBHOOK_TRUSTED_PROXIES` — Trusted proxy IPs (e.g., `127.0.0.1,172.23.0.0/16`)
+- `WEB_APP_URL` — Telegram Mini App URL (e.g., `https://eatfit24.ru/app`)
+- `DJANGO_API_URL` — Backend API URL for bot (e.g., `http://backend:8000/api/v1`)
 - `DJANGO_SETTINGS_MODULE` — `config.settings.production` or `config.settings.local`
 
 ## Celery Tasks
@@ -193,6 +214,9 @@ docker exec -it eatfit24-backend-1 python manage.py createsuperuser
 # Backend: Run migrations inside container
 docker exec eatfit24-backend-1 python manage.py migrate
 
+# Backend: Check pending migrations
+docker exec eatfit24-backend-1 python manage.py showmigrations
+
 # Bot: Alembic migrations
 docker exec -it eatfit24-bot alembic upgrade head
 ```
@@ -230,12 +254,14 @@ docker exec eatfit24-db-1 pg_isready -U eatfit24
 
 Production containers (from `compose.yml`):
 - `eatfit24-db` — PostgreSQL database
-- `eatfit24-redis` — Redis (Celery broker + cache)
-- `eatfit24-backend` — Django API (port 127.0.0.1:8000)
-- `eatfit24-celery-worker` — Celery worker
-- `eatfit24-celery-beat` — Celery Beat scheduler
+- `eatfit24-redis-1` — Redis (Celery broker + cache)
+- `eatfit24-backend-1` — Django API (port 127.0.0.1:8000)
+- `eatfit24-celery-worker-1` — Celery worker
+- `eatfit24-celery-beat-1` — Celery Beat scheduler
 - `eatfit24-bot` — Telegram bot
 - `eatfit24-frontend` — React frontend (port 127.0.0.1:3000)
+
+**Note:** Container names with `-1` suffix are managed by Docker Compose. Some containers use explicit `container_name` (without suffix), others get the `-1` suffix automatically.
 
 ## Utility Scripts
 
@@ -243,6 +269,8 @@ Located in `scripts/`:
 - `reset-celery-beat.sh` — Reset Celery Beat after schedule changes
 - `check-production-health.sh` — Health check for all services
 - `fix-critical-security.sh` — Security hardening script
+- `fix-nginx-static.sh` — Fix nginx static file serving
+- `migrate-media-to-bind-mount.sh` — Migrate media files to bind mount
 - `smoke_test.sh` — End-to-end smoke tests
 
 ## Pre-Deploy Checklist (Backend)
