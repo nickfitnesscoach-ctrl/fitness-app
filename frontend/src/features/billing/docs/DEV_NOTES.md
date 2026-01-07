@@ -4,6 +4,71 @@
 
 ---
 
+## UI Components Architecture
+
+### Orchestrator vs Presentational Pattern
+
+Карточки тарифных планов построены по паттерну разделения ответственности:
+
+**Orchestrator Component (`PlanCard.tsx`):**
+- Умный компонент, управляет состоянием и логикой
+- Использует `buildPlanCardState()` для определения состояния карточки
+- Выбирает нужный presentational компонент (`BasicPlanCard`, `PremiumMonthCard`, `PremiumProCard`)
+- Передает props и обработчики событий
+
+**Presentational Components:**
+- `BasicPlanCard.tsx` — FREE план, минималистичный дизайн
+- `PremiumMonthCard.tsx` — PRO_MONTHLY, темный градиент
+- `PremiumProCard.tsx` — PRO_YEARLY, badge "2 МЕСЯЦА В ПОДАРОК"
+- Чистые UI-компоненты без бизнес-логики
+- Принимают готовые данные через props
+
+### PlanPriceStack Component
+
+Унифицированный компонент для предотвращения "прыгающих" ценовых блоков:
+
+```typescript
+<PlanPriceStack
+    priceMain={3588}
+    priceUnit="₽"
+    oldPrice={4990}
+    priceSubtext="за год"
+    alignRight={true}
+    isDark={true}
+/>
+```
+
+**Особенности:**
+- Фиксированный 2-row layout (row1: main+unit, row2: oldPrice+subtext)
+- `min-h-[1.25rem]` на row2 предотвращает layout shifts
+- Non-breaking spaces (`\u00A0`) когда oldPrice/subtext пусты
+- Табулярные числа для корректного выравнивания
+
+### Text Processing Utilities
+
+**`cleanFeatureText(text: string)`:**
+- Удаляет leading emoji (`\p{Extended_Pictographic}`)
+- Удаляет replacement chars (`\uFFFD`)
+- Удаляет zero-width chars и variation selectors
+- Сохраняет Cyrillic и полезные символы
+
+```typescript
+// До: "✨ AI-распознавание"
+// После: "AI-распознавание"
+```
+
+**`getPlanFeatureIcon(cleanText: string)`:**
+- Семантическое определение иконок по содержанию текста
+- Не зависит от emoji в исходных данных
+- Поддерживает: Gift, FileCheck, Target, Calendar, Calculator, Zap
+
+**Icon Mapping в Presentational Cards:**
+- Каждая карточка имеет локальную функцию `getIconForFeature()`
+- Использует специфичные для плана иконки и цвета
+- Пример: `PremiumProCard` использует Gift (yellow), LineChart (teal), Target (pink)
+
+---
+
 ## Как включить mock планы
 
 В DEV режиме (`IS_DEV=true`) хук `useSubscriptionPlans` автоматически использует mock-данные.
@@ -161,7 +226,11 @@ npm run lint
 
 | Задача | Файлы |
 |--------|-------|
-| Изменить UI карточки плана | `components/PlanCard.tsx`, `utils/planCardState.tsx` |
+| Изменить UI карточки плана | `components/BasicPlanCard.tsx`, `components/PremiumMonthCard.tsx`, `components/PremiumProCard.tsx` |
+| Изменить логику выбора карточки | `components/PlanCard.tsx`, `utils/planCardState.tsx` |
+| Изменить отображение цен | `components/PlanPriceStack.tsx` |
+| Изменить обработку текста/иконок | `utils/text.tsx` |
 | Добавить новый API endpoint | `services/api/billing.ts`, `services/api/urls.ts` |
 | Изменить логику подписки | `hooks/useSubscription*.ts` |
 | Добавить новый тариф | см. раздел "Добавление нового тарифа" |
+

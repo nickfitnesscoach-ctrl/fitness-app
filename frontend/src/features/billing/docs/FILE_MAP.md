@@ -33,10 +33,14 @@ src/features/billing/
 
 | Файл | Роль | Используется |
 |------|------|--------------|
-| `PlanCard.tsx` | Карточка тарифного плана | `SubscriptionPage` |
-| `subscription/SubscriptionHeader.tsx` | Заголовок экрана подписки | `SubscriptionPage` |
-| `billing/AdminTestPaymentCard.tsx` | Карточка тестового платежа для админов | `SubscriptionDetailsPage` |
-| `billing/PaymentHistoryList.tsx` | Список платежей с badge-статусами | `PaymentHistoryPage` |
+| `PlanCard.tsx` | Orchestrator-компонент для карточек планов | `SubscriptionPage` |
+| `BasicPlanCard.tsx` | Presentational карточка FREE плана | `PlanCard` |
+| `PremiumMonthCard.tsx` | Presentational карточка PRO_MONTHLY | `PlanCard` |
+| `PremiumProCard.tsx` | Presentational карточка PRO_YEARLY | `PlanCard` |
+| `PlanPriceStack.tsx` | Унифицированный компонент отображения цен | Все карточки планов |
+| `SubscriptionHeader.tsx` | Заголовок экрана подписки | `SubscriptionPage` |
+| `AdminTestPaymentCard.tsx` | Карточка тестового платежа для админов | `SubscriptionDetailsPage` |
+| `PaymentHistoryList.tsx` | Список платежей с badge-статусами | `PaymentHistoryPage` |
 
 ### Хуки (hooks/)
 
@@ -55,7 +59,9 @@ src/features/billing/
 | `date.ts` | Форматирование дат (единый источник) | Все компоненты |
 | `notify.ts` | Уведомления (Telegram/browser) | Все хуки |
 | `validation.ts` | Валидация plan_code | `BillingContext` |
-| `planCardState.tsx` | Логика состояния карточки плана | `SubscriptionPage` |
+| `planCardState.tsx` | Логика состояния карточки плана | `PlanCard`, `SubscriptionPage` |
+| `text.tsx` | Очистка текста (`cleanFeatureText`), иконки (`getPlanFeatureIcon`) | Все карточки планов |
+| `types.ts` | Type exports (`PlanCode`) | `planCardState`, хуки |
 
 ### Mocks (__mocks__/)
 
@@ -84,14 +90,41 @@ src/features/billing/
 export { SubscriptionPage, SubscriptionDetailsPage, PaymentHistoryPage }
 
 // Components
-export { PlanCard, SubscriptionHeader, AdminTestPaymentCard, PaymentHistoryList }
+export { 
+  PlanCard, 
+  SubscriptionHeader, 
+  AdminTestPaymentCard, 
+  PaymentHistoryList,
+  // Note: BasicPlanCard, PremiumMonthCard, PremiumProCard, PlanPriceStack
+  // используются внутри PlanCard и не экспортируются публично
+}
 
 // Hooks
-export { useSubscriptionPlans, useSubscriptionStatus, useSubscriptionActions, ... }
+export { 
+  useSubscriptionPlans, 
+  useSubscriptionStatus, 
+  useSubscriptionActions,
+  useSubscriptionDetails,
+  usePaymentHistory,
+  usePaymentPolling,
+  setPollingFlagForPayment,
+  clearPollingFlag
+}
 
 // Utils
-export { formatBillingDate, showToast, validatePlanCode, buildPlanCardState, ... }
+export { 
+  formatBillingDate, 
+  formatShortDate, 
+  formatDate,
+  showToast, 
+  showSuccess, 
+  showError,
+  validatePlanCode, 
+  assertBillingPlanCode,
+  isPlanCodePro,
+  buildPlanCardState
+}
 
-// Mocks
-export { mockSubscriptionPlans }
+// Types
+export type { PlanCode }
 ```

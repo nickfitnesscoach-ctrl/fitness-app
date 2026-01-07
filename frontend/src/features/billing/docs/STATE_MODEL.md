@@ -132,6 +132,63 @@ const inFlightRef = useRef<Set<string>>(new Set());  // Anti-double-click
 
 ---
 
+## Plan Card State Logic
+
+### buildPlanCardState()
+
+Функция в `utils/planCardState.tsx` определяет визуальное состояние каждой карточки плана.
+
+#### Интерфейсы
+
+```typescript
+interface PlanCardState {
+    isCurrent: boolean;           // Это текущий план пользователя
+    disabled: boolean;            // Кнопка неактивна
+    customButtonText?: string;    // Кастомный текст кнопки
+    bottomContent?: React.ReactNode;  // Дополнительный контент под кнопкой
+}
+
+interface BuildPlanCardStateParams {
+    plan: SubscriptionPlan;
+    subscription: SubscriptionDetails | null;
+    billing: BillingContextData;
+    isPro: boolean;
+    isExpired: boolean;
+    expiresAt: string | null;
+    loadingPlanCode: PlanCode | null;
+    togglingAutoRenew: boolean;
+    handleSelectPlan: (planCode: PlanCode) => void;
+    handleToggleAutoRenew: () => void;
+    handleAddCard: () => void;
+    navigate: (path: string) => void;
+}
+```
+
+#### Логика определения состояния
+
+1. **FREE карточка:**
+   - Если у пользователя PRO → `disabled=true`, `customButtonText="Базовый доступ"`
+   - Если у пользователя FREE → `isCurrent=true`, `customButtonText="Ваш текущий тариф"`
+
+2. **PRO карточки (когда PRO активен, но plan_code неизвестен):**
+   - `disabled=true`, `customButtonText="PRO активен"`
+   - `bottomContent` — информация о сроке, автопродлении, карте
+
+3. **PRO карточка точного плана (userPlanCode === planCode):**
+   - `isCurrent=true`
+   - `bottomContent` — полная информация с кнопками управления:
+     - Autorenew активно → показать карту и ссылку "Управлять подпиской"
+     - Autorenew выключено → кнопка "Включить продление"
+     - Карта не привязана → кнопка "Привязать карту"
+
+4. **Другой PRO план (isPro, но другой plan_code):**
+   - `disabled=true`, `customButtonText="Доступно по подписке"`
+
+5. **Expired план:**
+   - `bottomContent` — warning + кнопка "Восстановить за [price]₽"
+
+---
+
 ## Инварианты
 
 1. **Один источник истины** — `BillingContext` хранит всё

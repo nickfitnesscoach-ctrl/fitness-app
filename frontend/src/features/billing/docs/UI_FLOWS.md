@@ -50,10 +50,15 @@
 ```
 
 **Файлы:**
-- `SubscriptionPage.tsx`
-- `useSubscriptionActions.ts`
-- `api/billing.ts`
-- `BillingContext.tsx`
+- `SubscriptionPage.tsx` — страница выбора тарифа
+- `PlanCard.tsx` — orchestrator компонент карточки
+- `BasicPlanCard.tsx` / `PremiumMonthCard.tsx` / `PremiumProCard.tsx` — presentational карточки
+- `PlanPriceStack.tsx` — компонент отображения цен
+- `useSubscriptionActions.ts` — хук с логикой оплаты
+- `utils/planCardState.tsx` — логика состояния карточки
+- `utils/text.tsx` — утилиты для очистки текста и иконок
+- `api/billing.ts` — API calls
+- `BillingContext.tsx` — глобальный контекст
 
 ---
 
@@ -158,3 +163,51 @@
 │  5. navigate('/subscription')                                │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Flow 6: Plan Card Visual States
+
+Карточки тарифных планов отображают различные состояния в зависимости от подписки пользователя.
+
+### State 1: Not Current (Default)
+
+```
+FREE user → PRO card
+  ├─ Button: "ОФОРМИТЬ ПОДПИСКУ"
+  ├─ Enabled: true
+  └─ bottomContent: none
+```
+
+### State 2: Current Plan (Active)
+
+```
+PRO_MONTHLY user → PRO_MONTHLY card
+  ├─ Button custom text (disabled)
+  ├─ bottomContent:
+      ├─ Expires: "Доступ до [date]"
+      ├─ Card info (if attached)
+      └─ AutoRenew toggle/button
+```
+
+### State 3: Expired Plan
+
+```
+Expired PRO user → PRO card
+  ├─ bottomContent:
+      ├─ Warning: "Подписка истекла [date]"
+      └─ Button: "Восстановить за [price]₽"
+```
+
+### State 4: Loading
+
+```
+User clicks "ОФОРМИТЬ ПОДПИСКУ"
+  └─ Button shows spinner + "Ждем..."
+```
+
+**Логика определения:**
+- Реализована в `utils/planCardState.tsx` → `buildPlanCardState()`
+- Учитывает: `subscription.plan`, `subscription.is_active`, `billingMe.plan_code`
+- Возвращает: `{ isCurrent, disabled, customButtonText, bottomContent }`
+
