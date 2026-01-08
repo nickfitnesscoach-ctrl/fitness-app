@@ -7,7 +7,7 @@
  * Formats date with time for payment history display
  * Example: "20 дек. 2025, 14:30"
  */
-export const formatBillingDate = (dateString: string | null): string => {
+export const formatBillingDate = (dateString: string | null | undefined): string => {
     if (!dateString) return '—';
     return new Date(dateString).toLocaleDateString('ru-RU', {
         day: 'numeric',
@@ -22,7 +22,7 @@ export const formatBillingDate = (dateString: string | null): string => {
  * Formats date as DD.MM.YYYY for subscription expiry display
  * Example: "20.12.2025"
  */
-export const formatShortDate = (dateString: string | null): string => {
+export const formatShortDate = (dateString: string | null | undefined): string => {
     if (!dateString) return '';
     return new Date(dateString).toLocaleDateString('ru-RU', {
         day: 'numeric',

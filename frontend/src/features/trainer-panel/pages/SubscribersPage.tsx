@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Crown, Users, Star, Calendar, DollarSign, RefreshCw } from 'lucide-react';
 import { api } from '../../../services/api';
+import { formatBillingDate } from '../../billing';
 
 interface Subscriber {
     id: number;
@@ -56,15 +57,6 @@ const SubscribersPage: React.FC = () => {
     const filteredSubscribers = filter === 'all'
         ? subscribers
         : subscribers.filter(s => s.plan_type === filter);
-
-    const formatDate = (dateString?: string) => {
-        if (!dateString) return '—';
-        return new Date(dateString).toLocaleDateString('ru-RU', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric'
-        });
-    };
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -178,7 +170,7 @@ const SubscribersPage: React.FC = () => {
                                                 {subscriber.expires_at && subscriber.plan_type !== 'free' && (
                                                     <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
                                                         <Calendar size={12} />
-                                                        <span>до {formatDate(subscriber.expires_at)}</span>
+                                                        <span>до {formatBillingDate(subscriber.expires_at)}</span>
                                                     </div>
                                                 )}
                                             </div>
