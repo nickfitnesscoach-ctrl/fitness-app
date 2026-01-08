@@ -146,3 +146,218 @@ class ImageCompressionEdgeCasesTestCase(TestCase):
 
         result = compress_image(empty_file)
         self.assertIsNotNone(result)
+
+
+class GetClientIPTestCase(TestCase):
+    """
+    Tests for get_client_ip() with XFF protection.
+
+    Security requirements:
+    - By default: NEVER trust X-Forwarded-For (prevents IP spoofing)
+    - With TRUSTED_PROXIES_ENABLED: trust XFF ONLY from verified proxies
+    - Always fallback to REMOTE_ADDR if XFF is not trusted
+    """
+
+    def _create_mock_request(self, remote_addr, xff=None):
+        """Create mock request with META dict."""
+        class MockRequest:
+            def __init__(self, remote_addr, xff):
+                self.META = {'REMOTE_ADDR': remote_addr}
+                if xff:
+                    self.META['HTTP_X_FORWARDED_FOR'] = xff
+        return MockRequest(remote_addr, xff)
+
+    def test_no_xff_returns_remote_addr(self):
+        """Without XFF header, should return REMOTE_ADDR."""
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('1.2.3.4')
+        ip = get_client_ip(request)
+
+        self.assertEqual(ip, '1.2.3.4')
+
+    def test_xff_not_trusted_by_default(self):
+        """
+        By default (TRUSTED_PROXIES_ENABLED=False), XFF should be ignored.
+
+        Security: prevents external clients from spoofing IP via XFF header.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('1.2.3.4', xff='9.9.9.9')
+
+        with override_settings(TRUSTED_PROXIES_ENABLED=False):
+            ip = get_client_ip(request)
+
+        # Should ignore XFF and return REMOTE_ADDR
+        self.assertEqual(ip, '1.2.3.4')
+
+    def test_xff_from_untrusted_proxy_ignored(self):
+        """
+        XFF from non-trusted proxy should be ignored.
+
+        Even if TRUSTED_PROXIES_ENABLED=True, if REMOTE_ADDR is not in
+        TRUSTED_PROXIES list, XFF should be ignored.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('5.6.7.8', xff='9.9.9.9')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['172.24.0.0/16']  # 5.6.7.8 is NOT in this range
+        ):
+            ip = get_client_ip(request)
+
+        # Should ignore XFF because proxy is not trusted
+        self.assertEqual(ip, '5.6.7.8')
+
+    def test_xff_from_trusted_proxy_cidr(self):
+        """
+        XFF from trusted proxy (CIDR range) should be parsed correctly.
+
+        If REMOTE_ADDR is in TRUSTED_PROXIES CIDR range, trust XFF.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('172.24.0.5', xff='9.9.9.9')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['172.24.0.0/16']  # 172.24.0.5 is in this range
+        ):
+            ip = get_client_ip(request)
+
+        # Should trust XFF and return real client IP
+        self.assertEqual(ip, '9.9.9.9')
+
+    def test_xff_from_trusted_proxy_single_ip(self):
+        """
+        XFF from trusted proxy (single IP) should be parsed correctly.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('10.0.0.1', xff='9.9.9.9')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['10.0.0.1']  # Exact IP match
+        ):
+            ip = get_client_ip(request)
+
+        # Should trust XFF and return real client IP
+        self.assertEqual(ip, '9.9.9.9')
+
+    def test_xff_chain_returns_leftmost(self):
+        """
+        XFF with multiple IPs should return leftmost (real client).
+
+        Format: X-Forwarded-For: client_ip, proxy1_ip, proxy2_ip
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('172.24.0.5', xff='9.9.9.9, 10.0.0.1, 172.24.0.5')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['172.24.0.0/16']
+        ):
+            ip = get_client_ip(request)
+
+        # Should return leftmost IP (real client)
+        self.assertEqual(ip, '9.9.9.9')
+
+    def test_xff_with_spaces(self):
+        """
+        XFF with spaces should be parsed correctly.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('172.24.0.5', xff='  9.9.9.9  ,  10.0.0.1  ')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['172.24.0.0/16']
+        ):
+            ip = get_client_ip(request)
+
+        # Should trim spaces and return real client IP
+        self.assertEqual(ip, '9.9.9.9')
+
+    def test_empty_xff_returns_remote_addr(self):
+        """
+        Empty XFF header should fallback to REMOTE_ADDR.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('172.24.0.5', xff='')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['172.24.0.0/16']
+        ):
+            ip = get_client_ip(request)
+
+        # Should fallback to REMOTE_ADDR
+        self.assertEqual(ip, '172.24.0.5')
+
+    def test_malformed_xff_returns_remote_addr(self):
+        """
+        Malformed XFF (only commas/spaces) should fallback to REMOTE_ADDR.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        request = self._create_mock_request('172.24.0.5', xff='  ,  ,  ')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['172.24.0.0/16']
+        ):
+            ip = get_client_ip(request)
+
+        # Should fallback to REMOTE_ADDR
+        self.assertEqual(ip, '172.24.0.5')
+
+    def test_unknown_remote_addr_fallback(self):
+        """
+        If REMOTE_ADDR is missing, should return 'unknown'.
+        """
+        from .audit import get_client_ip
+
+        class MockRequest:
+            META = {}  # No REMOTE_ADDR
+
+        request = MockRequest()
+        ip = get_client_ip(request)
+
+        self.assertEqual(ip, 'unknown')
+
+    def test_multiple_trusted_proxies(self):
+        """
+        Multiple trusted proxy entries (CIDR + single IP) should work.
+        """
+        from django.test import override_settings
+        from .audit import get_client_ip
+
+        # Test CIDR range
+        request1 = self._create_mock_request('172.24.0.5', xff='9.9.9.9')
+
+        with override_settings(
+            TRUSTED_PROXIES_ENABLED=True,
+            TRUSTED_PROXIES=['172.24.0.0/16', '10.0.0.1']
+        ):
+            ip1 = get_client_ip(request1)
+            self.assertEqual(ip1, '9.9.9.9')
+
+            # Test single IP
+            request2 = self._create_mock_request('10.0.0.1', xff='8.8.8.8')
+            ip2 = get_client_ip(request2)
+            self.assertEqual(ip2, '8.8.8.8')

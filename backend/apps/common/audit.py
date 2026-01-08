@@ -5,32 +5,116 @@ Provides centralized logging of security-related events for monitoring,
 incident response, and compliance.
 """
 
+import ipaddress
 import logging
 from typing import Optional, Dict, Any
+
+from django.conf import settings
 
 logger = logging.getLogger('security')
 
 
+def _is_ip_in_trusted_proxies(ip_str: str) -> bool:
+    """
+    Check if IP address is in trusted proxy list.
+
+    Supports both individual IPs and CIDR ranges (e.g., 172.24.0.0/16).
+
+    Args:
+        ip_str: IP address to check (e.g., "172.24.0.1")
+
+    Returns:
+        bool: True if IP is trusted, False otherwise
+    """
+    try:
+        client_ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        # Invalid IP format
+        return False
+
+    trusted_proxies = getattr(settings, "TRUSTED_PROXIES", [])
+
+    for proxy_entry in trusted_proxies:
+        proxy_entry = proxy_entry.strip()
+        if not proxy_entry:
+            continue
+
+        try:
+            # Try as CIDR network (e.g., 172.24.0.0/16)
+            if "/" in proxy_entry:
+                network = ipaddress.ip_network(proxy_entry, strict=False)
+                if client_ip in network:
+                    return True
+            else:
+                # Try as single IP
+                proxy_ip = ipaddress.ip_address(proxy_entry)
+                if client_ip == proxy_ip:
+                    return True
+        except ValueError:
+            # Invalid proxy entry, skip it
+            logger.warning(f"Invalid TRUSTED_PROXIES entry: {proxy_entry}")
+            continue
+
+    return False
+
+
 def get_client_ip(request) -> str:
     """
-    Get real client IP address from request.
+    Get real client IP address from request with XFF protection.
 
-    Handles both direct connections and proxied requests.
+    Security model:
+    - By default: NEVER trust X-Forwarded-For (prevents IP spoofing)
+    - If TRUSTED_PROXIES_ENABLED=true: trust XFF ONLY from verified proxies
+    - Always falls back to REMOTE_ADDR if XFF is not trusted
+
+    Configuration (settings.py):
+        TRUSTED_PROXIES_ENABLED = True/False
+        TRUSTED_PROXIES = ["172.24.0.0/16", "10.0.0.1"]
+
+    Used by:
+    - Security audit logs (login, payment, suspicious activity)
+    - Rate limiting (throttles)
 
     Args:
         request: Django/DRF request object
 
     Returns:
-        str: Client IP address
+        str: Client IP address (either from XFF if trusted, or REMOTE_ADDR)
     """
-    # Check for forwarded IP (behind proxy/load balancer)
+    remote_addr = request.META.get('REMOTE_ADDR', 'unknown')
+
+    # Secure default: don't trust XFF unless explicitly enabled
+    trusted_proxies_enabled = getattr(settings, "TRUSTED_PROXIES_ENABLED", False)
+
+    if not trusted_proxies_enabled:
+        # Security: XFF trust disabled, always use REMOTE_ADDR
+        return remote_addr
+
+    # Check if request came through trusted proxy
+    if not _is_ip_in_trusted_proxies(remote_addr):
+        # Request did NOT come from trusted proxy → don't trust XFF
+        # This prevents external clients from spoofing X-Forwarded-For
+        return remote_addr
+
+    # Request came from trusted proxy → parse XFF
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        # Take the first IP in the chain
-        ip = x_forwarded_for.split(',')[0].strip()
-    else:
-        ip = request.META.get('REMOTE_ADDR', 'unknown')
-    return ip
+
+    if not x_forwarded_for:
+        # No XFF header even though proxy is trusted → use REMOTE_ADDR
+        return remote_addr
+
+    # Parse XFF: take leftmost public IP (real client IP)
+    # Format: "client_ip, proxy1_ip, proxy2_ip"
+    xff_ips = [ip.strip() for ip in x_forwarded_for.split(',') if ip.strip()]
+
+    if not xff_ips:
+        # Empty XFF → fallback to REMOTE_ADDR
+        return remote_addr
+
+    # Return first (leftmost) IP in chain = real client IP
+    # Note: We already verified that REMOTE_ADDR is trusted proxy,
+    # so we can trust the leftmost IP in XFF
+    return xff_ips[0]
 
 
 def get_user_agent(request) -> str:

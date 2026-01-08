@@ -144,3 +144,14 @@ if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
 # Без этого Django видит только IP Docker сети (172.24.0.1) вместо реального IP
 WEBHOOK_TRUST_XFF = os.environ.get("WEBHOOK_TRUST_XFF", "true").lower() == "true"
 WEBHOOK_TRUSTED_PROXIES = os.environ.get("WEBHOOK_TRUSTED_PROXIES", "172.24.0.0/16").split(",")
+
+
+# -----------------------------------------------------------------------------
+# Security: Trusted Proxies for Audit Logs (общая настройка)
+# -----------------------------------------------------------------------------
+# В production включаем доверие к XFF для всех audit логов (не только webhooks).
+# По умолчанию доверяем Docker сети (172.24.0.0/16) где работает Nginx.
+#
+# Используется в apps/common/audit.py -> get_client_ip()
+TRUSTED_PROXIES_ENABLED = os.environ.get("TRUSTED_PROXIES_ENABLED", "true").lower() == "true"
+TRUSTED_PROXIES = os.environ.get("TRUSTED_PROXIES", "172.24.0.0/16").split(",")

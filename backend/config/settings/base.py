@@ -217,7 +217,8 @@ REST_FRAMEWORK = {
         "task_status": "60/minute",  # scope для polling статуса задачи
         # Billing/Webhooks (если используешь)
         "webhook": "100/hour",
-        "payment_creation": "20/hour",
+        "billing_create_payment": "20/hour",
+        "billing_polling": "120/min",  # scope для polling /billing/me/ и /billing/subscription/
     },
     # Единый формат ошибок для фронта
     "EXCEPTION_HANDLER": "apps.core.exception_handler.custom_exception_handler",
@@ -271,6 +272,22 @@ CORS_ALLOW_HEADERS = [
     # Debug mode (DEV only)
     "x-debug-mode",
     "x-debug-user-id",
+]
+
+
+# -----------------------------------------------------------------------------
+# Security: Trusted Proxies for Real Client IP Detection
+# -----------------------------------------------------------------------------
+# Django работает за reverse proxy (Nginx). Чтобы получить реальный IP клиента,
+# нужно доверять X-Forwarded-For заголовку, но ТОЛЬКО от доверенных прокси.
+#
+# Secure default: не доверять XFF (защита от подделки IP).
+# Production: доверять только проверенным прокси (Nginx в Docker сети).
+#
+# Используется в apps/common/audit.py -> get_client_ip() для логов.
+TRUSTED_PROXIES_ENABLED = os.environ.get("TRUSTED_PROXIES_ENABLED", "false").lower() == "true"
+TRUSTED_PROXIES = [
+    p.strip() for p in os.environ.get("TRUSTED_PROXIES", "").split(",") if p.strip()
 ]
 
 

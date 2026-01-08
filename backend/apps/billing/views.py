@@ -42,7 +42,10 @@ from .serializers import (
     SubscriptionPlanPublicSerializer,
 )
 from .services import YooKassaService
-from .throttles import PaymentCreationThrottle  # [SECURITY] Rate limiting для платежей
+from .throttles import (
+    BillingPollingThrottle,  # [SECURITY] Rate limiting для polling
+    PaymentCreationThrottle,  # [SECURITY] Rate limiting для платежей
+)
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +289,7 @@ def get_subscription_plans(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-@throttle_classes([])  # TEMPORARY: Disable throttling due to frontend polling issue
+@throttle_classes([BillingPollingThrottle])  # [SECURITY] 120 req/min для polling
 def get_subscription_status(request):
     """
     GET /api/v1/billing/me/
@@ -392,7 +395,7 @@ def _build_subscription_details_response(user) -> Response:
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-@throttle_classes([])  # TEMPORARY: Disable throttling due to frontend polling issue
+@throttle_classes([BillingPollingThrottle])  # [SECURITY] 120 req/min для polling
 def get_subscription_details(request):
     """
     GET /api/v1/billing/subscription/
