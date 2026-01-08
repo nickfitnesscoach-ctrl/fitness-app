@@ -2,21 +2,24 @@
 # Extends production configuration with development-specific settings
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   1. Copy .env.local to .env: cp .env.local .env
+#   2. Start services: docker compose -f compose.yml -f docker-compose.dev.yml up -d
 #
 # This file overrides production settings for local development:
 # - Uses local.py settings (DEBUG=True, WEBAPP_DEBUG_MODE_ENABLED=True)
 # - Adds volume mounts for live code reloading
-# - Exposes additional ports for debugging
+# - Loads environment variables from .env (generated from .env.local)
+# - No hardcoded secrets/tokens (все берётся из .env)
 
 services:
   # Django Backend API - Development Configuration
   backend:
+    env_file:
+      - ./.env
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
       - WEBAPP_DEBUG_MODE_ENABLED=True
-      - TELEGRAM_BOT_TOKEN=8533783346:AAH40qyzpW35zA425wNhsFAvLJxIrIktN0A
     volumes:
       # Add backend code as volume for live reloading
       - ./backend:/app
@@ -24,6 +27,13 @@ services:
       - ./backend/media:/app/media
       - ./backend/logs:/app/logs
       - backend_venv:/app/.venv  # Protect Docker-managed venv from host mount
+    # Override healthcheck to use 127.0.0.1 (more reliable than localhost in containers)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     command: >
       sh -c "
         /app/.venv/bin/python manage.py migrate &&
@@ -32,6 +42,8 @@ services:
 
   # Celery Worker - Development Configuration
   celery-worker:
+    env_file:
+      - ./.env
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
@@ -44,6 +56,8 @@ services:
 
   # Celery Beat - Development Configuration
   celery-beat:
+    env_file:
+      - ./.env
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
@@ -54,9 +68,10 @@ services:
 
   # Telegram Bot - Development Configuration
   bot:
+    env_file:
+      - ./.env
     environment:
       - DEBUG=True
-      - TELEGRAM_BOT_TOKEN=8533783346:AAH40qyzpW35zA425wNhsFAvLJxIrIktN0A
     volumes:
       - ./bot:/app
       - ./bot/logs:/app/logs

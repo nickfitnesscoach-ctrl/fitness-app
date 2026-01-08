@@ -32,6 +32,33 @@ echo "  - RUN_MIGRATIONS=$RUN_MIGRATIONS"
 echo "  - RUN_COLLECTSTATIC=$RUN_COLLECTSTATIC"
 
 # ============================================================
+# ENV/DEBUG Conflict Guard
+# ============================================================
+# Prevent running production with dev config or vice versa
+
+ENV_VALUE="${ENV:-production}"
+DEBUG_VALUE="${DEBUG:-false}"
+
+# Normalize DEBUG to lowercase for comparison
+DEBUG_LOWER=$(echo "$DEBUG_VALUE" | tr '[:upper:]' '[:lower:]')
+
+if [ "$ENV_VALUE" = "local" ] && [ "$DEBUG_LOWER" = "false" ]; then
+    echo "[Entrypoint] ERROR: ENV=local but DEBUG=false (conflict!)"
+    echo "[Entrypoint] Local development requires DEBUG=true"
+    echo "[Entrypoint] Fix: Set DEBUG=true in .env.local"
+    exit 1
+fi
+
+if [ "$ENV_VALUE" = "production" ] && [ "$DEBUG_LOWER" = "true" ]; then
+    echo "[Entrypoint] ERROR: ENV=production but DEBUG=true (conflict!)"
+    echo "[Entrypoint] Production must have DEBUG=false for security"
+    echo "[Entrypoint] Fix: Set DEBUG=false in .env"
+    exit 1
+fi
+
+echo "[Entrypoint] ENV/DEBUG validation passed (ENV=$ENV_VALUE, DEBUG=$DEBUG_VALUE)"
+
+# ============================================================
 # Detect Service Type
 # ============================================================
 
@@ -134,8 +161,15 @@ else
 fi
 
 # ============================================================
-# Start Gunicorn (backend service)
+# Start Server (backend service)
 # ============================================================
 
-echo "[Entrypoint] Starting Gunicorn with config gunicorn_config.py..."
-exec /app/.venv/bin/gunicorn --config gunicorn_config.py config.wsgi:application
+# If a command was provided, execute it instead of default Gunicorn
+# This allows docker-compose.dev.yml to override with runserver
+if [ $# -gt 0 ]; then
+    echo "[Entrypoint] Executing provided command: $@"
+    exec "$@"
+else
+    echo "[Entrypoint] Starting Gunicorn with config gunicorn_config.py..."
+    exec /app/.venv/bin/gunicorn --config gunicorn_config.py config.wsgi:application
+fi
