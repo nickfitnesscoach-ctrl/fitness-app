@@ -15,18 +15,18 @@ import { Home, Camera, CreditCard, User } from 'lucide-react';
 const ClientLayout: React.FC = () => {
     return (
         <div className="min-h-dvh bg-gray-50 flex flex-col">
-            <main className="flex-1 flex flex-col overflow-y-auto" style={{ paddingBottom: 'calc(var(--tap-h) + var(--safe-bottom) + 12px)' }}>
+            <main className="flex-1 flex flex-col overflow-y-auto" style={{ paddingBottom: 'calc(var(--tap-h) + var(--safe-bottom))' }}>
                 <Outlet />
             </main>
 
             {/* Bottom Navigation Bar */}
             <nav
-                className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-100 flex justify-between items-center z-50 px-page"
+                className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-100 z-50 px-page"
                 style={{
                     paddingBottom: 'var(--safe-bottom)',
-                    height: 'calc(var(--tap-h) + var(--safe-bottom) + 12px)',
                 }}
             >
+                <div style={{ height: 'var(--tap-h)' }} className="flex justify-between items-center">
                 <NavLink
                     to="/"
                     end
@@ -67,6 +67,7 @@ const ClientLayout: React.FC = () => {
                     <User size={22} />
                     <span className="text-[10px] font-semibold uppercase tracking-wider">Профиль</span>
                 </NavLink>
+                </div>
             </nav>
         </div>
     );
