@@ -36,7 +36,7 @@ const SubscriptionPage: React.FC = () => {
 
     if (!isReady) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
+            <div className="flex items-center justify-center py-16">
                 <div className="animate-spin w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full" />
             </div>
         );
@@ -44,7 +44,7 @@ const SubscriptionPage: React.FC = () => {
 
     if (!webAppDetected && !isBrowserDebug && !webAppBrowserDebug) {
         return (
-            <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="flex items-center justify-center p-4 py-16">
                 <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center max-w-md">
                     <h2 className="text-xl font-bold text-orange-900 mb-2">Откройте через Telegram</h2>
                     <p className="text-orange-700">Приложение работает только внутри Telegram.</p>
@@ -54,8 +54,8 @@ const SubscriptionPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <PageContainer withSafeTop={true} className="pt-3 pb-[env(safe-area-inset-bottom,16px)]">
+        <div className="bg-gray-50">
+            <PageContainer withSafeTop={true} className="pt-3 pb-4">
                 <div className="flex flex-col gap-5">
                     <SubscriptionHeader
                         topStatusText={subscriptionStatus.topStatusText}
