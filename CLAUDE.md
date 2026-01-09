@@ -252,16 +252,37 @@ docker exec eatfit24-db-1 pg_isready -U eatfit24
 
 ## Container Names
 
-Production containers (from `compose.yml`):
-- `eatfit24-db` — PostgreSQL database
+**IMPORTANT: DEV/PROD Isolation via COMPOSE_PROJECT_NAME**
+
+Starting from 2026-01-09, all containers, volumes, and networks use `COMPOSE_PROJECT_NAME` prefixing for DEV/PROD isolation.
+
+**DEV containers** (with `COMPOSE_PROJECT_NAME=eatfit24_dev`):
+- `eatfit24_dev-db-1` — PostgreSQL database
+- `eatfit24_dev-redis-1` — Redis (Celery broker + cache)
+- `eatfit24_dev-backend-1` — Django API (port 127.0.0.1:8000)
+- `eatfit24_dev-celery-worker-1` — Celery worker
+- `eatfit24_dev-celery-beat-1` — Celery Beat scheduler
+- `eatfit24_dev-bot-1` — Telegram bot
+- `eatfit24_dev-frontend-1` — React frontend (port 127.0.0.1:3000)
+
+**PROD containers** (with `COMPOSE_PROJECT_NAME=eatfit24` or leave unset):
+- `eatfit24-db-1` — PostgreSQL database
 - `eatfit24-redis-1` — Redis (Celery broker + cache)
 - `eatfit24-backend-1` — Django API (port 127.0.0.1:8000)
 - `eatfit24-celery-worker-1` — Celery worker
 - `eatfit24-celery-beat-1` — Celery Beat scheduler
-- `eatfit24-bot` — Telegram bot
-- `eatfit24-frontend` — React frontend (port 127.0.0.1:3000)
+- `eatfit24-bot-1` — Telegram bot
+- `eatfit24-frontend-1` — React frontend (port 127.0.0.1:3000)
 
-**Note:** Container names with `-1` suffix are managed by Docker Compose. Some containers use explicit `container_name` (without suffix), others get the `-1` suffix automatically.
+**How to reference containers:**
+```bash
+# Recommended: Use docker compose exec (works with current project context)
+docker compose exec backend python manage.py shell
+
+# Alternative: Use full container name with project prefix
+docker exec -it eatfit24_dev-backend-1 python manage.py shell  # DEV
+docker exec -it eatfit24-backend-1 python manage.py shell      # PROD
+```
 
 ## Utility Scripts
 

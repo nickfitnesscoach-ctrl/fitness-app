@@ -8,15 +8,15 @@ services:
   # ============================================================
   db:
     image: postgres:15-alpine
-    container_name: eatfit24-db
+    # container_name removed to allow COMPOSE_PROJECT_NAME prefixing for DEV/PROD isolation
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-eatfit24}
-      POSTGRES_USER: ${POSTGRES_USER:-eatfit24}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eatfit24} -d ${POSTGRES_DB:-eatfit24}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,7 +35,7 @@ services:
   # ============================================================
   redis:
     image: redis:7-alpine
-    container_name: eatfit24-redis
+    # container_name removed to allow COMPOSE_PROJECT_NAME prefixing for DEV/PROD isolation
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -60,7 +60,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: eatfit24-backend
+    # container_name removed to allow COMPOSE_PROJECT_NAME prefixing for DEV/PROD isolation
     depends_on:
       db:
         condition: service_healthy
@@ -69,8 +69,8 @@ services:
     env_file: .env
     environment:
       - POSTGRES_HOST=db
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # CELERY_BROKER_URL and CELERY_RESULT_BACKEND come from .env
+      # DEV uses DB 0/1, PROD uses DB 1/2 for isolation
     volumes:
       - backend_static:/app/staticfiles
       - /var/lib/eatfit24/media:/app/media
@@ -100,7 +100,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: eatfit24-celery-worker
+    # container_name removed to allow COMPOSE_PROJECT_NAME prefixing for DEV/PROD isolation
     command: celery -A config worker -l INFO --concurrency=2 --max-memory-per-child=300000 --max-tasks-per-child=100 -Q ai,billing,default
     depends_on:
       backend:
@@ -108,8 +108,8 @@ services:
     env_file: .env
     environment:
       - POSTGRES_HOST=db
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # CELERY_BROKER_URL and CELERY_RESULT_BACKEND come from .env
+      # DEV uses DB 0/1, PROD uses DB 1/2 for isolation
     healthcheck:
       disable: true
     deploy:
@@ -128,7 +128,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: eatfit24-celery-beat
+    # container_name removed to allow COMPOSE_PROJECT_NAME prefixing for DEV/PROD isolation
     command: celery -A config beat -l INFO --schedule=/app/celerybeat-data/celerybeat-schedule
     depends_on:
       backend:
@@ -136,8 +136,8 @@ services:
     env_file: .env
     environment:
       - POSTGRES_HOST=db
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # CELERY_BROKER_URL and CELERY_RESULT_BACKEND come from .env
+      # DEV uses DB 0/1, PROD uses DB 1/2 for isolation
     volumes:
       - celerybeat_data:/app/celerybeat-data
     healthcheck:
@@ -158,7 +158,7 @@ services:
     build:
       context: ./bot
       dockerfile: Dockerfile
-    container_name: eatfit24-bot
+    # container_name removed to allow COMPOSE_PROJECT_NAME prefixing for DEV/PROD isolation
     depends_on:
       backend:
         condition: service_healthy
@@ -185,7 +185,7 @@ services:
         - VITE_API_URL=/api/v1
         - VITE_TELEGRAM_BOT_NAME=${TELEGRAM_BOT_NAME:-EatFit24_bot}
         - VITE_TRAINER_INVITE_LINK=${TRAINER_INVITE_LINK:-https://t.me/EatFit24_bot}
-    container_name: eatfit24-frontend
+    # container_name removed to allow COMPOSE_PROJECT_NAME prefixing for DEV/PROD isolation
     depends_on:
       backend:
         condition: service_healthy
@@ -204,21 +204,19 @@ services:
 # ============================================================
 # Volumes
 # ============================================================
+# IMPORTANT: No explicit 'name:' parameter to allow COMPOSE_PROJECT_NAME prefixing
+# This ensures DEV and PROD use separate volumes (e.g., eatfit24_dev_postgres_data vs eatfit24_prod_postgres_data)
 volumes:
   postgres_data:
-    name: eatfit24-postgres-data
   redis_data:
-    name: eatfit24-redis-data
   backend_static:
-    name: eatfit24-backend-static
   # backend_media removed - using bind mount /var/lib/eatfit24/media for production data separation
   celerybeat_data:
-    name: eatfit24-celerybeat-data
 
 # ============================================================
 # Networks
 # ============================================================
+# IMPORTANT: No explicit 'name:' parameter to allow COMPOSE_PROJECT_NAME prefixing
 networks:
   eatfit24-network:
-    name: eatfit24-network
     driver: bridge
