@@ -6,6 +6,11 @@ import sys
 
 def main():
     """Run administrative tasks."""
+    # CRITICAL: Explicitly set SECRET_KEY in os.environ BEFORE Django imports
+    # This fixes the circular import issue with rest_framework_simplejwt
+    if "SECRET_KEY" not in os.environ and "DJANGO_SECRET_KEY" in os.environ:
+        os.environ["SECRET_KEY"] = os.environ["DJANGO_SECRET_KEY"]
+
     # Use DJANGO_SETTINGS_MODULE from environment if set, otherwise default to local
     # In Docker containers, DJANGO_SETTINGS_MODULE is always set explicitly
     # For local development without env var, defaults to config.settings.local

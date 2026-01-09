@@ -26,7 +26,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
+# RefreshToken imported lazily inside functions to avoid early SECRET_KEY access
 
 from apps.nutrition.models import DailyGoal
 from apps.telegram.auth.authentication import (
@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------
 # Вспомогательные функции
 # ---------------------------------------------------------------------
+
 
 def _forbidden() -> Response:
     """Единый ответ 403 без утечек информации."""
@@ -92,6 +93,7 @@ def _is_debug_allowed() -> bool:
 # ---------------------------------------------------------------------
 # Trainer Panel (админка)
 # ---------------------------------------------------------------------
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -147,6 +149,7 @@ def trainer_panel_auth(request):
 # Telegram Mini App → JWT
 # ---------------------------------------------------------------------
 
+
 @extend_schema(tags=["Telegram"])
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -166,12 +169,17 @@ def telegram_auth(request):
             debug_auth = DebugModeAuthentication()
             result = debug_auth.authenticate(request)
             if result:
-                return Response(TelegramAuthSerializer({
-                    "access": "debug_access_token", # Mock token or generated one
-                    "refresh": "debug_refresh_token",
-                    "user": result[0].telegram_profile,
-                    "is_admin": True,
-                }).data, status=status.HTTP_200_OK)
+                return Response(
+                    TelegramAuthSerializer(
+                        {
+                            "access": "debug_access_token",  # Mock token or generated one
+                            "refresh": "debug_refresh_token",
+                            "user": result[0].telegram_profile,
+                            "is_admin": True,
+                        }
+                    ).data,
+                    status=status.HTTP_200_OK,
+                )
 
         result = authenticator.authenticate(request)
         if not result:
@@ -184,19 +192,26 @@ def telegram_auth(request):
         try:
             telegram_user = user.telegram_profile
         except TelegramUser.DoesNotExist:
-            return Response({"error": "Telegram profile not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Telegram profile not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Lazy import to avoid early SECRET_KEY access during module loading
+        from rest_framework_simplejwt.tokens import RefreshToken
 
         refresh = RefreshToken.for_user(user)
 
         admin_ids = _parse_admin_ids()
         is_admin = telegram_user.telegram_id in admin_ids
 
-        serializer = TelegramAuthSerializer({
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "user": telegram_user,
-            "is_admin": is_admin,
-        })
+        serializer = TelegramAuthSerializer(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": telegram_user,
+                "is_admin": is_admin,
+            }
+        )
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -208,6 +223,7 @@ def telegram_auth(request):
 # ---------------------------------------------------------------------
 # Unified WebApp Auth (Mini App + Trainer Panel)
 # ---------------------------------------------------------------------
+
 
 @extend_schema(tags=["Telegram"])
 @api_view(["POST"])
@@ -245,7 +261,7 @@ def webapp_auth(request):
             "username": "",
             "first_name": user.first_name,
             "last_name": user.last_name,
-        }
+        },
     )
 
     # Profile
@@ -253,27 +269,26 @@ def webapp_auth(request):
 
     # Active goals
     active_goal = (
-        DailyGoal.objects
-        .filter(user=user, is_active=True)
-        .order_by("-created_at")
-        .first()
+        DailyGoal.objects.filter(user=user, is_active=True).order_by("-created_at").first()
     )
 
     admin_ids = _parse_admin_ids()
     is_admin = telegram_user.telegram_id in admin_ids
 
-    serializer = WebAppAuthResponseSerializer({
-        "user": {
-            "id": user.id,
-            "telegram_id": telegram_user.telegram_id,
-            "username": telegram_user.username or "",
-            "first_name": telegram_user.first_name or "",
-            "last_name": telegram_user.last_name or "",
-        },
-        "profile": profile,
-        "goals": active_goal,
-        "is_admin": is_admin,
-    })
+    serializer = WebAppAuthResponseSerializer(
+        {
+            "user": {
+                "id": user.id,
+                "telegram_id": telegram_user.telegram_id,
+                "username": telegram_user.username or "",
+                "first_name": telegram_user.first_name or "",
+                "last_name": telegram_user.last_name or "",
+            },
+            "profile": profile,
+            "goals": active_goal,
+            "is_admin": is_admin,
+        }
+    )
 
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -281,6 +296,7 @@ def webapp_auth(request):
 # ---------------------------------------------------------------------
 # Profile
 # ---------------------------------------------------------------------
+
 
 @extend_schema(tags=["Telegram"])
 @api_view(["GET"])

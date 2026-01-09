@@ -70,7 +70,8 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     "rest_framework",
-    "rest_framework_simplejwt",
+    # "rest_framework_simplejwt",  # REMOVED: causes SECRET_KEY import before settings are loaded
+    # "rest_framework_simplejwt.token_blacklist",  # Also removed - imports models.py which needs SECRET_KEY
     "drf_spectacular",
     "django_filters",
     "corsheaders",
@@ -347,6 +348,7 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
+    # SIGNING_KEY intentionally omitted - SimpleJWT will use settings.SECRET_KEY automatically
+    # This prevents early access to SECRET_KEY during settings import
     "AUTH_HEADER_TYPES": ("Bearer",),
 }

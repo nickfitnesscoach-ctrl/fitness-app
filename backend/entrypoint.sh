@@ -20,7 +20,7 @@ echo "[Entrypoint] Starting EatFit24 Backend..."
 # Configuration
 # ============================================================
 
-DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.production}"
+export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.production}"
 MIGRATIONS_STRICT="${MIGRATIONS_STRICT:-1}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-1}"
 RUN_COLLECTSTATIC="${RUN_COLLECTSTATIC:-1}"
