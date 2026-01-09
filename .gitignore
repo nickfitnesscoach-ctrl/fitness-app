@@ -1,77 +1,94 @@
+# =========================
 # Python
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
 eggs/
 .eggs/
-lib/
-lib64/
-!frontend/src/lib/
-!frontend/src/features/*/lib/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
 
+# В проекте есть frontend/src/lib и feature libs — их НЕ игнорим
+lib/
+lib64/
+!frontend/src/lib/
+!frontend/src/features/*/lib/
+
+# =========================
 # Virtual environments
+# =========================
 venv/
 .venv/
 ENV/
 env/
-!docs/env/
 .virtualenv/
 
-# Django
+# docs/env — это документация, её трекаем
+!docs/env/
+
+# =========================
+# Django / assets
+# =========================
+# Логи
 *.log
+
+# Локальные настройки и sqlite
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-/media
-/staticfiles
-/static
-backend/media/
-backend/staticfiles/
 
-# Environment variables
-.env
-.env.*
+# Медиа и статика: игнорим РЕКУРСИВНО во всех подпапках
+**/media/
+**/static/
+**/staticfiles/
+
+# =========================
+# Environment variables (NEVER commit real env files)
+# =========================
+# Игнорим все .env* файлы (секреты/локальные настройки)
+.env*
+# Разрешаем только пример (без секретов)
 !.env.example
-*.env
-.env.local
-.env.*.local
-.env.patch*
-backend/.env
-bot/.env
-frontend/.env
 
+# Если у тебя есть шаблон без секретов — можно раскомментировать
+# !.env.template
+
+# =========================
 # Secrets (NEVER commit)
+# =========================
 *credentials*
 *.pem
 *.key
 id_rsa*
 *.p12
+.envrc
+*.secrets.*
+*.secret.*
 
-# IDE
+# =========================
+# IDE / OS
+# =========================
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
+Thumbs.db
 .claude/
 
+# =========================
 # Testing
+# =========================
 .tox/
 .coverage
 .coverage.*
@@ -82,33 +99,35 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Logs
-logs/
-*.log
-
-# Celery
+# =========================
+# Celery / Gunicorn
+# =========================
 celerybeat-schedule
 celerybeat.pid
-
-# Gunicorn
 gunicorn.pid
 
+# =========================
 # Docker
+# =========================
 *.env.docker
 docker-compose.override.yml
-# docker-compose.dev.yml — removed from ignore, now tracked (needed for uv venv volumes)
+# compose.dev.yml — tracked (нужно для uv venv volumes)
 
-# OS
-Thumbs.db
-.DS_Store
-
-# Node.js (for frontend)
+# =========================
+# Node.js (frontend)
+# =========================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# =========================
+# Explicit trash
+# =========================
 admin-credentials.txt
 
+# =========================
 # Separate repositories (not tracked in main repo)
+# =========================
+# Если ai-proxy живёт отдельным репо — держим его вне основного git
 eatfit24-ai-proxy/
-
