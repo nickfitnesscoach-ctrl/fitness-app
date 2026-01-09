@@ -21,6 +21,7 @@ if APP_ENV != "prod":
 # SECRET_KEY обязателен
 if not base.SECRET_KEY:
     raise RuntimeError("[SAFETY] SECRET_KEY must be set in production.")
+SECRET_KEY = base.SECRET_KEY  # Export for Django to find
 
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 if DEBUG:
