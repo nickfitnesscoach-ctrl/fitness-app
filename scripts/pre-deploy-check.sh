@@ -41,8 +41,23 @@ else
 fi
 echo ""
 
-# Check 3: Python syntax validation
-echo "📋 Check 3: Python syntax validation (compileall)"
+# Check 3: Django setup smoke test (early import detection)
+echo "📋 Check 3: Django setup smoke test"
+echo "Running: python -c 'import django; django.setup()'"
+if python -c "import django; django.setup(); print('✅ Django setup OK')" 2>&1; then
+    echo "✅ Django setup successful (no early import issues)"
+else
+    echo "❌ BLOCKER: Django setup failed!"
+    echo "   This usually means settings have forbidden imports:"
+    echo "   - App imports (apps.*) in settings files"
+    echo "   - Heavy library imports that access settings at import time"
+    echo "   See backend/docs/ENV_CONTRACT.md for rules"
+    exit 1
+fi
+echo ""
+
+# Check 4: Python syntax validation
+echo "📋 Check 4: Python syntax validation (compileall)"
 echo "Running: python -m compileall -q ."
 if python -m compileall -q .; then
     echo "✅ No syntax errors detected"
@@ -53,8 +68,8 @@ else
 fi
 echo ""
 
-# Check 4: Migration plan
-echo "📋 Check 4: Migration plan"
+# Check 5: Migration plan
+echo "📋 Check 5: Migration plan"
 echo "Running: python manage.py migrate --plan"
 PLAN_OUTPUT=$(python manage.py migrate --plan)
 echo "$PLAN_OUTPUT"
@@ -65,8 +80,8 @@ else
 fi
 echo ""
 
-# Check 5: No unapplied migrations locally
-echo "📋 Check 5: Check for unapplied migrations"
+# Check 6: No unapplied migrations locally
+echo "📋 Check 6: Check for unapplied migrations"
 UNAPPLIED=$(python manage.py showmigrations | grep '\[ \]' || true)
 if [ -z "$UNAPPLIED" ]; then
     echo "✅ All migrations applied locally"
@@ -77,15 +92,15 @@ else
 fi
 echo ""
 
-# Check 6: Django system check for production
-echo "📋 Check 6: Django production checks"
+# Check 7: Django system check for production
+echo "📋 Check 7: Django production checks"
 echo "Running: python manage.py check --deploy --settings=config.settings.production"
 # Note: This might fail if production env vars aren't set locally, so we don't fail on error
 python manage.py check --deploy --settings=config.settings.production || echo "⚠️  Production checks failed (might be due to missing prod env vars)"
 echo ""
 
-# Check 7: Verify git status
-echo "📋 Check 7: Git status"
+# Check 8: Verify git status
+echo "📋 Check 8: Git status"
 cd "$PROJECT_ROOT"
 GIT_STATUS=$(git status --porcelain)
 if [ -z "$GIT_STATUS" ]; then
@@ -102,8 +117,8 @@ else
 fi
 echo ""
 
-# Check 8: Verify current branch and remote
-echo "📋 Check 8: Git branch and remote"
+# Check 9: Verify current branch and remote
+echo "📋 Check 9: Git branch and remote"
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo "Current branch: $CURRENT_BRANCH"
 git fetch origin --quiet

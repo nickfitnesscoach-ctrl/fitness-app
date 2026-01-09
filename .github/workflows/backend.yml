@@ -115,6 +115,20 @@ jobs:
         run: |
           uv run python manage.py check
 
+      - name: Smoke test — Django setup without crashes
+        run: |
+          echo "🔍 Testing Django setup (early import detection)…"
+          uv run python -c "import django; django.setup(); print('✅ Django setup OK')" || {
+            echo "❌ BLOCKER: Django setup failed!"
+            echo ""
+            echo "This usually means settings have forbidden imports:"
+            echo "  - App imports (apps.*) in settings files"
+            echo "  - Heavy library imports that access settings at import time"
+            echo ""
+            echo "See backend/docs/ENV_CONTRACT.md for rules"
+            exit 1
+          }
+
       - name: Migration gate — no uncommitted migrations
         run: |
           echo "🔍 Checking for uncommitted migrations…"
