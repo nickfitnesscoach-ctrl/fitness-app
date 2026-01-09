@@ -59,19 +59,18 @@ jobs:
       SECRET_KEY: test-secret-key
       ALLOWED_HOSTS: localhost,127.0.0.1
 
-      # Postgres (use service hostname, not localhost)
+      # Postgres (GHA services are exposed via localhost:port)
       POSTGRES_DB: eatfit24
       POSTGRES_USER: eatfit24
       POSTGRES_PASSWORD: supersecret
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
 
-      # Redis (use service hostname, not localhost)
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # Redis (GHA services are exposed via localhost:port)
+      REDIS_URL: redis://127.0.0.1:6379/0
+      CELERY_BROKER_URL: redis://127.0.0.1:6379/0
+      CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/0
 
-      # Optional: keep CI quiet + deterministic
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
 
@@ -99,6 +98,29 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev
+
+      - name: Wait for Postgres & Redis
+        run: |
+          set -e
+          echo "⏳ Waiting for Postgres at $POSTGRES_HOST:$POSTGRES_PORT ..."
+          for i in {1..30}; do
+            if (echo > /dev/tcp/$POSTGRES_HOST/$POSTGRES_PORT) >/dev/null 2>&1; then
+              echo "✅ Postgres port is open"
+              break
+            fi
+            echo "… still waiting ($i/30)"
+            sleep 1
+          done
+
+          echo "⏳ Waiting for Redis at 127.0.0.1:6379 ..."
+          for i in {1..30}; do
+            if (echo > /dev/tcp/127.0.0.1/6379) >/dev/null 2>&1; then
+              echo "✅ Redis port is open"
+              break
+            fi
+            echo "… still waiting ($i/30)"
+            sleep 1
+          done
 
       - name: Guardrail — forbid datetime.now()/utcnow()
         run: |
@@ -142,12 +164,6 @@ jobs:
         run: |
           set -e
           uv run python manage.py test apps.core apps.billing apps.common --verbosity=2 --noinput | tee /tmp/test.log
-          if ! grep -qE "Ran [1-9][0-9]* tests?" /tmp/test.log; then
-            echo ""
-            echo "❌ BLOCKER: Django test runner did not execute any tests."
-            echo "Fix test discovery (tests/ package, __init__.py, file naming test_*.py)."
-            exit 1
-          fi
-          echo "✅ Tests executed"
+          grep -qE "Ran [1-9][0-9]* tests?" /tmp/test.log
 
 # NOTE: Deploy is handled by unified .github/workflows/deploy.yml
