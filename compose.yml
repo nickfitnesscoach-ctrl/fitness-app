@@ -66,7 +66,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file: .env
+    # env_file: moved to compose.dev.yml / compose.prod.yml
     environment:
       - POSTGRES_HOST=db
       # CELERY_BROKER_URL and CELERY_RESULT_BACKEND come from .env
@@ -105,7 +105,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    env_file: .env
+    # env_file: moved to compose.dev.yml / compose.prod.yml
     environment:
       - POSTGRES_HOST=db
       # CELERY_BROKER_URL and CELERY_RESULT_BACKEND come from .env
@@ -133,7 +133,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    env_file: .env
+    # env_file: moved to compose.dev.yml / compose.prod.yml
     environment:
       - POSTGRES_HOST=db
       # CELERY_BROKER_URL and CELERY_RESULT_BACKEND come from .env
@@ -162,7 +162,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    env_file: .env
+    # env_file: moved to compose.dev.yml / compose.prod.yml
     environment:
       - BACKEND_URL=http://backend:8000
     deploy:
@@ -209,14 +209,14 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  backend_static:
-  # backend_media removed - using bind mount /var/lib/eatfit24/media for production data separation
+  backend_static: # backend_media removed - using bind mount /var/lib/eatfit24/media for production data separation
+
   celerybeat_data:
 
-# ============================================================
-# Networks
-# ============================================================
-# IMPORTANT: No explicit 'name:' parameter to allow COMPOSE_PROJECT_NAME prefixing
+    # ============================================================
+    # Networks
+    # ============================================================
+    # IMPORTANT: No explicit 'name:' parameter to allow COMPOSE_PROJECT_NAME prefixing
 networks:
   eatfit24-network:
     driver: bridge

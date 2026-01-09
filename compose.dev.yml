@@ -2,20 +2,20 @@
 # Extends production configuration with development-specific settings
 #
 # Usage:
-#   1. Copy .env.local to .env: cp .env.local .env
-#   2. Start services: docker compose -f compose.yml -f compose.dev.yml up -d
+#   1. Create .env.local from .env.example
+#   2. Start services: docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d
 #
 # This file overrides production settings for local development:
-# - Uses local.py settings (DEBUG=True, WEBAPP_DEBUG_MODE_ENABLED=True)
+# - Uses local.py settings (DEBUG=True)
 # - Adds volume mounts for live code reloading
-# - Loads environment variables from .env (generated from .env.local)
-# - No hardcoded secrets/tokens (все берётся из .env)
+# - Loads environment variables from .env.local
+# - No hardcoded secrets/tokens
 
 services:
   # Django Backend API - Development Configuration
   backend:
     env_file:
-      - ./.env
+      - .env.local
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
@@ -26,10 +26,10 @@ services:
       - ./backend/staticfiles:/app/staticfiles
       - ./backend/media:/app/media
       - ./backend/logs:/app/logs
-      - backend_venv:/app/.venv  # Protect Docker-managed venv from host mount
+      - backend_venv:/app/.venv # Protect Docker-managed venv from host mount
     # Override healthcheck to use 127.0.0.1 (more reliable than localhost in containers)
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health/"]
+      test: [ "CMD", "curl", "-f", "http://127.0.0.1:8000/health/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -43,7 +43,7 @@ services:
   # Celery Worker - Development Configuration
   celery-worker:
     env_file:
-      - ./.env
+      - .env.local
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
@@ -52,32 +52,32 @@ services:
       - ./backend:/app
       - ./backend/logs:/app/logs
       - ./backend/media:/app/media
-      - backend_venv:/app/.venv  # Protect Docker-managed venv from host mount
+      - backend_venv:/app/.venv # Protect Docker-managed venv from host mount
 
   # Celery Beat - Development Configuration
   celery-beat:
     env_file:
-      - ./.env
+      - .env.local
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
     volumes:
       - ./backend:/app
       - ./backend/logs:/app/logs
-      - backend_venv:/app/.venv  # Protect Docker-managed venv from host mount
+      - backend_venv:/app/.venv # Protect Docker-managed venv from host mount
 
   # Telegram Bot - Development Configuration
   bot:
     env_file:
-      - ./.env
+      - .env.local
     environment:
       - DEBUG=True
     volumes:
       - ./bot:/app
       - ./bot/logs:/app/logs
-      - bot_venv:/app/.venv  # Protect Docker-managed venv from host mount
+      - bot_venv:/app/.venv # Protect Docker-managed venv from host mount
 
 # Named volumes for development
 volumes:
-  backend_venv:  # Isolate backend's uv-managed venv
-  bot_venv:      # Isolate bot's uv-managed venv
+  backend_venv: # Isolate backend's uv-managed venv
+  bot_venv: # Isolate bot's uv-managed venv

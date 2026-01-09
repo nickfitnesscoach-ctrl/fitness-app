@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/compose-spec/compose-spec/master/schema/compose-spec.json
 # EatFit24 Production Docker Compose
-# Usage: docker compose up -d --build
+# Usage: docker compose -f compose.yml -f compose.prod.yml --env-file .env.prod up -d --build
 
 services:
   # ============================================================
@@ -66,7 +66,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file: .env
+    env_file: .env.prod
     environment:
       - POSTGRES_HOST=db
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -105,7 +105,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    env_file: .env
+    env_file: .env.prod
     environment:
       - POSTGRES_HOST=db
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -131,7 +131,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    env_file: .env
+    env_file: .env.prod
     environment:
       - POSTGRES_HOST=db
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -158,7 +158,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    env_file: .env
+    env_file: .env.prod
     environment:
       - BACKEND_URL=http://backend:8000
     deploy:
