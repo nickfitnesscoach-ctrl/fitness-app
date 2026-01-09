@@ -35,6 +35,14 @@ DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
 SECRET_KEY = os.environ.get("SECRET_KEY") or os.environ.get("DJANGO_SECRET_KEY") or ""
 
+# CRITICAL: Fail-fast if SECRET_KEY is empty in production
+# This must happen BEFORE any imports that use SECRET_KEY (e.g., rest_framework_simplejwt)
+if not SECRET_KEY and os.environ.get("DJANGO_SETTINGS_MODULE", "").endswith("production"):
+    raise RuntimeError(
+        "[SAFETY] SECRET_KEY must be set before loading production settings. "
+        "Add SECRET_KEY=... to .env file."
+    )
+
 
 # =============================================================================
 # Hosts
