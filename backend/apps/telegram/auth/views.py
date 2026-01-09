@@ -37,7 +37,7 @@ from apps.telegram.auth.services.webapp_auth import get_webapp_auth_service
 from apps.telegram.models import TelegramUser
 from apps.telegram.serializers import (
     TelegramAuthSerializer,
-    TelegramUserSerializer,
+    TelegramUserPublicSerializer,
     WebAppAuthResponseSerializer,
 )
 from apps.users.models import Profile
@@ -295,5 +295,5 @@ def telegram_profile(request):
     except TelegramUser.DoesNotExist:
         return Response({"error": "Telegram profile not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    serializer = TelegramUserSerializer(telegram_user)
+    serializer = TelegramUserPublicSerializer(telegram_user)
     return Response(serializer.data, status=status.HTTP_200_OK)
