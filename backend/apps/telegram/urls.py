@@ -18,7 +18,7 @@ from apps.telegram.bot.views import (
     get_user_or_create,
     save_test_results,
 )
-from apps.telegram.trainer_panel.views import (
+from apps.telegram.trainer_panel_views import (
     client_detail,
     clients_list,
     get_applications_api,
