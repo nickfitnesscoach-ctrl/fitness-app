@@ -91,8 +91,13 @@ else:
     db_name = (_env("POSTGRES_DB", "eatfit24_dev") or "eatfit24_dev").strip()
     db_user = (_env("POSTGRES_USER", "eatfit24_dev") or "eatfit24_dev").strip()
 
-    # Жёстко запрещаем "подозрительные" имена
-    forbidden = {"eatfit24", "eatfit24_prod", "foodmind", "foodmind_prod"}
+    # Жёстко запрещаем "подозрительные" имена (кроме CI)
+    # В CI разрешаем дефолтное имя "eatfit24" для обратной совместимости
+    is_ci = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
+    forbidden = {"eatfit24_prod", "foodmind", "foodmind_prod"}
+    if not is_ci:
+        forbidden.add("eatfit24")  # В локальной разработке требуем явно eatfit24_dev
+
     if db_name in forbidden or db_name.endswith("_prod") or "_prod" in db_name:
         raise RuntimeError(f"[SAFETY] Forbidden DB name for DEV: {db_name!r}. Use eatfit24_dev.")
 
