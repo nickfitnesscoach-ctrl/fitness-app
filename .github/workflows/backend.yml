@@ -79,9 +79,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Secret leak detection (BLOCKER)
+        working-directory: .
         run: |
           echo "🔐 Running secret leak detection…"
-          chmod +x scripts/check-secrets-leak.sh
           ./scripts/check-secrets-leak.sh
 
       - name: Setup Python
