@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import time
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -10,7 +11,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from app.config import settings
-from app.keyboards import get_contact_trainer_keyboard, get_gender_keyboard
+from app.keyboards import (
+    get_contact_trainer_keyboard,
+    get_gender_keyboard,
+    get_plan_error_keyboard,
+)
 from app.services.ai import openrouter_client
 from app.services.backend_api import BackendAPIError, get_backend_api
 from app.services.events import log_ai_error, log_plan_generated, log_survey_completed
@@ -165,101 +170,177 @@ async def confirm_and_generate(callback: CallbackQuery, state: FSMContext, bot: 
             logger.warning(f"AI response validation failed: {validation['errors']}")
             log_plan_generated(user_id, ai_model, validation_passed=False)
 
-        # Сохранить в Backend API с обработкой ошибок
-        try:
-            backend_api = get_backend_api()
+        # Сохранение в Backend API
+        saved_successfully = await _perform_save_and_respond(callback, state, ai_text, ai_model, prompt_version)
 
-            # Получить или создать пользователя
-            await backend_api.get_or_create_user(
-                telegram_id=user_id,
-                username=callback.from_user.username if callback.from_user else None,
-                full_name=callback.from_user.full_name if callback.from_user else None,
-            )
-
-            # Сохранить ответы опроса
-            survey_response = await backend_api.create_survey(
-                telegram_id=user_id,
-                gender=data["gender"],
-                age=data["age"],
-                height_cm=data["height_cm"],
-                weight_kg=float(data["weight_kg"]),
-                target_weight_kg=float(data["target_weight_kg"]) if data.get("target_weight_kg") else None,
-                activity=data["activity"],
-                training_level=data.get("training_level"),
-                body_goals=data.get("body_goals", []),
-                health_limitations=data.get("health_limitations", []),
-                body_now_id=data["body_now_id"],
-                body_now_label=data.get("body_now_label"),
-                body_now_file=data["body_now_file"],
-                body_ideal_id=data["body_ideal_id"],
-                body_ideal_label=data.get("body_ideal_label"),
-                body_ideal_file=data["body_ideal_file"],
-                timezone=data["tz"],
-                utc_offset_minutes=data["utc_offset_minutes"],
-            )
-
-            # Сохранить план
-            await backend_api.create_plan(
-                telegram_id=user_id,
-                survey_id=survey_response["id"],
-                ai_text=ai_text,
-                ai_model=ai_model,
-                prompt_version=prompt_version,
-            )
-
-            log_survey_completed(user_id)
-            log_plan_generated(user_id, ai_model, validation_passed=validation["valid"])
-
-        except BackendAPIError as api_error:
-            # Критическая ошибка: план сгенерирован, но не сохранён в Backend API
-            logger.critical(
-                f"Backend API save failed after AI generation for user {user_id}: {api_error}", exc_info=True
-            )
-
-            # Отправить план пользователю с предупреждением
-            await callback.message.answer(
-                f"⚠️ <b>План сгенерирован, но не сохранён в базе данных</b>\n\n"
-                f"Пожалуйста, сохраните текст плана:\n\n{ai_text}\n\n"
-                f"Обратитесь к администратору для восстановления данных.",
-                parse_mode="HTML",
-                disable_notification=True,
-            )
-            await state.clear()
-            return
-
-        # Отправить план пользователю
-        plan_message = PLAN_GENERATED_HEADER + ai_text + RETURN_TO_TRACKING
-
-        # Разбить на несколько сообщений если длинный (Telegram лимит 4096 символов)
-        if len(plan_message) > 4096:
-            # Отправить заголовок
-            await callback.message.answer(PLAN_GENERATED_HEADER, parse_mode="HTML", disable_notification=True)
-            # Отправить текст плана
-            await callback.message.answer(ai_text, parse_mode="HTML", disable_notification=True)
-            # Отправить финальную подсказку
-            await callback.message.answer(RETURN_TO_TRACKING, parse_mode="HTML", disable_notification=True)
-        else:
-            await callback.message.answer(plan_message, parse_mode="HTML", disable_notification=True)
-
-        # Отправить призыв к действию с кнопкой контакта тренера
-        await callback.message.answer(
-            CONTACT_TRAINER_CTA,
-            reply_markup=get_contact_trainer_keyboard(),
-            parse_mode="HTML",
-            disable_notification=True,
-        )
-
-        # Очистить FSM состояние
-        await state.clear()
+        if saved_successfully:
+            await _show_plan_and_clear_state(callback, state, ai_text)
+        # Если не успешно - сообщение уже отправлено внутри хелпера
 
     except Exception as e:
         # Остановить обновления прогресса
-        progress_task.cancel()
+        if "progress_task" in locals():
+            progress_task.cancel()
 
         logger.error(f"Error generating plan: {e}", exc_info=True)
         log_ai_error(user_id, "unexpected_error", str(e))
         await callback.message.answer(PLAN_GENERATION_ERROR, parse_mode="HTML", disable_notification=True)
         await state.clear()
+
+
+async def _perform_save_and_respond(
+    callback: CallbackQuery, state: FSMContext, ai_text: str, ai_model: str, prompt_version: str
+) -> bool:
+    """
+    Вспомогательная функция для сохранения плана и опроса в бэкенд.
+    Если ошибка - отправляет сообщение об ошибке (с кнопками retry если уместно).
+    Возвращает True в случае успеха.
+    """
+    user_id = callback.from_user.id
+    data = await state.get_data()
+
+    # ПРОВЕРКА TTL: Если черновик старше 30 минут - сбрасываем
+    created_at = data.get("error_at") or data.get("ai_created_at")
+    if created_at and (time.time() - created_at > 1800):
+        logger.warning("FSM Draft TTL expired for user %s", user_id)
+        await callback.message.answer(
+            "⚠️ <b>Время ожидания истекло</b>\n\n"
+            "К сожалению, черновик вашего плана устарел. Пожалуйста, пройдите опрос заново.",
+            parse_mode="HTML",
+        )
+        await state.clear()
+        return False
+
+    try:
+        backend_api = get_backend_api()
+
+        # 1. Получить или создать пользователя
+        await backend_api.get_or_create_user(
+            telegram_id=user_id,
+            username=callback.from_user.username if callback.from_user else None,
+            full_name=callback.from_user.full_name if callback.from_user else None,
+        )
+
+        # 2. Сохранить ответы опроса
+        survey_response = await backend_api.create_survey(
+            telegram_id=user_id,
+            gender=data["gender"],
+            age=data["age"],
+            height_cm=data["height_cm"],
+            weight_kg=float(data["weight_kg"]),
+            target_weight_kg=float(data["target_weight_kg"]) if data.get("target_weight_kg") else None,
+            activity=data["activity"],
+            training_level=data.get("training_level"),
+            body_goals=data.get("body_goals", []),
+            health_limitations=data.get("health_limitations", []),
+            body_now_id=data["body_now_id"],
+            body_now_label=data.get("body_now_label"),
+            body_now_file=data["body_now_file"],
+            body_ideal_id=data["body_ideal_id"],
+            body_ideal_label=data.get("body_ideal_label"),
+            body_ideal_file=data["body_ideal_file"],
+            timezone=data["tz"],
+            utc_offset_minutes=data["utc_offset_minutes"],
+        )
+
+        # 3. Сохранить план
+        await backend_api.create_plan(
+            telegram_id=user_id,
+            survey_id=survey_response["id"],
+            ai_text=ai_text,
+            ai_model=ai_model,
+            prompt_version=prompt_version,
+        )
+
+        log_survey_completed(user_id)
+        log_plan_generated(user_id, ai_model, validation_passed=data.get("validation_passed", True))
+        return True
+
+    except BackendAPIError as api_error:
+        rid = api_error.request_id
+        msg = api_error.args[0] if api_error.args else str(api_error)
+        status_code = getattr(api_error, "status_code", 400)  # Fallback
+
+        # Consistent logging: RID | status_code | error_msg
+        logger.error(f"[BackendAPI Error] RID: {rid} | Status: {status_code} | Msg: {msg}")
+
+        # Проверка на лимит (DAILY_LIMIT_REACHED)
+        if "DAILY_LIMIT_REACHED" in msg:
+            await callback.message.answer(
+                "⚠️ <b>Лимит планов исчерпан</b>\n\n"
+                "Вы уже создали максимальное количество планов на сегодня (3 плана). "
+                "Пожалуйста, попробуйте завтра.\n\n"
+                "<i>Ваши ответы сохранены, вы сможете вернуться к ним позже.</i>",
+                parse_mode="HTML",
+            )
+            await state.clear()
+            return False
+
+        # Обычная ошибка сохранения - предлагаем Retry только для transient
+        if _is_transient(msg, status_code):
+            # Сохраняем в FSM на случай retry
+            await state.update_data(
+                ai_text=ai_text,
+                ai_model=ai_model,
+                ai_prompt_version=prompt_version,
+                error_rid=rid,
+                error_at=time.time(),
+            )
+
+            await callback.message.answer(
+                "❌ <b>Не удалось сохранить ваш план</b>\n\n"
+                f"Произошла ошибка при связи с сервером (ID: <code>{rid or 'n/a'}</code>).\n"
+                "Вы можете попробовать нажать кнопку «Повторить».",
+                parse_mode="HTML",
+                reply_markup=get_plan_error_keyboard(),
+            )
+        else:
+            # Non-transient error (Validation, Forbidden, etc.)
+            await callback.message.answer(
+                "❌ <b>Ошибка при сохранении</b>\n\n"
+                "К сожалению, произошла критическая ошибка. Пожалуйста, обратитесь в поддержку\n"
+                f"ID запроса: <code>{rid or 'n/a'}</code>",
+                parse_mode="HTML",
+            )
+            await state.clear()
+
+        return False
+
+
+def _is_transient(error_msg: str, status_code: int) -> bool:
+    """Определяет, является ли ошибка временной (стоит ли предлагать Retry)."""
+    # 5xx ошибки всегда transient
+    if status_code >= 500:
+        return True
+    # Сетевые ошибки/таймауты (httpx выбрасывает их, в BackendAPIError они мапятся в текст)
+    if any(x in error_msg for x in ["Timeout", "ConnectError", "ConnectTimeout"]):
+        return True
+    # 429 не ретраим (мы его уже обработали выше, но на всякий)
+    if status_code == 429:
+        return False
+    # 4xx обычно не transient (Validation, Forbidden, NotFound)
+    return False
+
+
+async def _show_plan_and_clear_state(callback: CallbackQuery, state: FSMContext, ai_text: str):
+    """Показывает план пользователю и очищает состояние."""
+    plan_message = PLAN_GENERATED_HEADER + ai_text + RETURN_TO_TRACKING
+
+    # Разбить на несколько сообщений если длинный
+    if len(plan_message) > 4096:
+        await callback.message.answer(PLAN_GENERATED_HEADER, parse_mode="HTML", disable_notification=True)
+        await callback.message.answer(ai_text, parse_mode="HTML", disable_notification=True)
+        await callback.message.answer(RETURN_TO_TRACKING, parse_mode="HTML", disable_notification=True)
+    else:
+        await callback.message.answer(plan_message, parse_mode="HTML", disable_notification=True)
+
+    await callback.message.answer(
+        CONTACT_TRAINER_CTA,
+        reply_markup=get_contact_trainer_keyboard(),
+        parse_mode="HTML",
+        disable_notification=True,
+    )
+    await state.clear()
 
 
 @router.callback_query(F.data == "confirm:edit", SurveyStates.CONFIRM)
@@ -286,3 +367,44 @@ async def confirm_edit(callback: CallbackQuery, state: FSMContext):
 
     # Устанавливаем состояние GENDER (первый шаг)
     await state.set_state(SurveyStates.GENDER)
+
+
+@router.callback_query(F.data == "plan:retry", SurveyStates.GENERATE)
+async def process_plan_retry(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """Повторная попытка сохранения плана."""
+    user_id = callback.from_user.id
+    data = await state.get_data()
+
+    ai_text = data.get("ai_text")
+    if not ai_text:
+        await callback.answer("❌ Ошибка: данные плана потеряны", show_alert=True)
+        return
+
+    await callback.answer("⏳ Пробую сохранить ещё раз...")
+
+    success = await _perform_save_and_respond(
+        callback, state, ai_text, data.get("ai_model", "unknown"), data.get("ai_prompt_version", "unknown")
+    )
+
+    if success:
+        # План был успешно сохранён и показан внутри _perform_save_and_respond
+        # Удаляем сообщение об ошибке (оно же callback.message в данном контексте)
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        logger.info(f"User {user_id} successfully saved plan after retry")
+    else:
+        # Ответ об ошибке уже отправлен внутри
+        pass
+
+
+@router.callback_query(F.data == "plan:cancel", SurveyStates.GENERATE)
+async def process_plan_cancel(callback: CallbackQuery, state: FSMContext):
+    """Отмена после ошибки сохранения."""
+    await callback.answer("Отменено")
+    await state.clear()
+    await callback.message.edit_text(
+        "❌ <b>Генерация прервана</b>\n\nПлан не был сохранён. Вы можете начать опрос заново, когда связь наладится.",
+        parse_mode="HTML",
+    )

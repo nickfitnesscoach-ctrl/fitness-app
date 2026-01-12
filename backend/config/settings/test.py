@@ -17,6 +17,7 @@ MIDDLEWARE = [m for m in MIDDLEWARE if m != "whitenoise.middleware.WhiteNoiseMid
 SECRET_KEY = "test-secret-key-for-pytest-only-do-not-use-in-prod"  # noqa: F811
 
 DEBUG = False
+TELEGRAM_BOT_API_SECRET = "test-bot-secret"
 
 DATABASES = {
     "default": {

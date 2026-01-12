@@ -44,9 +44,7 @@ def build_start_message(*, is_admin: bool, panel_url: str | None) -> str:
     if panel_url:
         logger.info("[START] Панель тренера настроена: %s", panel_url)
     else:
-        logger.warning(
-            "[START] TRAINER_PANEL_BASE_URL не задан — кнопка панели тренера скрыта"
-        )
+        logger.warning("[START] TRAINER_PANEL_BASE_URL не задан — кнопка панели тренера скрыта")
         parts.append(f"<i>{ADMIN_PANEL_NOT_CONFIGURED}</i>")
 
     parts.append(ADMIN_SURVEY_PROMPT)
@@ -58,9 +56,7 @@ def build_start_keyboard(*, is_admin: bool, panel_url: str | None) -> InlineKeyb
     builder = InlineKeyboardBuilder()
 
     start_button_text = START_SURVEY_BUTTON_ADMIN if is_admin else START_SURVEY_BUTTON_USER
-    builder.row(
-        InlineKeyboardButton(text=start_button_text, callback_data="survey:start")
-    )
+    builder.row(InlineKeyboardButton(text=start_button_text, callback_data="survey:start"))
 
     if is_admin:
         if panel_url:
@@ -68,9 +64,7 @@ def build_start_keyboard(*, is_admin: bool, panel_url: str | None) -> InlineKeyb
             # Для DEV нужен туннель (localtunnel, ngrok с платной подпиской, etc)
             # panel_url теперь содержит полный URL (SSOT), не добавляем /panel/
             is_valid_webapp_url = (
-                panel_url.startswith("https://")
-                and "localhost" not in panel_url
-                and "127.0.0.1" not in panel_url
+                panel_url.startswith("https://") and "localhost" not in panel_url and "127.0.0.1" not in panel_url
             )
 
             if is_valid_webapp_url:
@@ -81,10 +75,7 @@ def build_start_keyboard(*, is_admin: bool, panel_url: str | None) -> InlineKeyb
                 builder.row(panel_button)
                 logger.info("[START] Добавлена WebApp кнопка панели тренера: %s", panel_url)
             else:
-                logger.warning(
-                    "[START] TRAINER_PANEL_URL не подходит для WebApp (нужен HTTPS туннель): %s",
-                    panel_url
-                )
+                logger.warning("[START] TRAINER_PANEL_URL не подходит для WebApp (нужен HTTPS туннель): %s", panel_url)
     else:
         builder.row(
             InlineKeyboardButton(
@@ -106,12 +97,12 @@ async def cmd_start(message: Message, state: FSMContext):
     """Команда /start - главная точка входа в бота."""
     user_id = message.from_user.id
     logger.info("[START] Пользователь %s вызвал /start", user_id)
+    await state.clear()
 
     admin_user = is_admin(user_id)
     # Use TRAINER_PANEL_URL (SSOT), fallback to legacy TRAINER_PANEL_BASE_URL + /panel
-    panel_url = (
-        settings.TRAINER_PANEL_URL
-        or (f"{settings.TRAINER_PANEL_BASE_URL.rstrip('/')}/panel" if settings.TRAINER_PANEL_BASE_URL else None)
+    panel_url = settings.TRAINER_PANEL_URL or (
+        f"{settings.TRAINER_PANEL_BASE_URL.rstrip('/')}/panel" if settings.TRAINER_PANEL_BASE_URL else None
     )
     logger.info(
         "[START] Данные окружения: TRAINER_PANEL_URL=%s, TRAINER_PANEL_BASE_URL=%s (legacy), WEB_APP_URL=%s, admin_ids=%s",
@@ -137,13 +128,13 @@ async def cmd_app(message: Message, state: FSMContext):
     """Команда /app - открыть Mini App (для всех пользователей)."""
     user_id = message.from_user.id
     logger.info(f"User {user_id} requested app")
+    await state.clear()
 
     await message.answer(
-        "📱 <b>Откройте приложение</b>\n\n"
-        "Нажмите кнопку ниже, чтобы открыть Mini App.",
+        "📱 <b>Откройте приложение</b>\n\nНажмите кнопку ниже, чтобы открыть Mini App.",
         reply_markup=get_open_webapp_keyboard(),
         parse_mode="HTML",
-        disable_notification=True
+        disable_notification=True,
     )
 
 
@@ -152,12 +143,13 @@ async def cmd_personal_plan(message: Message, state: FSMContext):
     """Команда запуска опроса Personal Plan."""
     user_id = message.from_user.id
     logger.info(f"User {user_id} started personal plan survey")
+    await state.clear()
 
     await message.answer(
         WELCOME_MESSAGE,
         reply_markup=build_start_keyboard(is_admin=False, panel_url=None),
         parse_mode="HTML",
-        disable_notification=True
+        disable_notification=True,
     )
 
 
@@ -171,9 +163,5 @@ async def start_survey(callback: CallbackQuery, state: FSMContext):
 
     # Переходим к первому вопросу - выбор пола
     await state.set_state(SurveyStates.GENDER)
-    await callback.message.answer(
-        GENDER_QUESTION,
-        reply_markup=get_gender_keyboard(),
-        parse_mode="HTML"
-    )
+    await callback.message.answer(GENDER_QUESTION, reply_markup=get_gender_keyboard(), parse_mode="HTML")
     await callback.answer()

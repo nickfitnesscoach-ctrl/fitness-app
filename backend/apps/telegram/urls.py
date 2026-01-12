@@ -27,36 +27,27 @@ from apps.telegram.trainer_panel_views import (
 
 urlpatterns = [
     # Аутентификация через Telegram Mini App
-    path('auth/', telegram_auth, name='telegram-auth'),
-
+    path("auth/", telegram_auth, name="telegram-auth"),
     # Единый endpoint для WebApp авторизации (Этап 2 roadmap)
-    path('webapp/auth/', webapp_auth, name='webapp-auth'),
-
+    path("webapp/auth/", webapp_auth, name="webapp-auth"),
     # Trainer admin panel (Telegram WebApp only)
-    path('trainer/admin-panel/', trainer_panel_auth, name='trainer-admin-panel'),
-
+    path("trainer/admin-panel/", trainer_panel_auth, name="trainer-admin-panel"),
     # Профиль Telegram пользователя
-    path('profile/', telegram_profile, name='telegram-profile'),
-
+    path("profile/", telegram_profile, name="telegram-profile"),
     # Сохранение результатов AI теста от бота
-    path('save-test/', save_test_results, name='save-test-results'),
-
+    path("save-test/", save_test_results, name="save-test-results"),
     # Получение списка клиентов/заявок
-    path('applications/', get_applications_api, name='telegram-applications'),
-
+    path("applications/", get_applications_api, name="telegram-applications"),
     # Управление клиентами
-    path('clients/', clients_list, name='telegram-clients-list'),
-    path('clients/<int:client_id>/', client_detail, name='telegram-client-detail'),
-
+    path("clients/", clients_list, name="telegram-clients-list"),
+    path("clients/<int:client_id>/", client_detail, name="telegram-client-detail"),
     # Получить ссылку-приглашение
-    path('invite-link/', get_invite_link, name='telegram-invite-link'),
-
+    path("invite-link/", get_invite_link, name="telegram-get-invite-link"),
     # Статистика подписчиков и выручки
-    path('subscribers/', get_subscribers_api, name='telegram-subscribers'),
-
+    path("subscribers/", get_subscribers_api, name="telegram-subscribers"),
     # Personal Plan API (для бота)
-    path('users/get-or-create/', get_user_or_create, name='telegram-user-get-or-create'),
-    path('personal-plan/survey/', create_survey, name='personal-plan-create-survey'),
-    path('personal-plan/plan/', create_plan, name='personal-plan-create-plan'),
-    path('personal-plan/count-today/', count_plans_today, name='personal-plan-count-today'),
+    path("users/get-or-create/", get_user_or_create, name="telegram-user-get-or-create"),
+    path("personal-plan/survey/", create_survey, name="personal-plan-create-survey"),
+    path("personal-plan/plan/", create_plan, name="personal-plan-create-plan"),
+    path("personal-plan/count-today/", count_plans_today, name="personal-plan-count-today"),
 ]

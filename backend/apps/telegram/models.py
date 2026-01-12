@@ -90,13 +90,25 @@ class TelegramUser(models.Model):
         null=True, blank=True, verbose_name="Рекомендованные калории"
     )
     recommended_protein = models.DecimalField(
-        max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Рекомендованные белки (г)"
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Рекомендованные белки (г)",
     )
     recommended_fat = models.DecimalField(
-        max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Рекомендованные жиры (г)"
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Рекомендованные жиры (г)",
     )
     recommended_carbs = models.DecimalField(
-        max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Рекомендованные углеводы (г)"
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Рекомендованные углеводы (г)",
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
@@ -140,7 +152,9 @@ class TelegramUser(models.Model):
 
         # ai_test_answers лучше хранить как dict (если оно есть)
         if self.ai_test_answers is not None and not isinstance(self.ai_test_answers, dict):
-            raise ValidationError({"ai_test_answers": "ai_test_answers должен быть объектом (словарём)"})
+            raise ValidationError(
+                {"ai_test_answers": "ai_test_answers должен быть объектом (словарём)"}
+            )
 
 
 class PersonalPlanSurvey(models.Model):
@@ -161,32 +175,47 @@ class PersonalPlanSurvey(models.Model):
     ]
 
     user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="personal_plan_surveys", verbose_name="Пользователь"
+        User,
+        on_delete=models.CASCADE,
+        related_name="personal_plan_surveys",
+        verbose_name="Пользователь",
     )
 
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, verbose_name="Пол")
-    age = models.PositiveSmallIntegerField(verbose_name="Возраст", help_text="Возраст в годах (14-80)")
-    height_cm = models.PositiveSmallIntegerField(verbose_name="Рост (см)", help_text="Рост (120-250)")
+    age = models.PositiveSmallIntegerField(
+        verbose_name="Возраст", help_text="Возраст в годах (14-80)"
+    )
+    height_cm = models.PositiveSmallIntegerField(
+        verbose_name="Рост (см)", help_text="Рост (120-250)"
+    )
     weight_kg = models.DecimalField(max_digits=5, decimal_places=2, verbose_name="Вес (кг)")
     target_weight_kg = models.DecimalField(
         max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Целевой вес (кг)"
     )
 
-    activity = models.CharField(max_length=20, choices=ACTIVITY_CHOICES, verbose_name="Уровень активности")
+    activity = models.CharField(
+        max_length=20, choices=ACTIVITY_CHOICES, verbose_name="Уровень активности"
+    )
 
     training_level = models.CharField(
         max_length=32, null=True, blank=True, verbose_name="Уровень тренированности"
     )
 
     body_goals = models.JSONField(default=list, blank=True, verbose_name="Цели по телу")
-    health_limitations = models.JSONField(default=list, blank=True, verbose_name="Ограничения по здоровью")
+    health_limitations = models.JSONField(
+        default=list, blank=True, verbose_name="Ограничения по здоровью"
+    )
 
     body_now_id = models.PositiveSmallIntegerField(verbose_name="ID текущего типа фигуры")
-    body_now_label = models.TextField(null=True, blank=True, verbose_name="Описание текущего типа фигуры")
+    body_now_label = models.TextField(
+        null=True, blank=True, verbose_name="Описание текущего типа фигуры"
+    )
     body_now_file = models.TextField(verbose_name="Файл текущего типа фигуры")
 
     body_ideal_id = models.PositiveSmallIntegerField(verbose_name="ID идеального типа фигуры")
-    body_ideal_label = models.TextField(null=True, blank=True, verbose_name="Описание идеального типа фигуры")
+    body_ideal_label = models.TextField(
+        null=True, blank=True, verbose_name="Описание идеального типа фигуры"
+    )
     body_ideal_file = models.TextField(verbose_name="Файл идеального типа фигуры")
 
     timezone = models.CharField(
@@ -220,7 +249,9 @@ class PersonalPlanSurvey(models.Model):
         if not (120 <= self.height_cm <= 250):
             raise ValidationError({"height_cm": "Рост должен быть 120-250"})
         if self.utc_offset_minutes is None or not (-14 * 60 <= self.utc_offset_minutes <= 14 * 60):
-            raise ValidationError({"utc_offset_minutes": "Смещение UTC должно быть в минутах (-840..840)"})
+            raise ValidationError(
+                {"utc_offset_minutes": "Смещение UTC должно быть в минутах (-840..840)"}
+            )
 
         if self.body_goals is not None and not isinstance(self.body_goals, list):
             raise ValidationError({"body_goals": "body_goals должен быть списком"})
@@ -252,9 +283,13 @@ class PersonalPlan(models.Model):
 
     ai_text = models.TextField(verbose_name="Текст плана от AI")
     ai_model = models.CharField(max_length=100, null=True, blank=True, verbose_name="AI модель")
-    prompt_version = models.CharField(max_length=20, null=True, blank=True, verbose_name="Версия промпта")
+    prompt_version = models.CharField(
+        max_length=20, null=True, blank=True, verbose_name="Версия промпта"
+    )
 
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Дата создания")
+    created_at = models.DateTimeField(
+        auto_now_add=True, db_index=True, verbose_name="Дата создания"
+    )
 
     class Meta:
         verbose_name = "Personal Plan"
@@ -263,6 +298,13 @@ class PersonalPlan(models.Model):
         indexes = [
             models.Index(fields=["user", "created_at"]),
             models.Index(fields=["survey"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "survey"],
+                name="unique_user_survey_plan",
+                condition=models.Q(survey__isnull=False),
+            )
         ]
 
     def __str__(self) -> str:

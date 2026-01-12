@@ -4,6 +4,7 @@ HTTP client для взаимодействия с Django Backend API.
 """
 
 import logging
+import uuid
 from typing import Any, Optional
 
 import httpx
@@ -22,7 +23,9 @@ logger = logging.getLogger(__name__)
 class BackendAPIError(Exception):
     """Базовое исключение для ошибок Backend API."""
 
-    pass
+    def __init__(self, message: str, request_id: Optional[str] = None):
+        super().__init__(message)
+        self.request_id = request_id
 
 
 class BackendAPIClient:
@@ -105,50 +108,69 @@ class BackendAPIClient:
         """
         url = f"{self.base_url}{endpoint}"
 
-        # Применяем retry декоратор динамически
-        @self._get_retry_decorator()
-        async def _do_request():
-            # Формируем заголовки с секретом бота
-            headers = {}
-            if self.secret:
-                headers["X-Bot-Secret"] = self.secret
-            # Indicate request came through HTTPS proxy to prevent SSL redirect
-            headers["X-Forwarded-Proto"] = "https"
-
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-                response = await client.request(
-                    method=method,
-                    url=url,
-                    params=params,
-                    json=json,
-                    headers=headers,
-                )
-                # Check only 4xx and 5xx errors, ignore 3xx redirects (handled by follow_redirects=True)
-                if response.status_code >= 400:
-                    response.raise_for_status()
-                return response.json()
-
         try:
             logger.debug("[BackendAPI] %s %s | params=%s | json=%s", method, url, params, json)
-            result = await _do_request()
-            logger.debug("[BackendAPI] Успешный ответ: %s", result)
+
+            # Локальная функция для выполнения запроса
+            @self._get_retry_decorator()
+            async def _do_run():
+                # Всегда генерируем или используем X-Request-ID для симметрии
+                request_id = str(uuid.uuid4())
+                headers = {"X-Bot-Secret": self.secret or "", "X-Forwarded-Proto": "https", "X-Request-ID": request_id}
+                async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        params=params,
+                        json=json,
+                        headers=headers,
+                    )
+                    # Прикрепляем RID к объекту ответа для логов выше
+                    response.request_id = request_id
+                    return response
+
+            response = await _do_run()
+            # Берем RID из ответа (бэк обязан вернуть тот же) или из нашего запроса (fallback)
+            request_id = response.headers.get("X-Request-ID") or getattr(response, "request_id", "unknown")
+
+            # Логируем ошибки 4xx и 5xx
+            if response.status_code >= 400:
+                body_preview = response.text[:2048] if response.text else "No body"
+                logger.error(
+                    "[BackendAPI] HTTP Error %d: %s | URL: %s | RID: %s | Body: %s",
+                    response.status_code,
+                    response.reason_phrase,
+                    url,
+                    request_id,
+                    body_preview,
+                )
+
+                # Извлекаем детали ошибки
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    if isinstance(error_data, dict) and "error" in error_data:
+                        err = error_data["error"]
+                        if isinstance(err, dict):
+                            error_detail = err.get("message") or err.get("code") or str(err)
+                        else:
+                            error_detail = str(err)
+                    else:
+                        error_detail = error_data.get("detail") or str(error_data)
+                except Exception:
+                    error_detail = response.text[:512]
+
+                raise BackendAPIError(f"HTTP {response.status_code}: {error_detail}", request_id=request_id)
+
+            result = response.json()
+            logger.debug("[BackendAPI] Успешный ответ. RID: %s | Result: %s", request_id, result)
             return result
 
-        except httpx.HTTPStatusError as e:
-            error_detail = "Unknown error"
-            try:
-                error_data = e.response.json()
-                error_detail = error_data.get("error") or error_data.get("detail") or str(error_data)
-            except Exception:
-                error_detail = e.response.text
-
-            logger.error("[BackendAPI] HTTP ошибка %d: %s | URL: %s", e.response.status_code, error_detail, url)
-            raise BackendAPIError(f"HTTP {e.response.status_code}: {error_detail}") from e
-
+        except BackendAPIError:
+            raise
         except (httpx.TimeoutException, httpx.ConnectError) as e:
             logger.error("[BackendAPI] Сетевая ошибка при обращении к %s: %s", url, e)
             raise BackendAPIError(f"Не удалось подключиться к Backend API: {e}") from e
-
         except Exception as e:
             logger.error("[BackendAPI] Неожиданная ошибка: %s", e, exc_info=True)
             raise BackendAPIError(f"Неожиданная ошибка: {e}") from e

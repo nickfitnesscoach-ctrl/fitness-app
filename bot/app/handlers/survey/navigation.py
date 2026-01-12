@@ -53,6 +53,7 @@ async def cancel_survey(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
     await callback.message.edit_text(SURVEY_CANCELLED, parse_mode="HTML")
+    # Очищаем также любые примечания о таймаутах или ошибках (state.clear() уже это сделал)
     await callback.answer()
 
 
@@ -71,7 +72,11 @@ async def go_back(callback: CallbackQuery, state: FSMContext, bot: Bot):
         SurveyStates.TRAINING_LEVEL: (SurveyStates.ACTIVITY, ACTIVITY_QUESTION, get_activity_keyboard),
         SurveyStates.BODY_GOALS: (SurveyStates.TRAINING_LEVEL, TRAINING_LEVEL_QUESTION, get_training_level_keyboard),
         SurveyStates.HEALTH_LIMITATIONS: (SurveyStates.BODY_GOALS, BODY_GOALS_QUESTION, get_body_goals_keyboard),
-        SurveyStates.BODY_NOW: (SurveyStates.HEALTH_LIMITATIONS, HEALTH_LIMITATIONS_QUESTION, get_health_limitations_keyboard),
+        SurveyStates.BODY_NOW: (
+            SurveyStates.HEALTH_LIMITATIONS,
+            HEALTH_LIMITATIONS_QUESTION,
+            get_health_limitations_keyboard,
+        ),
         SurveyStates.BODY_IDEAL: (SurveyStates.BODY_NOW, None, None),
         SurveyStates.TZ: (SurveyStates.BODY_IDEAL, None, None),
         SurveyStates.CONFIRM: (SurveyStates.TZ, TZ_QUESTION, get_timezone_keyboard),
@@ -102,7 +107,7 @@ async def go_back(callback: CallbackQuery, state: FSMContext, bot: Bot):
             chat_id=callback.message.chat.id,
             gender=gender,
             stage="now",
-            header_message=BODY_NOW_QUESTION_HEADER
+            header_message=BODY_NOW_QUESTION_HEADER,
         )
 
         if message_ids:
@@ -122,7 +127,7 @@ async def go_back(callback: CallbackQuery, state: FSMContext, bot: Bot):
             chat_id=callback.message.chat.id,
             gender=gender,
             stage="ideal",
-            header_message=BODY_IDEAL_QUESTION_HEADER
+            header_message=BODY_IDEAL_QUESTION_HEADER,
         )
 
         if message_ids:
@@ -175,9 +180,7 @@ async def go_back(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
         limitations_selected = data.get("health_limitations", []) or []
         selected_text = HEALTH_LIMITATIONS_SELECTED_TEMPLATE.format(
-            selected=", ".join(
-                HEALTH_LIMITATIONS_LABELS.get(item, item) for item in limitations_selected
-            )
+            selected=", ".join(HEALTH_LIMITATIONS_LABELS.get(item, item) for item in limitations_selected)
             if limitations_selected
             else "ничего не выбрано"
         )
@@ -201,8 +204,5 @@ async def go_back(callback: CallbackQuery, state: FSMContext, bot: Bot):
     keyboard = keyboard_func() if keyboard_func else None
 
     await bot.send_message(
-        chat_id=callback.message.chat.id,
-        text=question_text,
-        reply_markup=keyboard,
-        parse_mode="HTML"
+        chat_id=callback.message.chat.id, text=question_text, reply_markup=keyboard, parse_mode="HTML"
     )

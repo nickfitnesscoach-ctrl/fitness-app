@@ -286,6 +286,7 @@ AI_ASYNC_ENABLED = os.environ.get("AI_ASYNC_ENABLED", "True").lower() == "true"
 # =============================================================================
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_BOT_API_SECRET = os.environ.get("TELEGRAM_BOT_API_SECRET", "")
 
 
 def _env_int_list(name: str) -> list[int]:

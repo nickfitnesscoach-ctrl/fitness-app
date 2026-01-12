@@ -144,6 +144,7 @@ else:
 # -----------------------------------------------------------------------------
 
 TELEGRAM_BOT_TOKEN = base.TELEGRAM_BOT_TOKEN
+TELEGRAM_BOT_API_SECRET = base.TELEGRAM_BOT_API_SECRET or "dev-secret-key"
 TELEGRAM_ADMINS = base.TELEGRAM_ADMINS
 
 # В CI токен не нужен для базовых проверок Django

@@ -18,6 +18,7 @@ from .survey import (
     get_target_weight_keyboard,
     get_timezone_keyboard,
     get_training_level_keyboard,
+    get_plan_error_keyboard,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "get_contact_trainer_keyboard",
     "get_open_webapp_keyboard",
     "get_admin_start_keyboard",
+    "get_plan_error_keyboard",
 ]

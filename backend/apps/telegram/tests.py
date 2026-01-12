@@ -219,6 +219,7 @@ class PersonalPlanAPITestCase(TestCase):
     def test_create_plan(self):
         """
         Успешное создание плана: 201 + проверяем связь user ↔ survey ↔ plan.
+        Также проверяем X-Request-ID и идемпотентность (200 на повтор).
         """
         survey = self._create_survey_in_db()
 
@@ -235,12 +236,22 @@ class PersonalPlanAPITestCase(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data.get("ai_text"), "Your personal plan...")
+        self.assertIn("X-Request-ID", response.headers)
+        request_id = response.headers["X-Request-ID"]
 
         self.assertEqual(PersonalPlan.objects.count(), 1)
         plan = PersonalPlan.objects.first()
         self.assertIsNotNone(plan)
         self.assertEqual(plan.user, self.user)
         self.assertEqual(plan.survey, survey)
+
+        # Повтор: должен вернуть тот же план (200 OK)
+        response_retry = self.client.post(url, payload, format="json")
+        self.assertEqual(response_retry.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_retry.data["id"], plan.id)
+        self.assertIn("X-Request-ID", response_retry.headers)
+        # RID должен быть новым (т.к. мы его не прокидывали, а бэк генерит если нет)
+        self.assertNotEqual(response_retry.headers["X-Request-ID"], request_id)
 
     def test_create_plan_user_not_found(self):
         """
@@ -267,8 +278,10 @@ class PersonalPlanAPITestCase(TestCase):
         response = self.client.post(url, payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
-        self.assertIn("error", response.data)
-        self.assertIn("Daily limit", response.data.get("error", ""))
+        self.assertEqual(response.data["status"], "error")
+        self.assertEqual(response.data["error"]["code"], "DAILY_LIMIT_REACHED")
+        self.assertIn("X-Request-ID", response.headers)
+        self.assertEqual(response.data["error"]["request_id"], response.headers["X-Request-ID"])
 
     # ---------------------------
     # tests: personal-plan/count-today
@@ -387,7 +400,12 @@ class BotSecretProtectionTestCase(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertIn("error", response.data)
-        self.assertIn("secret", response.data["error"].lower())
+        error_msg = (
+            response.data["error"]["message"]
+            if isinstance(response.data["error"], dict)
+            else response.data["error"]
+        )
+        self.assertIn("secret", error_msg.lower())
 
     @override_settings(TELEGRAM_BOT_API_SECRET="test_bot_secret_12345", DEBUG=False)
     def test_write_endpoint_with_wrong_secret_returns_403(self):
@@ -492,7 +510,9 @@ class BotSecretProtectionTestCase(TestCase):
         response = self.client.get(url)
 
         # Должен работать даже без секрета (но может вернуть ошибку если TELEGRAM_BOT_USERNAME не настроен)
-        self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_500_INTERNAL_SERVER_ERROR])
+        self.assertIn(
+            response.status_code, [status.HTTP_200_OK, status.HTTP_500_INTERNAL_SERVER_ERROR]
+        )
 
     @override_settings(TELEGRAM_BOT_API_SECRET="test_bot_secret_12345", DEBUG=False)
     def test_save_test_results_requires_secret(self):

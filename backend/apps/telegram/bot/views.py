@@ -18,13 +18,14 @@ Bot API views для Telegram интеграции.
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
+import uuid
+from datetime import datetime, timedelta
 from typing import Optional
 
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Вспомогательные функции
 # -----------------------------------------------------------------------------
+
 
 def _forbidden(message: str = "Нет доступа") -> Response:
     return Response({"error": message}, status=status.HTTP_403_FORBIDDEN)
@@ -75,12 +77,16 @@ def _require_bot_secret(request) -> Optional[Response]:
     return None
 
 
-def _get_or_create_telegram_user(telegram_id: int, username: str = "", full_name: str = "") -> TelegramUser:
+def _get_or_create_telegram_user(
+    telegram_id: int, username: str = "", full_name: str = ""
+) -> TelegramUser:
     """
     Единое место, где мы создаём/получаем TelegramUser и связанный Django User.
     Так мы не дублируем логику в 3 разных эндпоинтах.
     """
-    telegram_user = TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id).first()
+    telegram_user = (
+        TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id).first()
+    )
     if telegram_user:
         # Обновим username/имя, если пришло новое
         if username and telegram_user.username != username:
@@ -125,6 +131,7 @@ def _today_start_dt() -> datetime:
 # -----------------------------------------------------------------------------
 # Эндпоинты
 # -----------------------------------------------------------------------------
+
 
 @extend_schema(tags=["Telegram"])
 @api_view(["POST"])
@@ -171,7 +178,9 @@ def save_test_results(request):
     try:
         with transaction.atomic():
             # Получаем/создаём TelegramUser
-            telegram_user = TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id).first()
+            telegram_user = (
+                TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id).first()
+            )
             created = False
 
             if telegram_user:
@@ -195,13 +204,15 @@ def save_test_results(request):
             # --- Обновляем профиль пользователя (если у тебя есть Profile через OneToOne) ---
             # Важно: если profile может отсутствовать — нужно get_or_create.
             # Здесь я предполагаю, что он всегда есть (как у тебя в коде).
-            profile = user.profile  # если может падать — скажи, перепишу на безопасный get_or_create
+            profile = (
+                user.profile
+            )  # если может падать — скажи, перепишу на безопасный get_or_create
 
             profile.telegram_id = telegram_id
             profile.telegram_username = username
 
-            gender_value = (answers.get("gender") or "M")
-            profile.gender = (gender_value[0].upper() if gender_value else "M")
+            gender_value = answers.get("gender") or "M"
+            profile.gender = gender_value[0].upper() if gender_value else "M"
 
             profile.weight = answers.get("weight")
             profile.height = answers.get("height")
@@ -265,15 +276,19 @@ def save_test_results(request):
                 telegram_user.recommended_protein = goals["protein"]
                 telegram_user.recommended_fat = goals["fat"]
                 telegram_user.recommended_carbs = goals["carbohydrates"]
-                telegram_user.save(update_fields=[
-                    "recommended_calories",
-                    "recommended_protein",
-                    "recommended_fat",
-                    "recommended_carbs",
-                    "updated_at",
-                ])
+                telegram_user.save(
+                    update_fields=[
+                        "recommended_calories",
+                        "recommended_protein",
+                        "recommended_fat",
+                        "recommended_carbs",
+                        "updated_at",
+                    ]
+                )
             except Exception as e:
-                logger.exception("Failed to calculate DailyGoal for telegram_id=%s: %s", telegram_id, e)
+                logger.exception(
+                    "Failed to calculate DailyGoal for telegram_id=%s: %s", telegram_id, e
+                )
 
         return Response(
             {
@@ -287,7 +302,9 @@ def save_test_results(request):
 
     except Exception as e:
         logger.exception("save_test_results failed: %s", e)
-        return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @extend_schema(tags=["Telegram"], summary="Get invite link")
@@ -300,9 +317,14 @@ def get_invite_link(request):
     """
     bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", None)
     if not bot_username:
-        return Response({"error": "TELEGRAM_BOT_USERNAME is not configured"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": "TELEGRAM_BOT_USERNAME is not configured"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
-    return Response({"link": f"https://t.me/{bot_username}?start=invite"}, status=status.HTTP_200_OK)
+    return Response(
+        {"link": f"https://t.me/{bot_username}?start=invite"}, status=status.HTTP_200_OK
+    )
 
 
 @extend_schema(tags=["Telegram - Personal Plan"], summary="Get or create user by telegram_id")
@@ -329,7 +351,10 @@ def get_user_or_create(request):
     except ValueError:
         return Response({"error": "Invalid telegram_id"}, status=status.HTTP_400_BAD_REQUEST)
 
-    telegram_user = _get_or_create_telegram_user(telegram_id_int, username=username, full_name=full_name)
+    exists = TelegramUser.objects.filter(telegram_id=telegram_id_int).exists()
+    telegram_user = _get_or_create_telegram_user(
+        telegram_id_int, username=username, full_name=full_name
+    )
 
     return Response(
         {
@@ -339,7 +364,7 @@ def get_user_or_create(request):
             "username": telegram_user.username,
             "first_name": telegram_user.first_name,
             "last_name": telegram_user.last_name,
-            "created": False,  # точно узнать можно, но обычно боту не критично
+            "created": not exists,
         },
         status=status.HTTP_200_OK,
     )
@@ -356,24 +381,73 @@ def create_survey(request):
     forbidden = _require_bot_secret(request)
     if forbidden:
         return forbidden
-
     serializer = CreatePersonalPlanSurveySerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    data = serializer.validated_data
-    telegram_id = data.pop("telegram_id")
+    # Всегда берем RID из заголовка или генерим новый
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    telegram_id = serializer.validated_data.get(
+        "telegram_id"
+    )  # Get telegram_id from validated data
+    logger.info("Create survey request. RID: %s | TG: %s", request_id, telegram_id)
 
-    with transaction.atomic():
-        telegram_user = _get_or_create_telegram_user(telegram_id)
-
-        survey = PersonalPlanSurvey.objects.create(
-            user=telegram_user.user,
-            completed_at=timezone.now(),
-            **data,
+    try:
+        telegram_user = TelegramUser.objects.get(telegram_id=telegram_id)
+    except TelegramUser.DoesNotExist:
+        return Response(
+            {
+                "status": "error",
+                "error": {
+                    "code": "USER_NOT_FOUND",
+                    "message": "User not found",
+                    "request_id": request_id,
+                },
+            },
+            status=status.HTTP_404_NOT_FOUND,
+            headers={"X-Request-ID": request_id},
         )
 
-    return Response(PersonalPlanSurveySerializer(survey).data, status=status.HTTP_201_CREATED)
+    # Remove telegram_id from validated_data as it's not part of PersonalPlanSurvey model
+    validated_data = serializer.validated_data
+    validated_data.pop("telegram_id")
+
+    try:
+        with transaction.atomic():
+            survey = PersonalPlanSurvey.objects.create(
+                user=telegram_user.user,
+                completed_at=timezone.now(),
+                **validated_data,
+            )
+
+        logger.info(
+            "Created survey %s for user %s. RID: %s", survey.id, telegram_user.user.id, request_id
+        )
+
+        return Response(
+            PersonalPlanSurveySerializer(survey).data,
+            status=status.HTTP_201_CREATED,
+            headers={"X-Request-ID": request_id},
+        )
+    except Exception as e:
+        logger.exception(
+            "Failed to create PersonalPlanSurvey for telegram_id=%s. RID: %s",
+            telegram_id,
+            request_id,
+        )
+        return Response(
+            {
+                "status": "error",
+                "error": {
+                    "code": "SURVEY_SAVE_FAILED",
+                    "message": "Не удалось сохранить анкету",
+                    "details": str(e),
+                    "request_id": request_id,
+                },
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            headers={"X-Request-ID": request_id},
+        )
 
 
 @extend_schema(tags=["Telegram - Personal Plan"], summary="Create Personal Plan")
@@ -396,29 +470,132 @@ def create_plan(request):
     telegram_id = data.pop("telegram_id")
     survey_id = data.pop("survey_id", None)
 
-    telegram_user = TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id).first()
+    telegram_user = (
+        TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id).first()
+    )
     if not telegram_user:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # X-Request-ID для корреляции логов
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
     survey = None
     if survey_id:
         survey = PersonalPlanSurvey.objects.filter(id=survey_id, user=telegram_user.user).first()
         if not survey:
-            return Response({"error": "Survey not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {
+                    "status": "error",
+                    "error": {
+                        "code": "SURVEY_NOT_FOUND",
+                        "message": "Survey not found",
+                        "request_id": request_id,
+                    },
+                },
+                status=status.HTTP_404_NOT_FOUND,
+                headers={"X-Request-ID": request_id},
+            )
 
-    # Лимит планов в день
-    max_plans_per_day = getattr(settings, "PERSONAL_PLAN_DAILY_LIMIT", 3)
-    today_start = _today_start_dt()
+    try:
+        with transaction.atomic():
+            # Если есть опрос - лочим его для предотвращения параллельного создания плана
+            if survey:
+                # ВАЖНО: Мы лочим существующий опрос, чтобы сериализовать создание плана для него
+                survey = PersonalPlanSurvey.objects.select_for_update().get(id=survey.id)
 
-    plans_today = PersonalPlan.objects.filter(user=telegram_user.user, created_at__gte=today_start).count()
-    if plans_today >= max_plans_per_day:
+            # 1. Повторная проверка существования (idempotency)
+            if survey:
+                existing_plan = PersonalPlan.objects.filter(
+                    user=telegram_user.user, survey=survey
+                ).first()
+                if existing_plan:
+                    logger.info(
+                        "Plan for survey %s already exists, returning it. RID: %s",
+                        survey.id,
+                        request_id,
+                    )
+                    return Response(
+                        PersonalPlanSerializer(existing_plan).data,
+                        status=status.HTTP_200_OK,
+                        headers={"X-Request-ID": request_id},
+                    )
+
+            # 2. Лимит планов в день
+            max_plans_per_day = getattr(settings, "PERSONAL_PLAN_DAILY_LIMIT", 3)
+            today_start = _today_start_dt()
+            # Также лочим выборку для подсчета лимита
+            plans_today = (
+                PersonalPlan.objects.select_for_update()
+                .filter(user=telegram_user.user, created_at__gte=today_start)
+                .count()
+            )
+
+            if plans_today >= max_plans_per_day:
+                logger.warning(
+                    "Daily limit reached for user %s. RID: %s", telegram_user.user.id, request_id
+                )
+                return Response(
+                    {
+                        "status": "error",
+                        "error": {
+                            "code": "DAILY_LIMIT_REACHED",
+                            "message": f"Daily limit of {max_plans_per_day} plans reached",
+                            "request_id": request_id,
+                        },
+                    },
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    headers={"X-Request-ID": request_id},
+                )
+
+            # 3. Создание плана
+            try:
+                plan = PersonalPlan.objects.create(user=telegram_user.user, survey=survey, **data)
+                logger.info(
+                    "SUCCESS: Created PersonalPlan %s (User: %s, Survey: %s). RID: %s",
+                    plan.id,
+                    telegram_user.user.id,
+                    survey.id if survey else "None",
+                    request_id,
+                )
+            except IntegrityError:
+                # Если UniqueConstraint сработал (гонка)
+                if survey:
+                    plan = PersonalPlan.objects.get(user=telegram_user.user, survey=survey)
+                    logger.info(
+                        "IntegrityError handled: returning existing plan %s. RID: %s",
+                        plan.id,
+                        request_id,
+                    )
+                    return Response(
+                        PersonalPlanSerializer(plan).data,
+                        status=status.HTTP_200_OK,
+                        headers={"X-Request-ID": request_id},
+                    )
+                raise  # Если survey нет, это какая-то другая IntegrityError
+
         return Response(
-            {"error": f"Daily limit of {max_plans_per_day} plans reached"},
-            status=status.HTTP_429_TOO_MANY_REQUESTS,
+            PersonalPlanSerializer(plan).data,
+            status=status.HTTP_201_CREATED,
+            headers={"X-Request-ID": request_id},
         )
 
-    plan = PersonalPlan.objects.create(user=telegram_user.user, survey=survey, **data)
-    return Response(PersonalPlanSerializer(plan).data, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.exception(
+            "Failed to create PersonalPlan for telegram_id=%s. RID: %s", telegram_id, request_id
+        )
+        return Response(
+            {
+                "status": "error",
+                "error": {
+                    "code": "PLAN_SAVE_FAILED",
+                    "message": "Не удалось сохранить план",
+                    "details": str(e),
+                    "request_id": request_id,
+                },
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            headers={"X-Request-ID": request_id},
+        )
 
 
 @extend_schema(tags=["Telegram - Personal Plan"], summary="Count plans created today")
@@ -445,11 +622,20 @@ def count_plans_today(request):
 
     max_plans = getattr(settings, "PERSONAL_PLAN_DAILY_LIMIT", 3)
 
-    telegram_user = TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id_int).first()
+    telegram_user = (
+        TelegramUser.objects.select_related("user").filter(telegram_id=telegram_id_int).first()
+    )
     if not telegram_user:
-        return Response({"count": 0, "limit": max_plans, "can_create": True}, status=status.HTTP_200_OK)
+        return Response(
+            {"count": 0, "limit": max_plans, "can_create": True}, status=status.HTTP_200_OK
+        )
 
     today_start = _today_start_dt()
-    count = PersonalPlan.objects.filter(user=telegram_user.user, created_at__gte=today_start).count()
+    count = PersonalPlan.objects.filter(
+        user=telegram_user.user, created_at__gte=today_start
+    ).count()
 
-    return Response({"count": count, "limit": max_plans, "can_create": count < max_plans}, status=status.HTTP_200_OK)
+    return Response(
+        {"count": count, "limit": max_plans, "can_create": count < max_plans},
+        status=status.HTTP_200_OK,
+    )
