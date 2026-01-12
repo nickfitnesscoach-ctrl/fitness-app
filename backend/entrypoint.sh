@@ -120,6 +120,15 @@ fi
 echo "[Entrypoint] ENV/DEBUG validation passed (ENV=$ENV_VALUE, DEBUG=$DEBUG_VALUE)"
 
 # ============================================================
+# SAFEGUARD: Prevent accidental PROD run in DEV compose
+# ============================================================
+if [[ "${DJANGO_SETTINGS_MODULE}" == *"local"* ]] && [ "${APP_ENV}" != "dev" ]; then
+    echo "[FATAL] Safeguard triggered: Local settings detected but APP_ENV is not 'dev' (${APP_ENV})"
+    echo "[FATAL] When using compose.dev.yml, ensure APP_ENV=dev in .env.local"
+    exit 1
+fi
+
+# ============================================================
 # Detect Service Type
 # ============================================================
 

@@ -10,6 +10,21 @@ echo "[BOT STARTUP] APP_ENV=${APP_ENV:-unset}"
 echo "[BOT STARTUP] ENVIRONMENT=${ENVIRONMENT:-unset}"
 echo "[BOT STARTUP] BACKEND_URL=${DJANGO_API_URL:-unset}"
 
+# ============================================================
+# SAFEGUARD: Prevent accidental PROD run in DEV compose
+# ============================================================
+if [[ "${APP_ENV}" == "prod" ]] && [[ "${DEBUG}" == "True" ]]; then
+    echo "[FATAL] Safeguard triggered: APP_ENV=prod but DEBUG=True."
+    echo "[FATAL] It seems you are trying to run production config in a development environment."
+    exit 1
+fi
+
+if [[ "${ENVIRONMENT}" == "development" ]] && [[ "${APP_ENV}" != "dev" ]]; then
+    echo "[FATAL] Safeguard triggered: ENVIRONMENT=development but APP_ENV=${APP_ENV}."
+    echo "[FATAL] For local development, set APP_ENV=dev in .env.local"
+    exit 1
+fi
+
 
 # Ждём доступности Django Backend API
 echo "⏳ Waiting for Backend API to be ready..."

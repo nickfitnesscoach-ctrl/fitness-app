@@ -77,6 +77,16 @@ services:
       - ./bot/logs:/app/logs
       - bot_venv:/app/.venv # Protect Docker-managed venv from host mount
 
+  # Database - Ensure it uses .env.local
+  db:
+    env_file:
+      - .env.local
+
+  # Redis - Ensure it uses .env.local
+  redis:
+    env_file:
+      - .env.local
+
 # Named volumes for development
 volumes:
   backend_venv: # Isolate backend's uv-managed venv
