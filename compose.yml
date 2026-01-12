@@ -78,8 +78,9 @@ services:
       # Bind to localhost only (not exposed to internet, only accessible from host)
       - "127.0.0.1:8000:8000"
     healthcheck:
-      # Use Host header to bypass SSL redirect and match ALLOWED_HOSTS
-      test: [ "CMD", "curl", "-f", "-H", "Host: eatfit24.ru", "http://localhost:8000/health/" ]
+      # Pass X-Forwarded-Proto to indicate request came through HTTPS proxy
+      # This prevents SECURE_SSL_REDIRECT from redirecting to https://backend:8000
+      test: [ "CMD", "curl", "-f", "-H", "Host: eatfit24.ru", "-H", "X-Forwarded-Proto: https", "http://localhost:8000/health/" ]
       interval: 30s
       timeout: 10s
       retries: 3
