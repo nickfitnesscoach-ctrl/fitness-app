@@ -66,24 +66,24 @@ def build_start_keyboard(*, is_admin: bool, panel_url: str | None) -> InlineKeyb
         if panel_url:
             # Telegram WebApp требует HTTPS, локальные URL не работают
             # Для DEV нужен туннель (localtunnel, ngrok с платной подпиской, etc)
-            web_app_url = f"{panel_url.rstrip('/')}/panel/"
+            # panel_url теперь содержит полный URL (SSOT), не добавляем /panel/
             is_valid_webapp_url = (
-                web_app_url.startswith("https://")
-                and "localhost" not in web_app_url
-                and "127.0.0.1" not in web_app_url
+                panel_url.startswith("https://")
+                and "localhost" not in panel_url
+                and "127.0.0.1" not in panel_url
             )
 
             if is_valid_webapp_url:
                 panel_button = InlineKeyboardButton(
                     text="📟 Открыть панель тренера",
-                    web_app=WebAppInfo(url=web_app_url),
+                    web_app=WebAppInfo(url=panel_url),
                 )
                 builder.row(panel_button)
-                logger.info("[START] Добавлена WebApp кнопка панели тренера: %s", web_app_url)
+                logger.info("[START] Добавлена WebApp кнопка панели тренера: %s", panel_url)
             else:
                 logger.warning(
-                    "[START] TRAINER_PANEL_BASE_URL не подходит для WebApp (нужен HTTPS туннель): %s",
-                    web_app_url
+                    "[START] TRAINER_PANEL_URL не подходит для WebApp (нужен HTTPS туннель): %s",
+                    panel_url
                 )
     else:
         builder.row(
@@ -108,9 +108,14 @@ async def cmd_start(message: Message, state: FSMContext):
     logger.info("[START] Пользователь %s вызвал /start", user_id)
 
     admin_user = is_admin(user_id)
-    panel_url = settings.TRAINER_PANEL_BASE_URL.rstrip("/") if settings.TRAINER_PANEL_BASE_URL else None
+    # Use TRAINER_PANEL_URL (SSOT), fallback to legacy TRAINER_PANEL_BASE_URL + /panel
+    panel_url = (
+        settings.TRAINER_PANEL_URL
+        or (f"{settings.TRAINER_PANEL_BASE_URL.rstrip('/')}/panel" if settings.TRAINER_PANEL_BASE_URL else None)
+    )
     logger.info(
-        "[START] Данные окружения: TRAINER_PANEL_BASE_URL=%s, WEB_APP_URL=%s, admin_ids=%s",
+        "[START] Данные окружения: TRAINER_PANEL_URL=%s, TRAINER_PANEL_BASE_URL=%s (legacy), WEB_APP_URL=%s, admin_ids=%s",
+        settings.TRAINER_PANEL_URL,
         settings.TRAINER_PANEL_BASE_URL,
         settings.WEB_APP_URL,
         settings.admin_ids,

@@ -71,7 +71,10 @@ class Settings(BaseSettings):
 
     # Telegram Mini App
     WEB_APP_URL: Optional[str] = None  # URL для Telegram Mini App
-    TRAINER_PANEL_BASE_URL: Optional[str] = None  # Базовый URL панели тренера
+    TRAINER_PANEL_URL: Optional[str] = None  # Полный URL панели тренера (SSOT)
+
+    # Legacy fallback (deprecated, will be removed)
+    TRAINER_PANEL_BASE_URL: Optional[str] = None  # @deprecated: use TRAINER_PANEL_URL
 
     # Environment
     ENVIRONMENT: str = "development"
