@@ -415,6 +415,16 @@ def set_auto_renew(request):
     - только для платных планов
     - если включаем — должна быть привязана карта (payment_method)
     """
+    # Feature flag guard: recurring billing must be enabled
+    if not settings.BILLING_RECURRING_ENABLED:
+        return Response(
+            {
+                "error": "Auto-renewal is not available",
+                "detail": "Recurring billing is disabled in system configuration"
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
     serializer = AutoRenewToggleSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     enabled = serializer.validated_data["enabled"]
