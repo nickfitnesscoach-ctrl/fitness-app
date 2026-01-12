@@ -113,7 +113,7 @@ class BackendAPIClient:
             if self.secret:
                 headers["X-Bot-Secret"] = self.secret
 
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
                 response = await client.request(
                     method=method,
                     url=url,
