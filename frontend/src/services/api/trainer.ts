@@ -17,7 +17,7 @@
  * @module services/api/trainer
  */
 
-import { fetchWithTimeout, getHeaders, log } from './client';
+import { fetchWithTimeout, fetchWithRetry, getHeaders, log } from './client';
 import { URLS } from './urls';
 import { TELEGRAM_BOT_NAME } from '../../config/env';
 import type { ApplicationResponse, ApplicationStatusApi, ClientDetailsApi } from '../../features/trainer-panel/types';
@@ -131,7 +131,7 @@ export const updateApplicationStatus = async (
 export const getClients = async (): Promise<ClientsResponse> => {
     try {
         log('Fetching clients');
-        const response = await fetchWithTimeout(URLS.clients, {
+        const response = await fetchWithRetry(URLS.clients, {
             headers: getHeaders(),
         });
 

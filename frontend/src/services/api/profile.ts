@@ -4,8 +4,9 @@
  * Handles user profile operations.
  */
 
-import { 
-    fetchWithTimeout, 
+import {
+    fetchWithTimeout,
+    fetchWithRetry,
     getHeaders,
     getHeadersWithoutContentType,
     parseErrorResponse,
@@ -20,17 +21,24 @@ import type { Profile } from '../../types/profile';
 // Profile
 // ============================================================
 
-export const getProfile = async (): Promise<Profile> => {
+export const getProfile = async (): Promise<Profile | null> => {
     try {
-        const response = await fetchWithTimeout(URLS.profile, {
+        const response = await fetchWithRetry(URLS.profile, {
             headers: getHeaders(),
         });
+
+        // 429 handling: return null gracefully
+        if (response.status === 429) {
+            console.warn('[Profile] Rate limited (429), skipping profile load');
+            return null;
+        }
+
         if (!response.ok) throw new Error('Failed to fetch profile');
         const userData = await response.json();
         return userData.profile || userData;
     } catch (error) {
         console.error('Error fetching profile:', error);
-        throw error;
+        throw error; // Re-throw other errors
     }
 };
 

@@ -6,7 +6,7 @@ REST API documentation compliant implementation.
 
 import logging
 
-from datetime import date, datetime
+from datetime import datetime
 from rest_framework import generics, status, views
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -29,7 +29,7 @@ from .services import get_daily_stats, get_weekly_stats, create_auto_goal
 logger = logging.getLogger(__name__)
 
 
-@extend_schema(tags=['Meals'])
+@extend_schema(tags=["Meals"])
 class MealListCreateView(generics.ListCreateAPIView):
     """
     GET /api/v1/meals/?date=YYYY-MM-DD - Get daily diary with nutrition stats
@@ -41,19 +41,19 @@ class MealListCreateView(generics.ListCreateAPIView):
     pagination_class = PageNumberPagination
 
     def get_serializer_class(self):
-        if self.request.method == 'POST':
+        if self.request.method == "POST":
             return MealCreateSerializer
         return MealSerializer
 
     def get_queryset(self):
         """Filter meals by current user and optionally by date."""
-        queryset = Meal.objects.filter(user=self.request.user).prefetch_related('items')
+        queryset = Meal.objects.filter(user=self.request.user).prefetch_related("items")
 
         # Filter by date if provided
-        date_str = self.request.query_params.get('date')
+        date_str = self.request.query_params.get("date")
         if date_str:
             try:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 queryset = queryset.filter(date=target_date)
             except ValueError:
                 pass  # Invalid date format, return all meals
@@ -65,45 +65,47 @@ class MealListCreateView(generics.ListCreateAPIView):
         description="Возвращает все приёмы пищи за указанную дату с общей статистикой КБЖУ и прогрессом выполнения цели. Если date не указан, возвращает все приёмы пищи.",
         parameters=[
             OpenApiParameter(
-                name='date',
+                name="date",
                 type=OpenApiTypes.DATE,
                 location=OpenApiParameter.QUERY,
-                description='Дата в формате YYYY-MM-DD (опционально)',
-                required=False
+                description="Дата в формате YYYY-MM-DD (опционально)",
+                required=False,
             )
         ],
         responses={
             200: OpenApiResponse(
                 description="Daily diary with meals and nutrition stats",
-                response=DailyStatsSerializer
+                response=DailyStatsSerializer,
             ),
-        }
+        },
     )
     def get(self, request, *args, **kwargs):
         """
         Get daily diary with meals and nutrition stats (if ?date= provided).
         Otherwise returns simple list of all meals.
         """
-        date_str = request.query_params.get('date')
+        date_str = request.query_params.get("date")
 
         if date_str:
             # Return daily stats (as per REST API docs)
             try:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             except ValueError:
                 return Response(
                     {"error": "Невалидный формат даты. Используйте YYYY-MM-DD"},
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             stats = get_daily_stats(request.user, target_date)
 
             data = {
-                'date': stats['date'],
-                'daily_goal': DailyGoalSerializer(stats['daily_goal']).data if stats['daily_goal'] else None,
-                'total_consumed': stats['total_consumed'],
-                'progress': stats['progress'],
-                'meals': MealSerializer(stats['meals'], many=True).data,
+                "date": stats["date"],
+                "daily_goal": DailyGoalSerializer(stats["daily_goal"]).data
+                if stats["daily_goal"]
+                else None,
+                "total_consumed": stats["total_consumed"],
+                "progress": stats["progress"],
+                "meals": MealSerializer(stats["meals"], many=True).data,
             }
 
             return Response(data)
@@ -118,13 +120,13 @@ class MealListCreateView(generics.ListCreateAPIView):
         responses={
             201: MealSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
-        }
+        },
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
 
 
-@extend_schema(tags=['Meals'])
+@extend_schema(tags=["Meals"])
 class MealDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     GET/PUT/PATCH/DELETE /api/v1/meals/{id}/
@@ -134,7 +136,7 @@ class MealDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = MealSerializer
 
     def get_queryset(self):
-        return Meal.objects.filter(user=self.request.user).prefetch_related('items')
+        return Meal.objects.filter(user=self.request.user).prefetch_related("items")
 
     @extend_schema(
         summary="Получить детали приёма пищи",
@@ -142,7 +144,7 @@ class MealDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={
             200: MealSerializer,
             404: OpenApiResponse(description="Приём пищи не найден"),
-        }
+        },
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -155,7 +157,7 @@ class MealDetailView(generics.RetrieveUpdateDestroyAPIView):
             200: MealSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
             404: OpenApiResponse(description="Приём пищи не найден"),
-        }
+        },
     )
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
@@ -168,7 +170,7 @@ class MealDetailView(generics.RetrieveUpdateDestroyAPIView):
             200: MealSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
             404: OpenApiResponse(description="Приём пищи не найден"),
-        }
+        },
     )
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
@@ -179,13 +181,13 @@ class MealDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={
             204: OpenApiResponse(description="Приём пищи успешно удалён"),
             404: OpenApiResponse(description="Приём пищи не найден"),
-        }
+        },
     )
     def delete(self, request, *args, **kwargs):
         return super().delete(request, *args, **kwargs)
 
 
-@extend_schema(tags=['Food Items'])
+@extend_schema(tags=["Food Items"])
 class FoodItemCreateView(generics.CreateAPIView):
     """
     POST /api/v1/meals/{meal_id}/items/ - Add food item to meal
@@ -204,7 +206,7 @@ class FoodItemCreateView(generics.CreateAPIView):
             201: FoodItemSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
             404: OpenApiResponse(description="Приём пищи не найден"),
-        }
+        },
     )
     def post(self, request, meal_id, *args, **kwargs):
         # Verify meal exists and belongs to user
@@ -218,7 +220,7 @@ class FoodItemCreateView(generics.CreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-@extend_schema(tags=['Food Items'])
+@extend_schema(tags=["Food Items"])
 class FoodItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     GET/PUT/PATCH/DELETE /api/v1/meals/{meal_id}/items/{id}/
@@ -230,7 +232,7 @@ class FoodItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = FoodItemSerializer
 
     def get_queryset(self):
-        meal_id = self.kwargs.get('meal_id')
+        meal_id = self.kwargs.get("meal_id")
         # First verify that meal belongs to current user
         meal = get_object_or_404(Meal, id=meal_id, user=self.request.user)
         # Then return food items only from this verified meal
@@ -242,7 +244,7 @@ class FoodItemDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={
             200: FoodItemSerializer,
             404: OpenApiResponse(description="Блюдо не найдено"),
-        }
+        },
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -255,7 +257,7 @@ class FoodItemDetailView(generics.RetrieveUpdateDestroyAPIView):
             200: FoodItemSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
             404: OpenApiResponse(description="Блюдо не найдено"),
-        }
+        },
     )
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
@@ -268,7 +270,7 @@ class FoodItemDetailView(generics.RetrieveUpdateDestroyAPIView):
             200: FoodItemSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
             404: OpenApiResponse(description="Блюдо не найдено"),
-        }
+        },
     )
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
@@ -279,13 +281,13 @@ class FoodItemDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={
             204: OpenApiResponse(description="Блюдо успешно удалено"),
             404: OpenApiResponse(description="Блюдо не найдено"),
-        }
+        },
     )
     def delete(self, request, *args, **kwargs):
         return super().delete(request, *args, **kwargs)
 
 
-@extend_schema(tags=['Nutrition - Daily Goals'])
+@extend_schema(tags=["Nutrition - Daily Goals"])
 class DailyGoalView(generics.RetrieveUpdateAPIView):
     """
     Get or update current daily goal.
@@ -303,21 +305,22 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
 
     @extend_schema(
         summary="Получить текущую дневную цель",
-        description="Возвращает активную дневную цель КБЖУ для пользователя.",
+        description="Возвращает активную дневную цель КБЖУ для пользователя. Если цель не установлена, возвращает goal: null.",
         responses={
-            200: DailyGoalSerializer,
-            404: OpenApiResponse(description="Дневная цель не установлена"),
-        }
+            200: OpenApiResponse(
+                description="Дневная цель (или null если не установлена)",
+                response=DailyGoalSerializer,
+            ),
+        },
     )
     def get(self, request, *args, **kwargs):
         obj = self.get_object()
         if obj is None:
-            return Response(
-                {"error": "Дневная цель не установлена"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            # Цель не установлена — возвращаем 200 с null (не 404)
+            # Семантически: это не "ресурс не найден", а "у пользователя нет данных"
+            return Response({"goal": None, "is_set": False})
         serializer = self.get_serializer(obj)
-        return Response(serializer.data)
+        return Response({"goal": serializer.data, "is_set": True})
 
     @extend_schema(
         summary="Обновить дневную цель (полностью)",
@@ -327,25 +330,28 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
             200: DailyGoalSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
             401: OpenApiResponse(description="Не авторизован"),
-        }
+        },
     )
     def put(self, request, *args, **kwargs):
         # Проверяем аутентификацию
         if not request.user or not request.user.is_authenticated:
             logger.warning("[DailyGoal] PUT called with unauthenticated user")
-            logger.warning("[DailyGoal] Headers: X-Telegram-ID=%s, X-Telegram-Init-Data=%s",
-                         request.META.get('HTTP_X_TELEGRAM_ID', 'NOT SET'),
-                         'SET' if request.META.get('HTTP_X_TELEGRAM_INIT_DATA') else 'NOT SET')
+            logger.warning(
+                "[DailyGoal] Headers: X-Telegram-ID=%s, X-Telegram-Init-Data=%s",
+                request.META.get("HTTP_X_TELEGRAM_ID", "NOT SET"),
+                "SET" if request.META.get("HTTP_X_TELEGRAM_INIT_DATA") else "NOT SET",
+            )
             return Response(
-                {"detail": "unauthenticated_webapp_user"},
-                status=status.HTTP_401_UNAUTHORIZED
+                {"detail": "unauthenticated_webapp_user"}, status=status.HTTP_401_UNAUTHORIZED
             )
 
-        telegram_id = getattr(request.user, 'telegram_profile', None)
-        logger.info("[DailyGoal] PUT called by user=%s telegram_id=%s data=%s",
-                   request.user.id,
-                   telegram_id.telegram_id if telegram_id else 'N/A',
-                   request.data)
+        telegram_id = getattr(request.user, "telegram_profile", None)
+        logger.info(
+            "[DailyGoal] PUT called by user=%s telegram_id=%s data=%s",
+            request.user.id,
+            telegram_id.telegram_id if telegram_id else "N/A",
+            request.data,
+        )
 
         obj = self.get_object()
         if obj is None:
@@ -358,11 +364,10 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
                 logger.info("[DailyGoal] Created new DailyGoal for user=%s", request.user.id)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             except Exception as exc:
-                logger.exception("[DailyGoal] Failed to create DailyGoal for user=%s: %s", request.user.id, exc)
-                return Response(
-                    {"detail": str(exc)},
-                    status=status.HTTP_400_BAD_REQUEST
+                logger.exception(
+                    "[DailyGoal] Failed to create DailyGoal for user=%s: %s", request.user.id, exc
                 )
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         logger.info("[DailyGoal] Updating existing goal id=%s", obj.id)
         return super().put(request, *args, **kwargs)
 
@@ -374,15 +379,14 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
             200: DailyGoalSerializer,
             400: OpenApiResponse(description="Невалидные данные"),
             401: OpenApiResponse(description="Не авторизован"),
-        }
+        },
     )
     def patch(self, request, *args, **kwargs):
         # Проверяем аутентификацию
         if not request.user or not request.user.is_authenticated:
             logger.warning("[DailyGoal] PATCH called with unauthenticated user")
             return Response(
-                {"detail": "unauthenticated_webapp_user"},
-                status=status.HTTP_401_UNAUTHORIZED
+                {"detail": "unauthenticated_webapp_user"}, status=status.HTTP_401_UNAUTHORIZED
             )
 
         logger.info("[DailyGoal] PATCH called by user=%s data=%s", request.user.id, request.data)
@@ -396,15 +400,14 @@ class DailyGoalView(generics.RetrieveUpdateAPIView):
                 logger.info("[DailyGoal] Created new DailyGoal for user=%s", request.user.id)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             except Exception as exc:
-                logger.exception("[DailyGoal] Failed to create DailyGoal for user=%s: %s", request.user.id, exc)
-                return Response(
-                    {"detail": str(exc)},
-                    status=status.HTTP_400_BAD_REQUEST
+                logger.exception(
+                    "[DailyGoal] Failed to create DailyGoal for user=%s: %s", request.user.id, exc
                 )
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return super().patch(request, *args, **kwargs)
 
 
-@extend_schema(tags=['Nutrition - Daily Goals'])
+@extend_schema(tags=["Nutrition - Daily Goals"])
 class CalculateGoalsView(views.APIView):
     """
     Calculate daily goals using Mifflin-St Jeor formula based on user profile.
@@ -419,20 +422,17 @@ class CalculateGoalsView(views.APIView):
         responses={
             200: CalculateGoalsSerializer,
             400: OpenApiResponse(description="Не заполнен профиль или недостаточно данных"),
-        }
+        },
     )
     def post(self, request):
         try:
             goals = DailyGoal.calculate_goals(request.user)
             return Response(goals)
         except ValueError as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@extend_schema(tags=['Nutrition - Daily Goals'])
+@extend_schema(tags=["Nutrition - Daily Goals"])
 class SetAutoGoalView(views.APIView):
     """
     Calculate and set daily goal automatically.
@@ -447,7 +447,7 @@ class SetAutoGoalView(views.APIView):
         responses={
             201: DailyGoalSerializer,
             400: OpenApiResponse(description="Не заполнен профиль или недостаточно данных"),
-        }
+        },
     )
     def post(self, request):
         try:
@@ -456,13 +456,10 @@ class SetAutoGoalView(views.APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         except ValueError as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@extend_schema(tags=['Nutrition - Statistics'])
+@extend_schema(tags=["Nutrition - Statistics"])
 class WeeklyStatsView(views.APIView):
     """
     GET /api/v1/stats/weekly/?start_date=YYYY-MM-DD
@@ -477,65 +474,63 @@ class WeeklyStatsView(views.APIView):
         description="Возвращает статистику по КБЖУ за неделю с ежедневными данными и средними значениями.",
         parameters=[
             OpenApiParameter(
-                name='start_date',
+                name="start_date",
                 type=str,
                 location=OpenApiParameter.QUERY,
-                description='Дата начала недели (понедельник) в формате YYYY-MM-DD',
-                required=True
+                description="Дата начала недели (понедельник) в формате YYYY-MM-DD",
+                required=True,
             )
         ],
         responses={
             200: OpenApiResponse(
                 description="Недельная статистика",
                 response={
-                    'type': 'object',
-                    'properties': {
-                        'start_date': {'type': 'string'},
-                        'end_date': {'type': 'string'},
-                        'daily_data': {
-                            'type': 'array',
-                            'items': {
-                                'type': 'object',
-                                'properties': {
-                                    'date': {'type': 'string'},
-                                    'calories': {'type': 'number'},
-                                    'protein': {'type': 'number'},
-                                    'fat': {'type': 'number'},
-                                    'carbs': {'type': 'number'},
-                                }
-                            }
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string"},
+                        "end_date": {"type": "string"},
+                        "daily_data": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "date": {"type": "string"},
+                                    "calories": {"type": "number"},
+                                    "protein": {"type": "number"},
+                                    "fat": {"type": "number"},
+                                    "carbs": {"type": "number"},
+                                },
+                            },
                         },
-                        'averages': {
-                            'type': 'object',
-                            'properties': {
-                                'calories': {'type': 'number'},
-                                'protein': {'type': 'number'},
-                                'fat': {'type': 'number'},
-                                'carbs': {'type': 'number'},
-                            }
-                        }
-                    }
-                }
+                        "averages": {
+                            "type": "object",
+                            "properties": {
+                                "calories": {"type": "number"},
+                                "protein": {"type": "number"},
+                                "fat": {"type": "number"},
+                                "carbs": {"type": "number"},
+                            },
+                        },
+                    },
+                },
             ),
             400: OpenApiResponse(description="Невалидные параметры"),
-        }
+        },
     )
     def get(self, request):
         from datetime import datetime, timedelta
 
-        start_date_str = request.query_params.get('start_date')
+        start_date_str = request.query_params.get("start_date")
         if not start_date_str:
             return Response(
-                {"error": "start_date parameter is required"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "start_date parameter is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
         except ValueError:
             return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "Invalid date format. Use YYYY-MM-DD"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         result = get_weekly_stats(request.user, start_date)

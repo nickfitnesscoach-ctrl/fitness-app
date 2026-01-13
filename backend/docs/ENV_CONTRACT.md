@@ -123,6 +123,11 @@ TELEGRAM_ADMINS=310151740,987654321
 
 **Формат**: Telegram user IDs через запятую (int)
 
+**Browser Debug Mode (DEV only)**: Для работы панели тренера в браузере без Telegram добавьте `999999999` в список:
+```bash
+TELEGRAM_ADMINS=310151740,999999999  # DEV only
+```
+
 **Важно**: Это единственная переменная для admin IDs. Не используйте:
 - ❌ `BOT_ADMIN_ID` (deprecated)
 - ❌ `ADMIN_IDS` (deprecated)

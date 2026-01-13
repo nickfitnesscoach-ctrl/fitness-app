@@ -175,6 +175,12 @@ REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = [
     "rest_framework.renderers.JSONRenderer",
     "rest_framework.renderers.BrowsableAPIRenderer",
 ]
+# Increase throttle rates for local development (to avoid 429 during active development/HMR)
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
+    **base.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"],
+    "anon": "100/minute",  # ~6000/hour vs 500/hour
+    "user": "1000/minute",  # ~60000/hour vs 5000/hour
+}
 
 # -----------------------------------------------------------------------------
 # Наследование из base.py

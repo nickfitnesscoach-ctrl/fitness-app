@@ -334,18 +334,12 @@ export const fetchWithRetry = async (
         try {
             const response = await fetchWithTimeout(url, options);
 
+            // ✅ 429: не ретраим вслепую
+            if (response.status === 429) return response;
+
             if (response.ok || (response.status >= 400 && response.status < 500)) {
                 return response;
             }
-
-            if (attempt < retries) {
-                const delay = API_RETRY_DELAY * Math.pow(2, attempt);
-                log(`Retry ${attempt + 1}/${retries} after ${delay}ms for ${url} (status: ${response.status})`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
-            }
-
-            return response;
         } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
 

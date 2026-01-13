@@ -5,7 +5,8 @@
  * JWT токены НЕ используются - все запросы идут через Header auth.
  */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import { useEffectOnceDev } from '../shared/hooks/useEffectOnceDev';
 import { api } from '../services/api';
 import {
     initTelegramWebApp,
@@ -58,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     /**
      * Инициализация и аутентификация
      */
-    const authenticate = async () => {
+    const authenticate = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
@@ -118,16 +119,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     const logout = () => {
         setUser(null);
         // Telegram user остаётся - это данные из WebApp
     };
 
-    // Автоматическая инициализация при монтировании
-    useEffect(() => {
-        authenticate();
+    // Автоматическая инициализация при монтировании (StrictMode protected)
+    useEffectOnceDev(() => {
+        void authenticate();
     }, []);
 
     return (

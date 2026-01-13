@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useRef, useEffect } from 'react';
 import type { Application } from '../features/trainer-panel/types';
 import { api } from '../services/api';
+import { useAuth } from './AuthContext';
 
 interface ClientsContextType {
     clients: Application[];
@@ -49,6 +50,7 @@ const restrictionsMap: Record<string, string> = {
 };
 
 export const ClientsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const { isAdmin } = useAuth();
     const [clients, setClients] = useState<Application[]>([]);
 
     const loadClients = async () => {
@@ -94,10 +96,23 @@ export const ClientsProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
     };
 
-    // Load clients from API on mount
+    // Guard for clients loading
+    const didLoadRef = useRef(false);
+
+    // Load clients when admin becomes available
     useEffect(() => {
-        loadClients();
-    }, []);
+        // Reset if no longer admin (e.g. logout)
+        if (!isAdmin) {
+            didLoadRef.current = false;
+            setClients([]);
+            return;
+        }
+
+        if (didLoadRef.current) return;
+        didLoadRef.current = true;
+
+        void loadClients();
+    }, [isAdmin]);
 
     const addClient = async (application: Application) => {
         try {

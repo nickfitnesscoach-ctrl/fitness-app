@@ -221,15 +221,17 @@ export const updateFoodItem = async (
 
 export const getDailyGoals = async () => {
     try {
-        const response = await fetchWithTimeout(URLS.goals, {
+        const response = await fetchWithRetry(URLS.goals, {
             headers: getHeaders(),
         });
-        if (!response.ok) {
-            if (response.status === 404) return null;
-            throw new Error('Failed to fetch goals');
-        }
-        return await response.json();
+        if (!response.ok) throw new Error(`Failed to fetch goals: ${response.status}`);
+        const data = await response.json();
+        // Backend returns {goal: <data>|null, is_set: boolean}
+        return data.goal;
     } catch (error) {
+        // AbortError (timeout/cancel) — тихо возвращаем null
+        if (error instanceof DOMException && error.name === 'AbortError') return null;
+        // Реальные ошибки сети/сервера — логируем
         console.error('Error fetching goals:', error);
         return null;
     }
