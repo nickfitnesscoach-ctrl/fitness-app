@@ -140,7 +140,47 @@ toPlanCodeOrFree(value: unknown): PlanCode
 isProPlanCode(code: PlanCode): boolean  // PRO_MONTHLY | PRO_YEARLY
 ```
 
+### Marketing Copy SSOT
+
 > [!IMPORTANT]
+> **Backend возвращает только billing truth** (price, old_price, duration_days, limits).  
+> **Frontend хранит marketing copy** в `config/planCopy.ts`.
+
+| Источник данных | Что хранит | Где менять |
+|-----------------|------------|------------|
+| API `/billing/plans/` | price, old_price, duration_days, limits | Django Admin |
+| `config/planCopy.ts` | displayName, features, badge, order | Frontend code |
+
+```typescript
+// config/planCopy.ts - единственный источник маркетинговых текстов
+export const PLAN_COPY: Record<string, PlanCopyConfig> = {
+  PRO_YEARLY: {
+    displayName: 'PRO Год',
+    badge: 'ВЫБОР ПОЛЬЗОВАТЕЛЕЙ',
+    features: ['...'],
+    oldPrice: 4990,  // Fallback if DB null
+    order: 1,
+  },
+  // ...
+};
+
+export function getPlanCopy(code: string): PlanCopyConfig;
+```
+
+**Fallback chain для old_price:**
+```
+plan.old_price (API/DB) → copy.oldPrice (frontend) → undefined
+```
+
+> [!WARNING]
+> **Deprecated API fields** (возвращают neutral values):
+> - `features` → `[]`
+> - `is_popular` → `false`
+> - `display_name` → DB value (frontend ignores, uses `copy.displayName`)
+>
+> **НЕ ИСПОЛЬЗУЙТЕ** эти поля — они будут удалены.
+
+> [!NOTE]
 > Никогда не создавайте локальные типы для plan codes.
 > Всегда импортируйте из `features/billing/types` или `features/billing`.
 

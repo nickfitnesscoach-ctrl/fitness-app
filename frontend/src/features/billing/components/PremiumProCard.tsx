@@ -125,6 +125,11 @@ export function PremiumProCard({
               const cleanText = cleanFeatureText(feature);
               const iconType = getIconForFeature(cleanText);
 
+              // Парсим цену в скобках (например: "60-мин стратегия с тренером (5000₽)")
+              const priceMatch = cleanText.match(/^(.+?)\s*\((\d+₽)\)$/);
+              const displayText = priceMatch ? priceMatch[1] : cleanText;
+              const priceInBrackets = priceMatch ? priceMatch[2] : null;
+
               return (
                 <div key={index} className="flex items-center gap-3">
                   <div
@@ -136,7 +141,15 @@ export function PremiumProCard({
                   </div>
 
                   <span className="text-sm sm:text-base text-slate-200">
-                    {cleanText}
+                    {displayText}
+                    {priceInBrackets && (
+                      <>
+                        {' '}
+                        <span className="text-slate-500 line-through">
+                          ({priceInBrackets})
+                        </span>
+                      </>
+                    )}
                   </span>
                 </div>
               );

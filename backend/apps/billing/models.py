@@ -74,6 +74,12 @@ class SubscriptionPlan(models.Model):
 
     # Pricing
     price = models.DecimalField("Цена (₽)", max_digits=10, decimal_places=2, default=0)
+    old_price = models.PositiveIntegerField(
+        "Старая цена (₽)",
+        null=True,
+        blank=True,
+        help_text="Якорная цена для отображения скидки (например: было 4990₽)",
+    )
     duration_days = models.IntegerField("Длительность (дней)", default=0)
 
     # Features

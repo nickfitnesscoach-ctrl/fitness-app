@@ -28,6 +28,7 @@ from .models import Payment, SubscriptionPlan
 # Helpers
 # ---------------------------------------------------------------------
 
+
 def _get_plan_by_code_or_legacy(plan_code: str) -> Optional[SubscriptionPlan]:
     """
     Ищем план по:
@@ -56,55 +57,27 @@ def _get_plan_by_code_or_legacy(plan_code: str) -> Optional[SubscriptionPlan]:
 # Public Plans
 # ---------------------------------------------------------------------
 
-# [TODO: TEMP] Hardcoded features schema until DB migration
-# SSOT for features, old_price, and display_name override
-PLAN_CONFIG = {
-    "FREE": {
-        "features": [
-            "3 AI-распознавания в день",
-            "Базовый расчет КБЖУ",
-            "История питания (7 дней)",
-        ],
-        "old_price": None,
-        "is_popular": False,
-    },
-    "PRO_MONTHLY": {
-        "features": [
-            "Полная свобода питания",
-            "Мгновенный подсчет калорий",
-            "Анализ прогресса и привычек",
-            "Адаптивный план под твою цель",
-        ],
-        "old_price": None,
-        "is_popular": False,
-        "display_name": "PRO Месяц",  # [TODO: TEMP] override DB name
-    },
-    "PRO_YEARLY": {
-        "features": [
-            "Все функции PRO-доступа",
-            "Бонус: Стратегия с тренером",
-            "Аудит твоего питания",
-            "План выхода на цель",
-        ],
-        "old_price": 4990,
-        "is_popular": True,
-        "display_name": "PRO Год",  # [TODO: TEMP] override DB name
-    },
-}
+# [DEPRECATED] Marketing copy (features, display_name override, is_popular) moved to frontend.
+# See frontend/src/features/billing/config/planCopy.ts for SSOT.
+# old_price is now a DB field (SubscriptionPlan.old_price), editable via Django Admin.
 
 
 class SubscriptionPlanPublicSerializer(serializers.ModelSerializer):
     """
     Публичный сериализатор тарифов для /billing/plans/
 
-    Отдаём:
-    - code, display_name, price, old_price, duration_days
-    - features (list of strings)
-    - is_popular
+    Billing truth (from DB, editable via Django Admin):
+    - code, price, old_price, duration_days, limits
+
+    Marketing copy (deprecated, moved to frontend PLAN_COPY):
+    - features → always []
+    - is_popular → always False
+    - display_name → DB value (frontend overrides with copy.displayName)
     """
 
+    # [DEPRECATED] Remove after 2026-02-15
+    # These fields return neutral values; frontend uses PLAN_COPY instead.
     features = serializers.SerializerMethodField()
-    old_price = serializers.SerializerMethodField()
     is_popular = serializers.SerializerMethodField()
     display_name = serializers.SerializerMethodField()
 
@@ -127,25 +100,18 @@ class SubscriptionPlanPublicSerializer(serializers.ModelSerializer):
         ]
 
     def get_features(self, obj: SubscriptionPlan) -> list[str]:
-        # [TODO: TEMP] Fallback to empty list if code unknown
-        config = PLAN_CONFIG.get(obj.code)
-        return config["features"] if config else []
-
-    def get_old_price(self, obj: SubscriptionPlan) -> Optional[int]:
-        # [TODO: TEMP] Fallback to None
-        config = PLAN_CONFIG.get(obj.code)
-        return config["old_price"] if config else None
+        # [DEPRECATED] Remove after 2026-02-15
+        # Features moved to frontend SSOT (PLAN_COPY in planCopy.ts).
+        return []
 
     def get_is_popular(self, obj: SubscriptionPlan) -> bool:
-        # [TODO: TEMP] Fallback to False
-        config = PLAN_CONFIG.get(obj.code)
-        return config["is_popular"] if config else False
+        # [DEPRECATED] Remove after 2026-02-15
+        # is_popular moved to frontend SSOT (PLAN_COPY in planCopy.ts).
+        return False
 
     def get_display_name(self, obj: SubscriptionPlan) -> str:
-        # [TODO: TEMP] Override DB display_name to match new design strictly
-        config = PLAN_CONFIG.get(obj.code)
-        if config and "display_name" in config:
-            return config["display_name"]
+        # [DEPRECATED] Remove after 2026-02-15
+        # display_name override moved to frontend (PLAN_COPY.displayName).
         return obj.display_name
 
 
@@ -153,11 +119,13 @@ class SubscriptionPlanPublicSerializer(serializers.ModelSerializer):
 # Legacy subscribe serializer (старый endpoint /billing/subscribe)
 # ---------------------------------------------------------------------
 
+
 class SubscribeSerializer(serializers.Serializer):
     """
     Legacy serializer для POST /billing/subscribe
     Там historically поле называется "plan" (а не plan_code).
     """
+
     plan = serializers.CharField(max_length=50)
 
     def validate_plan(self, value: str) -> str:
@@ -173,6 +141,7 @@ class SubscribeSerializer(serializers.Serializer):
 # Payments
 # ---------------------------------------------------------------------
 
+
 class CreatePaymentRequestSerializer(serializers.Serializer):
     """
     Новый запрос для POST /billing/create-payment/
@@ -183,6 +152,7 @@ class CreatePaymentRequestSerializer(serializers.Serializer):
         "return_url": "https://..." (опционально)
       }
     """
+
     plan_code = serializers.CharField(max_length=50)
     return_url = serializers.URLField(required=False, allow_null=True)
 
@@ -230,11 +200,13 @@ class PaymentSerializer(serializers.ModelSerializer):
 # Auto-renew
 # ---------------------------------------------------------------------
 
+
 class AutoRenewToggleSerializer(serializers.Serializer):
     """
     POST /billing/subscription/autorenew/
     Body: { "enabled": true|false }
     """
+
     enabled = serializers.BooleanField()
 
 
@@ -248,8 +220,10 @@ class AutoRenewToggleSerializer(serializers.Serializer):
 # Сейчас они не обязательны, но оставляем для обратной совместимости,
 # чтобы не словить ImportError в других местах проекта.
 
+
 class SubscriptionPlanSerializer(SubscriptionPlanPublicSerializer):
     """Back-compat alias: раньше использовали этот класс."""
+
     pass
 
 
@@ -258,6 +232,7 @@ class SubscriptionSerializer(serializers.Serializer):
     Минимальный сериализатор подписки для legacy /billing/plan endpoint.
     (Полноценная карточка подписки отдаётся через views.get_subscription_details)
     """
+
     plan_code = serializers.CharField()
     plan_name = serializers.CharField()
     expires_at = serializers.CharField(allow_null=True)
@@ -268,6 +243,7 @@ class PaymentMethodSerializer(serializers.Serializer):
     """
     Совместимость: простая структура для payment method.
     """
+
     is_attached = serializers.BooleanField()
     card_mask = serializers.CharField(allow_null=True)
     card_brand = serializers.CharField(allow_null=True)
@@ -275,12 +251,14 @@ class PaymentMethodSerializer(serializers.Serializer):
 
 class CurrentPlanResponseSerializer(serializers.Serializer):
     """Back-compat placeholder."""
+
     status = serializers.CharField()
     data = serializers.DictField()
 
 
 class SubscriptionStatusSerializer(serializers.Serializer):
     """Back-compat placeholder for /billing/me/ response."""
+
     plan_code = serializers.CharField()
     plan_name = serializers.CharField()
     expires_at = serializers.CharField(allow_null=True)
@@ -293,11 +271,13 @@ class SubscriptionStatusSerializer(serializers.Serializer):
 
 class AutoRenewToggleSerializerLegacy(AutoRenewToggleSerializer):
     """Back-compat alias if старый импорт где-то остался."""
+
     pass
 
 
 class PaymentHistoryItemSerializer(serializers.Serializer):
     """Back-compat placeholder (в новом API это формируется в views)."""
+
     id = serializers.CharField()
     amount = serializers.FloatField()
     currency = serializers.CharField()

@@ -11,18 +11,9 @@ import { useSubscriptionActions } from '../hooks/useSubscriptionActions';
 import { SubscriptionHeader } from '../components/SubscriptionHeader';
 import { buildPlanCardState } from '../utils/planCardState';
 import { PageContainer } from '../../../components/shared/PageContainer';
-import type { PlanCode } from '../types';
+import { getPlanCopy } from '../config/planCopy';
 
-/**
- * Порядок отображения тарифных карточек на экране подписки.
- * Фиксированный порядок для UX/upsell: PRO Год (выше, с бейджем "Выбор пользователей") → PRO Месяц → Базовый.
- * Неизвестные планы отображаются в конце.
- */
-const PLAN_DISPLAY_ORDER: Record<PlanCode, number> = {
-    PRO_YEARLY: 1,
-    PRO_MONTHLY: 2,
-    FREE: 3,
-};
+
 
 const SubscriptionPage: React.FC = () => {
     const billing = useBilling();
@@ -113,10 +104,9 @@ const SubscriptionPage: React.FC = () => {
                                 !error &&
                                 [...plans]
                                     .sort((a, b) => {
-                                        // Сортировка по фиксированному порядку для UX/upsell (PRO Год → PRO Месяц → Базовый)
-                                        const orderA = PLAN_DISPLAY_ORDER[a.code as PlanCode] ?? 999;
-                                        const orderB = PLAN_DISPLAY_ORDER[b.code as PlanCode] ?? 999;
-                                        return orderA - orderB;
+                                        // Stable sort: by order from PLAN_COPY, then by code
+                                        const orderDiff = getPlanCopy(a.code).order - getPlanCopy(b.code).order;
+                                        return orderDiff !== 0 ? orderDiff : a.code.localeCompare(b.code);
                                     })
                                     .map((plan) => {
                                         const cardState = buildPlanCardState({ plan, ...cardContext });
