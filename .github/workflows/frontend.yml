@@ -69,3 +69,59 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+      - name: Guard — Check for mocks in production bundle
+        working-directory: frontend
+        run: |
+          echo "🔍 Checking production bundle for mock imports..."
+
+          # Find main bundle file (index-*.js)
+          MAIN_BUNDLE=$(find dist/assets -name "index-*.js" -type f | head -1)
+
+          if [ -z "$MAIN_BUNDLE" ]; then
+            echo "❌ ERROR: Main bundle not found in dist/assets/"
+            exit 1
+          fi
+
+          echo "📦 Checking bundle: $MAIN_BUNDLE"
+
+          # Forbidden patterns that should NEVER appear in production main bundle
+          ERRORS=0
+
+          # 1. Check for mockSubscriptionPlans identifier
+          if grep -q "mockSubscriptionPlans" "$MAIN_BUNDLE"; then
+            echo "❌ BLOCKER: Found 'mockSubscriptionPlans' in main bundle"
+            echo "   This indicates mock data was statically imported instead of dynamic import"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # 2. Check for the warning message from mock file
+          if grep -q "was imported in PROD" "$MAIN_BUNDLE"; then
+            echo "❌ BLOCKER: Found 'was imported in PROD' warning in main bundle"
+            echo "   This indicates mock file code was bundled into production"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # 3. Check for __mocks__ paths in main bundle
+          if grep -q "__mocks__" "$MAIN_BUNDLE"; then
+            echo "❌ BLOCKER: Found '__mocks__' path reference in main bundle"
+            echo "   Mock modules should not be in production code path"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          if [ $ERRORS -eq 0 ]; then
+            echo "✅ PASS: No mock imports detected in production bundle"
+            echo "   Production bundle is clean and safe for deployment"
+          else
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌ CI GATE FAILED: Mock code detected in production bundle"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "HOW TO FIX:"
+            echo "1. Use dynamic imports for mocks: import('./mocks/data')"
+            echo "2. Guard imports with: if (import.meta.env.DEV) { ... }"
+            echo "3. Never use static imports from __mocks__ in production code"
+            echo ""
+            exit 1
+          fi

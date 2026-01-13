@@ -25,6 +25,14 @@ export default defineConfig([
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
       'react-hooks/exhaustive-deps': 'error',
+      // Guard: Prevent static imports from __mocks__ directories (P0 prevention)
+      // Mocks MUST be imported dynamically via import() inside import.meta.env.DEV guards
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/__mocks__/*', '**/__mocks__/**'],
+          message: 'Static imports from __mocks__ are forbidden. Use dynamic import() inside import.meta.env.DEV guard to prevent mock code in production bundle.',
+        }],
+      }],
     },
   },
   // Node.js config files (vite.config.js, etc.)
