@@ -7,7 +7,7 @@
 
 import type { ReactNode } from 'react';
 import type { SubscriptionPlan } from '../../../types/billing';
-import type { PlanCode } from '../utils/types';
+import type { PlanCode } from '../types';
 
 import { BasicPlanCard } from './BasicPlanCard';
 import { PremiumMonthCard } from './PremiumMonthCard';

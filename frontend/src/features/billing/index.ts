@@ -28,27 +28,35 @@ export { usePaymentHistory } from './hooks/usePaymentHistory';
 export { usePaymentPolling, setPollingFlagForPayment, clearPollingFlag } from './hooks/usePaymentPolling';
 
 // ==============================
-// Public: Types (контракты)
+// Public: Types (SSOT контракты)
 // ==============================
-// ВАЖНО: сейчас PlanCode лежит в ./utils/types.
-// Позже можно перенести в billing/types.ts, но не делаем это в рамках “бережного” рефакторинга.
-export type { PlanCode } from './utils/types';
+export type { PlanCode } from './types';
+export { PLAN_CODES, PLAN_CODE_ORDER, isPlanCode, toPlanCodeOrFree, isProPlanCode } from './types';
 
 // ==============================
 // Public: Utils (SSOT для биллинга)
 // ==============================
 export { formatBillingDate, formatShortDate, formatDate } from './utils/date';
 export { showToast, showSuccess, showError } from './utils/notify';
-export { assertBillingPlanCode, validatePlanCode, isPlanCodePro } from './utils/validation';
+
+// Deprecated validators (for backward compatibility)
+/** @deprecated Use isPlanCode from this module */
+export { assertBillingPlanCode } from './utils/validation';
+/** @deprecated Use toPlanCodeOrFree from this module */
+export { validatePlanCode } from './utils/validation';
+/** @deprecated Use isProPlanCode from this module */
+export { isPlanCodePro } from './utils/validation';
 
 // ==============================
-// Internal exports (опционально)
+// Public: Components (часто используемые снаружи)
 // ==============================
-// Эти экспорты удобны для биллинга внутри самого модуля.
-// Если хочешь сделать API “жёстче”, можно убрать их из public barrel
-// и импортировать напрямую внутри billing/...
-export { buildPlanCardState } from './utils/planCardState';
 export { default as PlanCard } from './components/PlanCard';
 export { SubscriptionHeader } from './components/SubscriptionHeader';
+
+// ==============================
+// Internal exports (для использования внутри billing)
+// Для строгого разделения см. ./internal.ts
+// ==============================
+export { buildPlanCardState } from './utils/planCardState';
 export { default as AdminTestPaymentCard } from './components/AdminTestPaymentCard';
 export { default as PaymentHistoryList } from './components/PaymentHistoryList';

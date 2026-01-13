@@ -1,9 +1,18 @@
 import React from 'react';
 import type { SubscriptionPlan, SubscriptionDetails, BillingMe } from '../../../types/billing';
-import type { PlanCode } from './types';
+import { isPlanCode, type PlanCode } from '../types';
 import { Loader2 } from 'lucide-react';
 import { formatDate } from './date';
 
+/**
+ * SSOT Data Context for billing UI.
+ *
+ * Contains the two primary data sources for subscription state:
+ * - `subscription`: General subscription status (is_active, autorenew, payment_method)
+ * - `billingMe`: Exact plan details (plan_code = FREE/PRO_MONTHLY/PRO_YEARLY)
+ *
+ * If billingMe.plan_code is missing, DO NOT guess — use subscription.plan instead.
+ */
 interface BillingContextData {
     subscription: SubscriptionDetails | null;
     billingMe: BillingMe | null;
@@ -16,8 +25,21 @@ interface PlanCardState {
     bottomContent?: React.ReactNode;
 }
 
+/**
+ * Parameters for buildPlanCardState.
+ *
+ * SSOT Responsibilities:
+ * - `billing.subscription` — source of truth for subscription status
+ *   (is_active, payment_method, autorenew_enabled)
+ * - `billing.billingMe` — source of truth for exact plan flavor
+ *   (plan_code: FREE | PRO_MONTHLY | PRO_YEARLY)
+ *
+ * Note: `subscription` param is provided for convenience and should match
+ * `billing.subscription`. This duplication will be removed in a future cleanup.
+ */
 interface BuildPlanCardStateParams {
     plan: SubscriptionPlan;
+    /** @deprecated Use billing.subscription instead */
     subscription: SubscriptionDetails | null;
     billing: BillingContextData;
     isPro: boolean;
@@ -72,15 +94,15 @@ function ProStatusLine({
         variant === 'amber'
             ? 'text-amber-400'
             : variant === 'emerald'
-              ? 'text-emerald-400'
-              : 'text-rose-400';
+                ? 'text-emerald-400'
+                : 'text-rose-400';
 
     const dot =
         variant === 'amber'
             ? 'bg-amber-400/80'
             : variant === 'emerald'
-              ? 'bg-emerald-400'
-              : 'bg-rose-400/80';
+                ? 'bg-emerald-400'
+                : 'bg-rose-400/80';
 
     return (
         <div className={`flex items-center justify-center gap-2 text-[11px] font-bold ${color} uppercase tracking-widest`}>
@@ -90,10 +112,7 @@ function ProStatusLine({
     );
 }
 
-const PLAN_CODES: PlanCode[] = ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'];
-function isPlanCode(v: unknown): v is PlanCode {
-    return typeof v === 'string' && PLAN_CODES.includes(v as PlanCode);
-}
+// isPlanCode imported from ../types (SSOT)
 
 /**
  * Главная идея этой функции:

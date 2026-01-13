@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../../services/api';
 import type { SubscriptionPlan } from '../../../types/billing';
-import type { PlanCode } from '../utils/types';
+import { isPlanCode, PLAN_CODE_ORDER, type PlanCode } from '../types';
 
 interface UseSubscriptionPlansResult {
     plans: SubscriptionPlan[];
@@ -14,15 +14,9 @@ interface UseSubscriptionPlansResult {
  * сначала бесплатный, потом месячный PRO, потом годовой PRO.
  * Это “бизнес-правило”, чтобы UI всегда был одинаковым.
  */
-const ORDER: PlanCode[] = ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'];
-
-function isPlanCode(code: string): code is PlanCode {
-    return ORDER.includes(code as PlanCode);
-}
-
 function sortByOrder(a: SubscriptionPlan, b: SubscriptionPlan): number {
     // Здесь предполагается, что code уже валидный PlanCode (см. фильтр ниже).
-    return ORDER.indexOf(a.code as PlanCode) - ORDER.indexOf(b.code as PlanCode);
+    return PLAN_CODE_ORDER.indexOf(a.code as PlanCode) - PLAN_CODE_ORDER.indexOf(b.code as PlanCode);
 }
 
 // DEV-only: мок подгружаем динамически, чтобы он НЕ попадал в prod-bundle
@@ -90,4 +84,3 @@ export const useSubscriptionPlans = (): UseSubscriptionPlansResult => {
 
     return { plans, loading, error };
 };
-    

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { SubscriptionPlan } from '../../../types/billing';
-import type { PlanCode } from '../utils/types';
+import type { PlanCode } from '../types';
 import { api } from '../../../services/api';
 import { useBilling } from '../../../contexts/BillingContext';
 import { showToast } from '../utils/notify';

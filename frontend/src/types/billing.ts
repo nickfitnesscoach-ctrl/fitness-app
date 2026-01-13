@@ -2,7 +2,16 @@
  * Типы для Billing API
  */
 
-export type BillingPlanCode = 'FREE' | 'PRO_MONTHLY' | 'PRO_YEARLY';
+import type { PlanCode } from '../features/billing/types';
+
+/**
+ * @deprecated Use PlanCode from 'features/billing/types' instead.
+ * This alias exists for backward compatibility with existing code.
+ */
+export type BillingPlanCode = PlanCode;
+
+// Re-export for convenience
+export type { PlanCode } from '../features/billing/types';
 
 /**
  * GET /api/v1/billing/me/

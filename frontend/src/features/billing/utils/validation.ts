@@ -1,68 +1,60 @@
 /**
  * Validation utilities for billing module
- * Strict plan code validation with fail-safe handling
+ *
+ * NOTE: Core validation (isPlanCode, toPlanCodeOrFree, isProPlanCode)
+ * is now in billing/types.ts (SSOT). This file provides:
+ * - Backward-compatible re-exports
+ * - validatePlanCode with toast notification (DEV-only)
  */
 
-import type { BillingPlanCode } from '../../../types/billing';
+import { isPlanCode, toPlanCodeOrFree, isProPlanCode, type PlanCode } from '../types';
 import { IS_DEV } from '../../../config/env';
-// Если ты не хочешь зависимости от notify — просто удали импорт и блок showToast ниже
-import { showToast } from '../utils/notify';
+import { showToast } from './notify';
 
-const VALID_PLAN_CODES: readonly BillingPlanCode[] = ['FREE', 'PRO_MONTHLY', 'PRO_YEARLY'];
-
-/**
- * Type guard: проверяем, что значение — один из разрешённых кодов тарифа.
- * Зачем: API/LS могут вернуть мусор, а UI не должен падать из-за этого.
- */
-export function assertBillingPlanCode(value: unknown): value is BillingPlanCode {
-    return typeof value === 'string' && VALID_PLAN_CODES.includes(value as BillingPlanCode);
-}
+// Re-export from SSOT for backward compatibility
+export { isPlanCode, isProPlanCode };
 
 /**
- * Валидируем plan_code, пришедший с сервера.
- *
- * Поведение:
- * - если код известен → возвращаем как есть
- * - если код неизвестен → возвращаем 'FREE' (fail-safe)
- *
- * DEV:
- * - логируем максимально заметно (console.error)
- * - опционально показываем уведомление через Telegram/Web fallback (НЕ блокирующее alert)
- *
- * PROD:
- * - предупреждаем в консоли и спокойно продолжаем работу
+ * @deprecated Use isPlanCode from '../types' instead.
+ * This is an alias for backward compatibility.
  */
-export function validatePlanCode(planCode: unknown): BillingPlanCode {
-    if (assertBillingPlanCode(planCode)) {
+export const assertBillingPlanCode = isPlanCode;
+
+/**
+ * Валидируем plan_code с логированием и опциональным тостом в DEV.
+ *
+ * @deprecated Prefer toPlanCodeOrFree from '../types' for simpler use cases.
+ * Use this function only if you need the DEV toast notification.
+ */
+export function validatePlanCode(planCode: unknown): PlanCode {
+    if (isPlanCode(planCode)) {
         return planCode;
     }
 
-    const message = `Unknown plan_code received from API: ${String(planCode)}`;
+    const message = `Unknown plan_code received: ${String(planCode)}`;
 
     if (IS_DEV) {
         // eslint-disable-next-line no-console
         console.error(`[Billing] ${message}`);
 
-        // В dev важно быстро увидеть проблему, но alert() блокирует поток и бесит.
-        // showToast использует Telegram showAlert (если есть) или browser alert (как fallback),
-        // но в dev это приемлемо. Если хочешь полностью без попапов — убери строку ниже.
+        // DEV: show toast for visibility (no blocking alert)
         try {
             showToast(`DEV: ${message}`);
         } catch {
-            // ignore (например, если утилита используется в окружении без window)
+            // ignore if toast is unavailable
         }
     } else {
         // eslint-disable-next-line no-console
         console.warn(`[Billing] ${message}, falling back to FREE`);
     }
 
-    return 'FREE';
+    return toPlanCodeOrFree(planCode);
 }
 
 /**
- * Быстрый смысловой хелпер:
- * относится ли код к PRO-подписке.
+ * @deprecated Use isPlanCodePro from '../types' instead.
+ * This is a re-export for backward compatibility.
  */
-export function isPlanCodePro(planCode: BillingPlanCode): boolean {
-    return planCode === 'PRO_MONTHLY' || planCode === 'PRO_YEARLY';
+export function isPlanCodePro(planCode: PlanCode): boolean {
+    return isProPlanCode(planCode);
 }
