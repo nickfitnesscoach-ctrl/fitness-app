@@ -17,7 +17,7 @@
  * @module services/api/trainer
  */
 
-import { fetchWithTimeout, fetchWithRetry, getHeaders, log } from './client';
+import { fetchWithTimeout, getHeaders, log } from './client';
 import { URLS } from './urls';
 import { TELEGRAM_BOT_NAME } from '../../config/env';
 import type { ApplicationResponse, ApplicationStatusApi, ClientDetailsApi } from '../../features/trainer-panel/types';
@@ -131,9 +131,17 @@ export const updateApplicationStatus = async (
 export const getClients = async (): Promise<ClientsResponse> => {
     try {
         log('Fetching clients');
-        const response = await fetchWithRetry(URLS.clients, {
-            headers: getHeaders(),
-        });
+        const response = await fetchWithTimeout(
+            URLS.clients,
+            { headers: getHeaders() },
+            undefined,
+            true // skipAuthCheck to avoid global redirects for admin check
+        );
+
+        if (response.status === 403) {
+            log('User is not an admin, returning empty clients list');
+            return [];
+        }
 
         if (!response.ok) throw new Error('Failed to fetch clients');
         return (await response.json()) as ClientsResponse;

@@ -195,6 +195,7 @@ export function buildTelegramHeaders(): HeadersInit {
             'Content-Type': 'application/json',
             'X-Debug-Mode': 'true',
             'X-Debug-User-Id': String(user.id),
+            'X-Telegram-Init-Data': initData,
             'X-Telegram-ID': String(user.id),
             'X-Telegram-First-Name': encodeURIComponent(user.first_name || ''),
             'X-Telegram-Username': encodeURIComponent(user.username || ''),

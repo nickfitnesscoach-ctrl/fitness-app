@@ -25,6 +25,9 @@ from .throttles import ProfileUpdateThrottle
 logger = logging.getLogger(__name__)
 
 
+from django.conf import settings  # Added import
+
+
 @extend_schema(tags=["Profile"])
 @extend_schema_view(
     get=extend_schema(
@@ -49,6 +52,20 @@ class ProfileView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
     throttle_classes = [ProfileUpdateThrottle]
+
+    def get_throttles(self):
+        """
+        Custom throttling logic:
+        - Disable throttling for GET requests (safe method).
+        - Disable throttling in DEV environment to prevent 429 during development.
+        """
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return []
+
+        if settings.APP_ENV == "dev":
+            return []
+
+        return super().get_throttles()
 
     def get_object(self):
         return self.request.user
