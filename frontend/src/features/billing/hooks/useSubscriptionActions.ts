@@ -20,8 +20,12 @@ interface UseSubscriptionActionsResult {
     handleAddCard: () => Promise<void>;
 }
 
+/**
+ * Мы открываем ссылку оплаты во внешнем браузере/вкладке.
+ * Поэтому здесь обязательно держим tight allowlist по доменам,
+ * чтобы никакой серверный/клиентский баг не превратился в фишинг.
+ */
 const PAYMENT_URL_ALLOWLIST = [
-    // YooKassa / YooMoney commonly used hosts (keep tight; extend only if реально нужно)
     'yookassa.ru',
     'checkout.yookassa.ru',
     'yoomoney.ru',
@@ -39,13 +43,44 @@ function isAllowedPaymentUrl(rawUrl: string): boolean {
     }
 }
 
+/**
+ * Открываем ссылку корректно и в Telegram Mini App, и в обычном браузере.
+ * В TMA важно использовать openLink, иначе Telegram может “съесть” переход.
+ */
 function openExternalLink(url: string): void {
     const isTMA = typeof window !== 'undefined' && Boolean(window.Telegram?.WebApp?.initData);
+
     if (isTMA && window.Telegram?.WebApp?.openLink) {
         window.Telegram.WebApp.openLink(url);
         return;
     }
+
     window.location.href = url;
+}
+
+/**
+ * Достаём понятное сообщение из ошибки.
+ * Иногда backend кладёт JSON в error.message — поддерживаем это.
+ */
+function getReadableErrorMessage(error: unknown, fallback: string): string {
+    if (!(error instanceof Error)) return fallback;
+
+    const raw = (error.message || '').trim();
+    if (!raw) return fallback;
+
+    // поддержка structured JSON: {"message": "..."}
+    if (raw.startsWith('{') && raw.endsWith('}')) {
+        try {
+            const data = JSON.parse(raw);
+            if (typeof data?.message === 'string' && data.message.trim()) {
+                return data.message.trim();
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    return raw || fallback;
 }
 
 export const useSubscriptionActions = ({
@@ -55,14 +90,28 @@ export const useSubscriptionActions = ({
 }: UseSubscriptionActionsParams): UseSubscriptionActionsResult => {
     const billing = useBilling();
 
+    /**
+     * loadingPlanCode — это чисто UI-индикатор:
+     * какой тариф сейчас “крутит спиннер”.
+     * Логику защиты от дублей делает withLock.
+     */
     const [loadingPlanCode, setLoadingPlanCode] = useState<PlanCode | null>(null);
+
+    /**
+     * togglingAutoRenew — общий индикатор “идёт важное действие с подпиской/картой”.
+     * Сейчас он используется и для toggle, и для bind-card — поведение сохраняем.
+     */
     const [togglingAutoRenew, setTogglingAutoRenew] = useState(false);
 
-    // anti double-click / concurrent requests
+    /**
+     * Защита от двойного клика и параллельных запросов.
+     * Важно: ключи разные для разных действий.
+     */
     const inFlightRef = useRef<Set<string>>(new Set());
 
     const withLock = useCallback(async (key: string, fn: () => Promise<void>) => {
         if (inFlightRef.current.has(key)) return;
+
         inFlightRef.current.add(key);
         try {
             await fn();
@@ -73,23 +122,24 @@ export const useSubscriptionActions = ({
 
     const handleSelectPlan = useCallback(
         async (planCode: PlanCode) => {
-            // Block payments in browser debug mode
+            // В debug-режимах оплату блокируем, чтобы случайно не провести реальный платеж.
             if (isBrowserDebug || webAppBrowserDebug) {
                 showToast('Платежи недоступны в режиме отладки браузера');
                 return;
             }
 
             const lockKey = `payment:${planCode}`;
-            await withLock(lockKey, async () => {
-                if (loadingPlanCode) return;
 
+            await withLock(lockKey, async () => {
                 const plan = plans.find((p) => p.code === planCode);
                 if (!plan) {
                     showToast('Тариф не найден');
                     return;
                 }
 
+                // Показываем в UI, что именно этот тариф “в процессе оплаты”
                 setLoadingPlanCode(planCode);
+
                 try {
                     const { confirmation_url } = await api.createPayment({
                         plan_code: planCode,
@@ -101,26 +151,30 @@ export const useSubscriptionActions = ({
                         return;
                     }
 
-                    // SECURITY: prevent open redirect / phishing
+                    // SECURITY: защита от открытого редиректа / подмены ссылки
                     if (!isAllowedPaymentUrl(confirmation_url)) {
                         showToast('Некорректная ссылка оплаты. Попробуйте позже.');
                         return;
                     }
 
-                    // Set polling flag BEFORE redirect to resume polling after return
+                    /**
+                     * Флаг поллинга ставим ДО редиректа:
+                     * чтобы когда пользователь вернётся — мы знали, что нужно проверить статус платежа.
+                     */
                     setPollingFlagForPayment({ targetPlanCode: planCode });
 
                     openExternalLink(confirmation_url);
                 } catch (error) {
+                    // eslint-disable-next-line no-console
                     console.error('[billing] createPayment error:', error);
-                    const msg = error instanceof Error ? error.message : 'Ошибка при оформлении подписки';
-                    showToast(msg);
+
+                    showToast(getReadableErrorMessage(error, 'Ошибка при оформлении подписки'));
                 } finally {
                     setLoadingPlanCode(null);
                 }
             });
         },
-        [isBrowserDebug, webAppBrowserDebug, withLock, loadingPlanCode, plans],
+        [isBrowserDebug, webAppBrowserDebug, withLock, plans],
     );
 
     const handleToggleAutoRenew = useCallback(async () => {
@@ -129,6 +183,11 @@ export const useSubscriptionActions = ({
         await withLock(lockKey, async () => {
             if (togglingAutoRenew) return;
 
+            /**
+             * SSOT — текущее состояние в billing.subscription.
+             * Мы берём значения прямо перед действием,
+             * чтобы не переключать “устаревшее” состояние.
+             */
             const current = billing.subscription;
             const autoRenewAvailable = current?.autorenew_available ?? false;
             const autoRenewEnabled = current?.autorenew_enabled ?? false;
@@ -140,11 +199,12 @@ export const useSubscriptionActions = ({
 
             setTogglingAutoRenew(true);
             try {
-                // Real toggle (SSOT is current subscription state)
                 await billing.setAutoRenew(!autoRenewEnabled);
                 showToast(autoRenewEnabled ? 'Автопродление отключено' : 'Автопродление включено');
             } catch (error) {
+                // eslint-disable-next-line no-console
                 console.error('[billing] setAutoRenew error:', error);
+
                 showToast('Не удалось изменить настройки автопродления');
             } finally {
                 setTogglingAutoRenew(false);
@@ -160,21 +220,16 @@ export const useSubscriptionActions = ({
 
             setTogglingAutoRenew(true);
             try {
-                // addPaymentMethod likely redirects internally; if it returns URL, backend should enforce allowlist
+                /**
+                 * addPaymentMethod обычно сам делает редирект/открытие страницы привязки.
+                 * Поэтому тут просто вызываем и обрабатываем ошибку.
+                 */
                 await billing.addPaymentMethod();
             } catch (error) {
+                // eslint-disable-next-line no-console
                 console.error('[billing] addPaymentMethod error:', error);
-                let errorMessage = 'Не удалось запустить привязку карты';
-                if (error instanceof Error && error.message) {
-                    // support structured JSON errors
-                    try {
-                        const data = JSON.parse(error.message);
-                        errorMessage = data?.message || errorMessage;
-                    } catch {
-                        errorMessage = error.message || errorMessage;
-                    }
-                }
-                showToast(errorMessage);
+
+                showToast(getReadableErrorMessage(error, 'Не удалось запустить привязку карты'));
             } finally {
                 setTogglingAutoRenew(false);
             }
