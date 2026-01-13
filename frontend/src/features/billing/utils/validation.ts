@@ -1,30 +1,21 @@
 /**
- * Validation utilities for billing module
+ * Validation utilities for billing module (DEV-only extras)
  *
  * NOTE: Core validation (isPlanCode, toPlanCodeOrFree, isProPlanCode)
- * is now in billing/types.ts (SSOT). This file provides:
- * - Backward-compatible re-exports
- * - validatePlanCode with toast notification (DEV-only)
+ * is in billing/types.ts (SSOT).
+ *
+ * This file provides validatePlanCode with DEV toast notification.
+ * For most use cases, prefer toPlanCodeOrFree from '../types'.
  */
 
-import { isPlanCode, toPlanCodeOrFree, isProPlanCode, type PlanCode } from '../types';
+import { isPlanCode, toPlanCodeOrFree, type PlanCode } from '../types';
 import { IS_DEV } from '../../../config/env';
 import { showToast } from './notify';
 
-// Re-export from SSOT for backward compatibility
-export { isPlanCode, isProPlanCode };
-
 /**
- * @deprecated Use isPlanCode from '../types' instead.
- * This is an alias for backward compatibility.
- */
-export const assertBillingPlanCode = isPlanCode;
-
-/**
- * Валидируем plan_code с логированием и опциональным тостом в DEV.
+ * Validate plan_code with logging and DEV toast notification.
  *
- * @deprecated Prefer toPlanCodeOrFree from '../types' for simpler use cases.
- * Use this function only if you need the DEV toast notification.
+ * For simpler use cases without toast, use toPlanCodeOrFree from '../types'.
  */
 export function validatePlanCode(planCode: unknown): PlanCode {
     if (isPlanCode(planCode)) {
@@ -49,12 +40,4 @@ export function validatePlanCode(planCode: unknown): PlanCode {
     }
 
     return toPlanCodeOrFree(planCode);
-}
-
-/**
- * @deprecated Use isPlanCodePro from '../types' instead.
- * This is a re-export for backward compatibility.
- */
-export function isPlanCodePro(planCode: PlanCode): boolean {
-    return isProPlanCode(planCode);
 }

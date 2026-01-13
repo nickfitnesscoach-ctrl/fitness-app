@@ -98,8 +98,7 @@ npm run dev
 import { SubscriptionPage, SubscriptionDetailsPage, PaymentHistoryPage } from './features/billing';
 
 // Импорт компонентов
-import { PlanCard, SubscriptionHeader, AdminTestPaymentCard, PaymentHistoryList } from './features/billing';
-// Note: BasicPlanCard, PremiumMonthCard, PremiumProCard используются внутри PlanCard
+import { PlanCard, SubscriptionHeader } from './features/billing';
 
 // Импорт хуков
 import { 
@@ -110,12 +109,15 @@ import {
   usePaymentPolling
 } from './features/billing';
 
-// Импорт утилит
+// Импорт SSOT типов и утилит
 import { 
-  showToast, 
-  validatePlanCode,
+  PLAN_CODES,
+  PLAN_CODE_ORDER,
+  isPlanCode,
+  toPlanCodeOrFree,
+  isProPlanCode,
   formatBillingDate,
-  buildPlanCardState 
+  showToast
 } from './features/billing';
 
 // Импорт типов

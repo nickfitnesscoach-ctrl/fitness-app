@@ -33,14 +33,9 @@ interface PlanCardState {
  *   (is_active, payment_method, autorenew_enabled)
  * - `billing.billingMe` — source of truth for exact plan flavor
  *   (plan_code: FREE | PRO_MONTHLY | PRO_YEARLY)
- *
- * Note: `subscription` param is provided for convenience and should match
- * `billing.subscription`. This duplication will be removed in a future cleanup.
  */
 interface BuildPlanCardStateParams {
     plan: SubscriptionPlan;
-    /** @deprecated Use billing.subscription instead */
-    subscription: SubscriptionDetails | null;
     billing: BillingContextData;
     isPro: boolean;
     isExpired: boolean;
@@ -121,7 +116,6 @@ function ProStatusLine({
  */
 export const buildPlanCardState = ({
     plan,
-    subscription,
     billing,
     isPro,
     isExpired,
@@ -140,6 +134,7 @@ export const buildPlanCardState = ({
     let bottomContent: React.ReactNode | undefined;
 
     // Если подписка ещё не загружена — не пытаемся “угадывать” состояние
+    const subscription = billing.subscription;
     if (!subscription) {
         return { isCurrent, disabled, customButtonText, bottomContent };
     }

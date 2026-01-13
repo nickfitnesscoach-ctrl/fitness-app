@@ -74,14 +74,13 @@ const SubscriptionPage: React.FC = () => {
      */
     const cardContext = useMemo(() => {
         return {
-            subscription,
             billing: {
                 subscription: billing.subscription,
                 billingMe: billing.billingMe,
             },
             isPro: subscriptionStatus.isPro,
             isExpired: subscriptionStatus.isExpired,
-            expiresAt: subscription?.expires_at ?? null,
+            expiresAt: billing.subscription?.expires_at ?? null,
             loadingPlanCode,
             togglingAutoRenew,
             handleSelectPlan,
@@ -90,7 +89,6 @@ const SubscriptionPage: React.FC = () => {
             navigate,
         };
     }, [
-        subscription,
         billing.subscription,
         billing.billingMe,
         subscriptionStatus.isPro,

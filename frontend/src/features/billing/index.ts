@@ -39,14 +39,6 @@ export { PLAN_CODES, PLAN_CODE_ORDER, isPlanCode, toPlanCodeOrFree, isProPlanCod
 export { formatBillingDate, formatShortDate, formatDate } from './utils/date';
 export { showToast, showSuccess, showError } from './utils/notify';
 
-// Deprecated validators (for backward compatibility)
-/** @deprecated Use isPlanCode from this module */
-export { assertBillingPlanCode } from './utils/validation';
-/** @deprecated Use toPlanCodeOrFree from this module */
-export { validatePlanCode } from './utils/validation';
-/** @deprecated Use isProPlanCode from this module */
-export { isPlanCodePro } from './utils/validation';
-
 // ==============================
 // Public: Components (часто используемые снаружи)
 // ==============================
