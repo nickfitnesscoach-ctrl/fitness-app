@@ -2,8 +2,8 @@
  * Frontend SSOT for plan marketing copy.
  *
  * ВАЖНО:
- * - Billing truth (price, duration_days, old_price) comes from API
- * - Marketing copy (displayName, features, badge, order) lives here
+ * - Billing truth (price, duration_days, old_price) comes from API (Django).
+ * - Marketing copy (displayName, features, badge, order) lives here.
  *
  * Если нужно поменять тексты на карточках — правь ТОЛЬКО этот файл.
  * Если нужно поменять цену/скидку — правь Django Admin.
@@ -18,7 +18,7 @@ export interface PlanCopyConfig {
     badge?: string;
     /** Список ценностей/фич для карточки */
     features: string[];
-    /** Якорная цена (fallback, если API вернул null) */
+    /** Якорная цена (fallback, если API вернул null). В идеале временно. */
     oldPrice?: number;
     /** Порядок отображения (меньше = выше) */
     order: number;
@@ -28,8 +28,12 @@ export interface PlanCopyConfig {
  * Marketing copy for known plan codes.
  *
  * Порядок: PRO Год (1) → PRO Месяц (2) → Базовый (3)
+ *
+ * Примечание:
+ * - oldPrice здесь — только fallback на период заполнения БД (old_price).
+ *   После заполнения в Django Admin можно удалить.
  */
-export const PLAN_COPY: Record<string, PlanCopyConfig> = {
+export const PLAN_COPY = {
     PRO_YEARLY: {
         displayName: 'PRO Год',
         badge: 'ВЫБОР ПОЛЬЗОВАТЕЛЕЙ',
@@ -39,7 +43,7 @@ export const PLAN_COPY: Record<string, PlanCopyConfig> = {
             'Аудит твоего питания',
             'План выхода на цель',
         ],
-        oldPrice: 4990,  // Fallback if DB not yet populated
+        oldPrice: 4990, // [TEMP] fallback if DB old_price is null
         order: 1,
     },
     PRO_MONTHLY: {
@@ -61,7 +65,9 @@ export const PLAN_COPY: Record<string, PlanCopyConfig> = {
         ],
         order: 3,
     },
-};
+} as const satisfies Record<string, PlanCopyConfig>;
+
+type KnownPlanCode = keyof typeof PLAN_COPY;
 
 /**
  * Get plan copy with safe fallback for unknown codes.
@@ -70,14 +76,12 @@ export const PLAN_COPY: Record<string, PlanCopyConfig> = {
  * @returns PlanCopyConfig (guaranteed, never undefined)
  */
 export function getPlanCopy(code: string): PlanCopyConfig {
-    const copy = code in PLAN_COPY ? PLAN_COPY[code] : null;
+    const copy = PLAN_COPY[code as KnownPlanCode];
 
     if (copy) {
-        // Defensive: ensure features is always an array
-        return {
-            ...copy,
-            features: Array.isArray(copy.features) ? copy.features : [],
-        };
+        // Defensive: ensure features is always an array (even if someone edits PLAN_COPY wrong)
+        const features = Array.isArray(copy.features) ? copy.features : [];
+        return { ...copy, features };
     }
 
     // Fallback for unknown plan codes: show code as displayName, no features

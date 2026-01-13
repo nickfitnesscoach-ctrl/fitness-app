@@ -71,6 +71,9 @@ features/billing/
 ├── internal.ts           # Внутренние экспорты (только для billing)
 ├── types.ts              # SSOT: PlanCode, PLAN_CODES, type guards
 │
+├── config/
+│   └── planCopy.ts       # SSOT: маркетинговые тексты (displayName, features, badge)
+│
 ├── pages/
 │   ├── SubscriptionPage.tsx        # /subscription — выбор плана
 │   ├── SubscriptionDetailsPage.tsx # /settings/subscription — управление
@@ -102,10 +105,11 @@ features/billing/
 │   └── validation.ts      # Дополнительные валидаторы
 │
 ├── __mocks__/
-│   └── plans.ts           # Mock-данные для DEV режима
+│   └── subscriptionPlans.ts  # Mock-данные для DEV режима
 │
 └── docs/
-    └── README.md          # (этот файл)
+    ├── README.md                    # Основная документация
+    └── BILLING_SSOT_REFACTORING.md  # Детали рефакторинга SSOT
 ```
 
 ---
@@ -460,6 +464,8 @@ import { BasicPlanCard, PremiumMonthCard } from '../internal';
 
 ## Связанная документация
 
+- `docs/BILLING_SSOT_REFACTORING.md` — детали разделения billing/marketing SSOT
+
 Архивные документы (могут быть устаревшими):
 
 - `docs/archive/ERROR_HANDLING.md` — обработка ошибок
@@ -467,6 +473,8 @@ import { BasicPlanCard, PremiumMonthCard } from '../internal';
 
 ---
 
-> **Версия документации:** 2025-01-13
+> **Версия документации:** 2026-01-13 v2.0
 >
-> **SSOT файл:** `features/billing/types.ts`
+> **SSOT файлы:**
+> - Типы: `features/billing/types.ts`
+> - Маркетинг: `features/billing/config/planCopy.ts`
