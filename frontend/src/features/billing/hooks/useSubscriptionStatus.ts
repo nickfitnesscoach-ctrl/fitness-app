@@ -45,13 +45,13 @@ export const useSubscriptionStatus = (
      * Сейчас они статичны, но вынесены здесь,
      * чтобы вся логика подписки была в одном месте.
      */
-    const headerTitle = 'Премиум доступ';
-    const headerSubtitle = 'Получи максимум от EatFit24';
+    const headerTitle = 'ПОЛНЫЙ КОНТРОЛЬ ПИТАНИЯ';
+    const headerSubtitle = '';
 
     /**
      * Основной статус, который пользователь видит сверху экрана
      */
-    let topStatusText = 'Тариф: Базовый';
+    let topStatusText = 'БЕЗ ЛИМИТОВ';
 
     if (isPro && expiresAt) {
         topStatusText = `Pro активен до ${formatDate(expiresAt)}`;

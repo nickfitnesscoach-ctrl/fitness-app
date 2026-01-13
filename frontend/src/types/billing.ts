@@ -4,12 +4,6 @@
 
 import type { PlanCode } from '../features/billing/types';
 
-/**
- * @deprecated Use PlanCode from 'features/billing/types' instead.
- * This alias exists for backward compatibility with existing code.
- */
-export type BillingPlanCode = PlanCode;
-
 // Re-export for convenience
 export type { PlanCode } from '../features/billing/types';
 
@@ -18,7 +12,7 @@ export type { PlanCode } from '../features/billing/types';
  * Основная информация о статусе подписки и лимитах
  */
 export interface BillingMe {
-    plan_code: BillingPlanCode;
+    plan_code: PlanCode;
     plan_name: string;
     expires_at: string | null;
     is_active: boolean;
@@ -69,7 +63,7 @@ export interface CreatePaymentResponse {
 export interface DailyLimitError {
     error: 'DAILY_LIMIT_REACHED';
     detail: string;
-    current_plan: BillingPlanCode;
+    current_plan: PlanCode;
     daily_limit: number;
     used_today: number;
 }

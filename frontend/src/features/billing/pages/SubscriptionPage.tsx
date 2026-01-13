@@ -11,6 +11,18 @@ import { useSubscriptionActions } from '../hooks/useSubscriptionActions';
 import { SubscriptionHeader } from '../components/SubscriptionHeader';
 import { buildPlanCardState } from '../utils/planCardState';
 import { PageContainer } from '../../../components/shared/PageContainer';
+import type { PlanCode } from '../types';
+
+/**
+ * Порядок отображения тарифных карточек на экране подписки.
+ * Фиксированный порядок для UX/upsell: PRO Год (выше, с бейджем "Выбор пользователей") → PRO Месяц → Базовый.
+ * Неизвестные планы отображаются в конце.
+ */
+const PLAN_DISPLAY_ORDER: Record<PlanCode, number> = {
+    PRO_YEARLY: 1,
+    PRO_MONTHLY: 2,
+    FREE: 3,
+};
 
 const SubscriptionPage: React.FC = () => {
     const billing = useBilling();
@@ -99,22 +111,29 @@ const SubscriptionPage: React.FC = () => {
 
                             {!loadingPlans &&
                                 !error &&
-                                plans.map((plan) => {
-                                    const cardState = buildPlanCardState({ plan, ...cardContext });
+                                [...plans]
+                                    .sort((a, b) => {
+                                        // Сортировка по фиксированному порядку для UX/upsell (PRO Год → PRO Месяц → Базовый)
+                                        const orderA = PLAN_DISPLAY_ORDER[a.code as PlanCode] ?? 999;
+                                        const orderB = PLAN_DISPLAY_ORDER[b.code as PlanCode] ?? 999;
+                                        return orderA - orderB;
+                                    })
+                                    .map((plan) => {
+                                        const cardState = buildPlanCardState({ plan, ...cardContext });
 
-                                    return (
-                                        <PlanCard
-                                            key={plan.code}
-                                            plan={plan}
-                                            isCurrent={cardState.isCurrent}
-                                            isLoading={loadingPlanCode === plan.code}
-                                            onSelect={handleSelectPlan}
-                                            customButtonText={cardState.customButtonText}
-                                            disabled={cardState.disabled}
-                                            bottomContent={cardState.bottomContent}
-                                        />
-                                    );
-                                })}
+                                        return (
+                                            <PlanCard
+                                                key={plan.code}
+                                                plan={plan}
+                                                isCurrent={cardState.isCurrent}
+                                                isLoading={loadingPlanCode === plan.code}
+                                                onSelect={handleSelectPlan}
+                                                customButtonText={cardState.customButtonText}
+                                                disabled={cardState.disabled}
+                                                bottomContent={cardState.bottomContent}
+                                            />
+                                        );
+                                    })}
                         </div>
 
                         <div className="max-w-md mx-auto text-center text-[10px] text-slate-400 leading-tight uppercase tracking-wider opacity-60">
