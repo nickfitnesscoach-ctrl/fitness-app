@@ -348,7 +348,9 @@ def recognize_food_async(
     # P0-2: Обрабатываем controlled error
     if meta.get("is_error"):
         error_code = meta.get("error_code", "UNKNOWN")
-        error_message = meta.get("error_message", "AI processing failed")
+        error_message = meta.get(
+            "error_message", "Не удалось распознать еду на фото. Попробуйте ещё раз."
+        )
         logger.warning(
             "[AI] controlled error task=%s meal_id=%s photo_id=%s rid=%s code=%s",
             task_id,

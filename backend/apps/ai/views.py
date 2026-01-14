@@ -136,7 +136,10 @@ class AIRecognitionView(APIView):
             # Only allow retry on FAILED/CANCELLED photos
             if meal_photo.status not in ("FAILED", "CANCELLED"):
                 resp = Response(
-                    {"error": "INVALID_STATUS", "message": "Можно повторить только неудавшиеся фото"},
+                    {
+                        "error": "INVALID_STATUS",
+                        "message": "Можно повторить только неудавшиеся фото",
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
                 resp["X-Request-ID"] = request_id
@@ -349,7 +352,7 @@ class TaskStatusView(APIView):
                 "task_id": task_id,
                 "status": "failed",
                 "state": state,
-                "error": "AI processing failed",
+                "error": "Произошла ошибка при обработке. Попробуйте ещё раз.",
             }
             resp = Response(data, status=status.HTTP_200_OK)
             resp["X-Request-ID"] = request_id
