@@ -84,6 +84,15 @@ export const AI_ERROR_CODES = {
     PREPROCESS_DECODE_FAILED: 'PREPROCESS_DECODE_FAILED',
     PREPROCESS_TIMEOUT: 'PREPROCESS_TIMEOUT',
     PREPROCESS_INVALID_IMAGE: 'PREPROCESS_INVALID_IMAGE',
+    // Upstream errors (from AI-Proxy)
+    UPSTREAM_TIMEOUT: 'UPSTREAM_TIMEOUT',
+    UPSTREAM_ERROR: 'UPSTREAM_ERROR',
+    UPSTREAM_INVALID_RESPONSE: 'UPSTREAM_INVALID_RESPONSE',
+    IMAGE_TOO_LARGE: 'IMAGE_TOO_LARGE',
+    UNSUPPORTED_FORMAT: 'UNSUPPORTED_FORMAT',
+    RATE_LIMIT: 'RATE_LIMIT',
+    INTERNAL_ERROR: 'INTERNAL_ERROR',
+    INVALID_IMAGE: 'INVALID_IMAGE',
 } as const;
 
 export type AiErrorCode = typeof AI_ERROR_CODES[keyof typeof AI_ERROR_CODES];
@@ -118,6 +127,15 @@ export const AI_ERROR_MESSAGES: Record<string, string> = {
     [AI_ERROR_CODES.PREPROCESS_TIMEOUT]: 'Фото слишком тяжёлое. Попробуйте другое или сделайте скриншот.',
     [AI_ERROR_CODES.PREPROCESS_INVALID_IMAGE]: 'Выбранный файл не является изображением.',
     [AI_ERROR_CODES.CANCELLED]: 'Отменено',
+    // Upstream errors (from AI-Proxy)
+    [AI_ERROR_CODES.UPSTREAM_TIMEOUT]: 'Сервер распознавания не ответил вовремя. Попробуйте ещё раз.',
+    [AI_ERROR_CODES.UPSTREAM_ERROR]: 'Сервис распознавания временно недоступен.',
+    [AI_ERROR_CODES.UPSTREAM_INVALID_RESPONSE]: 'Ошибка при обработке ответа. Попробуйте ещё раз.',
+    [AI_ERROR_CODES.IMAGE_TOO_LARGE]: 'Фото слишком большое. Попробуйте сделать другое фото.',
+    [AI_ERROR_CODES.UNSUPPORTED_FORMAT]: 'Неподдерживаемый формат изображения.',
+    [AI_ERROR_CODES.RATE_LIMIT]: 'Слишком много запросов. Подождите немного.',
+    [AI_ERROR_CODES.INTERNAL_ERROR]: 'Внутренняя ошибка сервера. Попробуйте позже.',
+    [AI_ERROR_CODES.INVALID_IMAGE]: 'Не удалось обработать изображение. Попробуйте другое фото.',
     // Backend throttling message pattern
     'Request was throttled': 'Дневной лимит исчерпан. Оформите PRO для безлимита.',
 };

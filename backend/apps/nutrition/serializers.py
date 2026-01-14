@@ -4,8 +4,10 @@ Serializers for nutrition app - meals, food items, daily goals.
 """
 
 from datetime import date
+
 from rest_framework import serializers
-from .models import Meal, FoodItem, MealPhoto, DailyGoal
+
+from .models import DailyGoal, FoodItem, Meal, MealPhoto
 
 
 class FoodItemSerializer(serializers.ModelSerializer):
@@ -18,11 +20,18 @@ class FoodItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = FoodItem
         fields = [
-            'id', 'name', 'photo', 'grams',
-            'calories', 'protein', 'fat', 'carbohydrates',
-            'created_at', 'updated_at'
+            "id",
+            "name",
+            "photo",
+            "grams",
+            "calories",
+            "protein",
+            "fat",
+            "carbohydrates",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ["id", "created_at", "updated_at"]
 
     def get_photo(self, obj):
         """Return relative URL for photo (not absolute)."""
@@ -64,15 +73,28 @@ class MealPhotoSerializer(serializers.ModelSerializer):
     """
 
     image_url = serializers.SerializerMethodField()
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = MealPhoto
         fields = [
-            'id', 'image_url', 'status', 'status_display',
-            'error_message', 'created_at'
+            "id",
+            "image_url",
+            "status",
+            "status_display",
+            "error_message",
+            "error_code",
+            "created_at",
         ]
-        read_only_fields = ['id', 'image_url', 'status', 'status_display', 'error_message', 'created_at']
+        read_only_fields = [
+            "id",
+            "image_url",
+            "status",
+            "status_display",
+            "error_message",
+            "error_code",
+            "created_at",
+        ]
 
     def get_image_url(self, obj):
         """Return URL for photo image."""
@@ -90,8 +112,8 @@ class MealSerializer(serializers.ModelSerializer):
 
     items = FoodItemSerializer(many=True, read_only=True)
     photos = MealPhotoSerializer(many=True, read_only=True)
-    meal_type_display = serializers.CharField(source='get_meal_type_display', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    meal_type_display = serializers.CharField(source="get_meal_type_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
     total = serializers.SerializerMethodField()
     photo_url = serializers.SerializerMethodField()
     photo_count = serializers.SerializerMethodField()
@@ -99,18 +121,28 @@ class MealSerializer(serializers.ModelSerializer):
     class Meta:
         model = Meal
         fields = [
-            'id', 'meal_type', 'meal_type_display', 'date', 'status', 'status_display',
-            'created_at', 'items', 'photos', 'total', 'photo_url', 'photo_count'
+            "id",
+            "meal_type",
+            "meal_type_display",
+            "date",
+            "status",
+            "status_display",
+            "created_at",
+            "items",
+            "photos",
+            "total",
+            "photo_url",
+            "photo_count",
         ]
-        read_only_fields = ['id', 'created_at', 'status', 'status_display']
+        read_only_fields = ["id", "created_at", "status", "status_display"]
 
     def get_total(self, obj):
         """Calculate total nutrition for all items in meal."""
         return {
-            'calories': float(obj.total_calories),
-            'protein': float(obj.total_protein),
-            'fat': float(obj.total_fat),
-            'carbohydrates': float(obj.total_carbohydrates),
+            "calories": float(obj.total_calories),
+            "protein": float(obj.total_protein),
+            "fat": float(obj.total_fat),
+            "carbohydrates": float(obj.total_carbohydrates),
         }
 
     def get_photo_url(self, obj):
@@ -122,7 +154,7 @@ class MealSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         # Try new MealPhoto model first
-        first_photo = obj.photos.filter(status='SUCCESS').first()
+        first_photo = obj.photos.filter(status="SUCCESS").first()
         if first_photo and first_photo.image:
             url = first_photo.image.url
             if request is not None:
@@ -140,7 +172,7 @@ class MealSerializer(serializers.ModelSerializer):
 
     def get_photo_count(self, obj):
         """Return count of successful photos for this meal."""
-        return obj.photos.filter(status='SUCCESS').count()
+        return obj.photos.filter(status="SUCCESS").count()
 
     def validate_date(self, value):
         """Validate that date is not in the future."""
@@ -155,8 +187,8 @@ class MealCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Meal
-        fields = ['id', 'meal_type', 'date', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ["id", "meal_type", "date", "created_at"]
+        read_only_fields = ["id", "created_at"]
 
     def validate_date(self, value):
         """Validate that date is not in the future."""
@@ -167,7 +199,7 @@ class MealCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create meal for current user."""
-        validated_data['user'] = self.context['request'].user
+        validated_data["user"] = self.context["request"].user
         return super().create(validated_data)
 
 
@@ -179,17 +211,25 @@ class FoodItemCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = FoodItem
         fields = [
-            'id', 'meal_id', 'name', 'photo', 'grams',
-            'calories', 'protein', 'fat', 'carbohydrates',
-            'created_at', 'updated_at'
+            "id",
+            "meal_id",
+            "name",
+            "photo",
+            "grams",
+            "calories",
+            "protein",
+            "fat",
+            "carbohydrates",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_meal_id(self, value):
         """Validate that meal exists and belongs to current user."""
-        request = self.context.get('request')
+        request = self.context.get("request")
         try:
-            meal = Meal.objects.get(id=value, user=request.user)
+            Meal.objects.get(id=value, user=request.user)
         except Meal.DoesNotExist:
             # B-007 FIX: Fixed encoding - proper UTF-8 Cyrillic
             raise serializers.ValidationError("Приём пищи не найден")
@@ -197,9 +237,9 @@ class FoodItemCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create food item for specified meal."""
-        meal_id = validated_data.pop('meal_id')
+        meal_id = validated_data.pop("meal_id")
         meal = Meal.objects.get(id=meal_id)
-        validated_data['meal'] = meal
+        validated_data["meal"] = meal
         return super().create(validated_data)
 
 
@@ -209,10 +249,17 @@ class DailyGoalSerializer(serializers.ModelSerializer):
     class Meta:
         model = DailyGoal
         fields = [
-            'id', 'calories', 'protein', 'fat', 'carbohydrates',
-            'source', 'is_active', 'created_at', 'updated_at'
+            "id",
+            "calories",
+            "protein",
+            "fat",
+            "carbohydrates",
+            "source",
+            "is_active",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_calories(self, value):
         """Validate that calories is reasonable."""
@@ -226,21 +273,21 @@ class DailyGoalSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create daily goal for current user."""
-        request = self.context.get('request')
+        request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             raise serializers.ValidationError("User must be authenticated")
 
-        validated_data['user'] = request.user
+        validated_data["user"] = request.user
 
         # Деактивируем все предыдущие цели при создании новой активной
-        if validated_data.get('is_active', True):
+        if validated_data.get("is_active", True):
             DailyGoal.objects.filter(user=request.user, is_active=True).update(is_active=False)
 
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         """Update daily goal ensuring user ownership."""
-        request = self.context.get('request')
+        request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             raise serializers.ValidationError("User must be authenticated")
 
@@ -249,11 +296,10 @@ class DailyGoalSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Cannot update goal of another user")
 
         # Если устанавливаем is_active=True, деактивируем другие цели
-        if validated_data.get('is_active', False) and not instance.is_active:
-            DailyGoal.objects.filter(
-                user=request.user,
-                is_active=True
-            ).exclude(id=instance.id).update(is_active=False)
+        if validated_data.get("is_active", False) and not instance.is_active:
+            DailyGoal.objects.filter(user=request.user, is_active=True).exclude(
+                id=instance.id
+            ).update(is_active=False)
 
         return super().update(instance, validated_data)
 

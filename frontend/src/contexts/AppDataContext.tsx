@@ -42,6 +42,9 @@ interface AppDataContextType {
     // Error states
     error: string | null;
 
+    // Direct profile update (SSOT: use server response)
+    setProfile: (profile: Profile | null) => void;
+
     // Manual refresh methods (for user actions like save)
     refreshProfile: () => Promise<void>;
     refreshGoals: () => Promise<void>;
@@ -192,6 +195,7 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 isProfileLoading,
                 isGoalsLoading,
                 error,
+                setProfile,
                 refreshProfile,
                 refreshGoals,
                 clearCache,

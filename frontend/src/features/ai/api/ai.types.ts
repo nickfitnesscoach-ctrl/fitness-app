@@ -54,6 +54,7 @@ export interface TaskResult {
     totals: Partial<RecognitionTotals> | {}; // backend гарантирует объект, но может быть пустой
     error?: string;
     error_message?: string;
+    error_code?: string; // Structured error code from backend (UPSTREAM_TIMEOUT, INVALID_IMAGE, etc.)
     meta?: Record<string, any>;
     total_calories?: number; // иногда приходит
 }

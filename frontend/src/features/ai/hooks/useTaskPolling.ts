@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTaskStatus, mapToAnalysisResult } from '../api';
 import type { TaskStatusResponse, AnalysisResult } from '../api';
-import { POLLING_CONFIG } from '../model';
+import { POLLING_CONFIG, getAiErrorMessage } from '../model';
 
 export type PollingStatus = 'idle' | 'polling' | 'success' | 'failed' | 'timeout';
 
@@ -83,7 +83,9 @@ export function useTaskPolling(
                     const mapped = mapToAnalysisResult(data);
                     if (!mapped) {
                         setStatus('failed');
-                        setError(data.result?.error_message || 'Мы не смогли распознать еду на фото');
+                        const code = data.result?.error_code;
+                        const msg = getAiErrorMessage(code, data.result?.error_message);
+                        setError(msg);
                         return;
                     }
                     setStatus('success');
@@ -93,7 +95,9 @@ export function useTaskPolling(
 
                 if (data.state === 'FAILURE' || data.status === 'failed') {
                     setStatus('failed');
-                    setError(data.result?.error_message || data.error || 'Ошибка обработки фото');
+                    const code = data.result?.error_code || data.error;
+                    const msg = getAiErrorMessage(code, data.result?.error_message);
+                    setError(msg);
                     return;
                 }
 
@@ -108,7 +112,7 @@ export function useTaskPolling(
                 }
 
                 setStatus('failed');
-                setError(err?.message || 'Ошибка сети. Проверьте подключение.');
+                setError(getAiErrorMessage('NETWORK_ERROR', err?.message));
             }
         };
 

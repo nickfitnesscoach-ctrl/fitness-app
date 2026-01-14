@@ -19,6 +19,11 @@ export interface Profile {
     timezone?: string; // e.g., "Europe/Moscow"
     avatar_url?: string | null; // URL to user's avatar image
 
+    // Computed fields from backend (read-only)
+    age?: number | null;
+    bmi?: number | null;
+    is_complete?: boolean; // True if all required fields are filled
+
     // Metadata
     created_at?: string;
     updated_at?: string;

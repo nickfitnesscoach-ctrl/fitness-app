@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, Activity, Calendar, Ruler, Weight, Target, User } from 'lucide-react';
 import { api } from '../services/api';
 import { Profile } from '../types/profile';
+import { useAppData } from '../contexts/AppDataContext';
 
 export type { Profile };
 
@@ -13,6 +14,7 @@ interface ProfileEditModalProps {
 }
 
 const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, profile, onProfileUpdated }) => {
+    const { setProfile } = useAppData();
     const [formData, setFormData] = useState<Partial<Profile>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -87,9 +89,11 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
             }
 
             console.log('[ProfileEditModal] Updating profile with payload:', payload);
-            const updated = await api.updateProfile(payload);
-            console.log('[ProfileEditModal] Profile updated successfully:', updated);
-            onProfileUpdated(updated);
+            const saved = await api.updateProfile(payload);
+            console.log('[ProfileEditModal] Profile updated successfully:', saved);
+            // SSOT: Update context directly with server response
+            setProfile(saved);
+            onProfileUpdated(saved);
             onClose();
         } catch (err: any) {
             console.error('[ProfileEditModal] Failed to update profile:', err);

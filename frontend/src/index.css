@@ -48,3 +48,43 @@ html, body {
     margin-right: var(--page-px);
   }
 }
+
+/* ============================================================
+   iOS WebView Input Fix
+   Ensures text is readable in Telegram WebView on iOS
+   ============================================================ */
+input,
+select,
+textarea {
+  color: var(--tg-theme-text-color, #1f2937);
+  -webkit-text-fill-color: var(--tg-theme-text-color, #1f2937);
+  opacity: 1; /* Prevent iOS reduced opacity on disabled inputs */
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--tg-theme-hint-color, #9ca3af);
+  -webkit-text-fill-color: var(--tg-theme-hint-color, #9ca3af);
+}
+
+/* iOS date/time input fix */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--tg-theme-text-color, #1f2937);
+  -webkit-text-fill-color: var(--tg-theme-text-color, #1f2937);
+}
+
+/* iOS date picker pseudo-elements */
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+  color: var(--tg-theme-text-color, #1f2937);
+}
+
+/* Ensure number inputs are also readable */
+input[type="number"] {
+  color: var(--tg-theme-text-color, #1f2937);
+  -webkit-text-fill-color: var(--tg-theme-text-color, #1f2937);
+}

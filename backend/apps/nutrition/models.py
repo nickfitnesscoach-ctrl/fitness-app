@@ -188,6 +188,13 @@ class MealPhoto(models.Model):
         max_length=20, choices=STATUS_CHOICES, default="PENDING", verbose_name="Статус обработки"
     )
     error_message = models.TextField(blank=True, null=True, verbose_name="Сообщение об ошибке")
+    error_code = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name="Код ошибки",
+        help_text="Структурированный код ошибки: UPSTREAM_TIMEOUT, INVALID_IMAGE, RATE_LIMIT, etc.",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
 
     class Meta:
