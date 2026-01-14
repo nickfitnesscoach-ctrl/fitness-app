@@ -93,14 +93,9 @@ def _handle_payment_succeeded(payload: Dict[str, Any], *, trace_id: str = None) 
         raise ValueError("payment.succeeded payload has no object.id")
 
     with transaction.atomic():
-        # IMPORTANT: do NOT select_related() on nullable FK fields here.
-        # subscription AND plan are nullable -> LEFT OUTER JOIN -> PostgreSQL forbids FOR UPDATE on nullable side.
-        # We only select_related("user") which is NOT NULL.
-        payment = (
-            Payment.objects.select_for_update()
-            .select_related("user")
-            .get(yookassa_payment_id=yk_payment_id)
-        )
+        # CRITICAL SAFETY: Use helper function to avoid FOR UPDATE + OUTER JOIN crash
+        # See: lock_payment_by_yookassa_id() docstring and production incident 2026-01-14
+        payment = lock_payment_by_yookassa_id(yk_payment_id)
 
         # Идемпотентность по внутреннему статусу:
         # если уже успешно обработан — выходим без ошибок
@@ -254,10 +249,9 @@ def _handle_payment_canceled(payload: Dict[str, Any], *, trace_id: str = None) -
         raise ValueError("payment.canceled payload has no object.id")
 
     with transaction.atomic():
-        # IMPORTANT: do NOT select_related("subscription") here.
-        # subscription is nullable FK -> LEFT OUTER JOIN -> PostgreSQL forbids FOR UPDATE on nullable side.
-        # We access subscription via lazy loading (payment.subscription) which is safe.
-        payment = Payment.objects.select_for_update().get(yookassa_payment_id=yk_payment_id)
+        # CRITICAL SAFETY: Use helper function to avoid FOR UPDATE + OUTER JOIN crash
+        # See: lock_payment_by_yookassa_id() docstring and production incident 2026-01-14
+        payment = lock_payment_by_yookassa_id(yk_payment_id)
 
         if payment.status in {"SUCCEEDED", "REFUNDED"}:
             logger.info(
@@ -322,7 +316,9 @@ def _handle_payment_waiting_for_capture(payload: Dict[str, Any], *, trace_id: st
         raise ValueError("payment.waiting_for_capture payload has no object.id")
 
     with transaction.atomic():
-        payment = Payment.objects.select_for_update().get(yookassa_payment_id=yk_payment_id)
+        # CRITICAL SAFETY: Use helper function to avoid FOR UPDATE + OUTER JOIN crash
+        # See: lock_payment_by_yookassa_id() docstring and production incident 2026-01-14
+        payment = lock_payment_by_yookassa_id(yk_payment_id)
 
         # Если уже финализирован — не трогаем
         if payment.status in {"SUCCEEDED", "CANCELED", "FAILED", "REFUNDED"}:
@@ -365,9 +361,10 @@ def _handle_refund_succeeded(payload: Dict[str, Any], *, trace_id: str = None) -
         amount_value = None
 
     with transaction.atomic():
-        payment = (
-            Payment.objects.select_for_update().filter(yookassa_payment_id=yk_payment_id).first()
-        )
+        # CRITICAL SAFETY: Use helper function to avoid FOR UPDATE + OUTER JOIN crash
+        # Using optional variant because refund webhook may arrive before payment webhook
+        # See: lock_payment_by_yookassa_id_optional() docstring and production incident 2026-01-14
+        payment = lock_payment_by_yookassa_id_optional(yk_payment_id)
 
         # 1) Refund запись (для админки/учёта)
         refund, created = Refund.objects.get_or_create(
@@ -410,6 +407,71 @@ def _handle_refund_succeeded(payload: Dict[str, Any], *, trace_id: str = None) -
 # ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
+
+
+def lock_payment_by_yookassa_id(yookassa_payment_id: str) -> Payment:
+    """
+    Safely lock Payment by YooKassa ID without causing PostgreSQL FOR UPDATE errors.
+
+    CRITICAL SAFETY: This function does NOT use select_related() to avoid the PostgreSQL error:
+    "FOR UPDATE cannot be applied to the nullable side of an outer join"
+
+    Payment model FK constraints:
+    - user: NOT NULL → can be fetched separately after lock if needed
+    - plan: nullable → MUST access via lazy loading (payment.plan)
+    - subscription: nullable → MUST access via lazy loading (payment.subscription)
+
+    Lock strategy:
+    - Lock ONLY the base Payment table (no JOINs)
+    - Access related objects AFTER lock is acquired via lazy loading
+    - Lazy loading is safe because it happens within the same transaction
+
+    Args:
+        yookassa_payment_id: YooKassa payment UUID
+
+    Returns:
+        Locked Payment instance
+
+    Raises:
+        Payment.DoesNotExist: If payment not found
+
+    Example:
+        with transaction.atomic():
+            payment = lock_payment_by_yookassa_id("30f8c80c-000f-5000-b000-175b519519f5")
+            # Access subscription AFTER lock (separate query within transaction)
+            if payment.subscription_id:
+                subscription = payment.subscription
+
+    See: production incident 2026-01-14 (payment.canceled crash)
+    """
+    return Payment.objects.select_for_update().get(yookassa_payment_id=yookassa_payment_id)
+
+
+def lock_payment_by_yookassa_id_optional(yookassa_payment_id: str) -> Optional[Payment]:
+    """
+    Safely lock Payment by YooKassa ID (returns None if not found).
+
+    Used in refund.succeeded handler where payment may not exist yet
+    (refund webhook can arrive before payment webhook in rare cases).
+
+    CRITICAL SAFETY: Same as lock_payment_by_yookassa_id() but uses .first() instead of .get()
+
+    Args:
+        yookassa_payment_id: YooKassa payment UUID
+
+    Returns:
+        Locked Payment instance or None if not found
+
+    Example:
+        with transaction.atomic():
+            payment = lock_payment_by_yookassa_id_optional("30f8c80c-000f-5000-b000-175b519519f5")
+            if payment:
+                payment.status = "REFUNDED"
+                payment.save()
+
+    See: production incident 2026-01-14 (payment.canceled crash)
+    """
+    return Payment.objects.select_for_update().filter(yookassa_payment_id=yookassa_payment_id).first()
 
 
 def _handle_recurring_cancellation(

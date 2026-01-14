@@ -210,12 +210,27 @@ def _send_telegram_alert(message: str) -> bool:
 @shared_task(queue="billing")
 def alert_failed_webhooks():
     """
-    P2-WH-02: Alerting для FAILED webhooks.
+    P2-WH-02: Alerting для FAILED webhooks с anti-spam защитой.
 
     Находит FAILED webhooks за последний час и отправляет alert админам.
+    Алертит только НОВЫЕ failures (не повторяет алерты для уже отправленных).
+
+    Anti-spam logic:
+    - Хранит ID уже отправленных алертов в Redis (TTL 1 час)
+    - Фильтрует только новые failures (которых нет в кэше)
+    - Если новых нет — молчит (не спамит повторными алертами)
+
     Рекомендуется запускать через Celery Beat каждые 15 минут.
+
+    See: production incident 2026-01-14 (payment.canceled crash caused alert spam)
     """
+    from collections import Counter
     from datetime import timedelta
+
+    from django.core.cache import cache
+
+    ALERT_CACHE_KEY = "billing:last_alerted_webhook_ids"
+    ALERT_CACHE_TTL = 3600  # 1 hour
 
     since = timezone.now() - timedelta(hours=1)
 
@@ -226,22 +241,45 @@ def alert_failed_webhooks():
         logger.info("[WEBHOOK_ALERT] no failed webhooks in last hour")
         return
 
-    # Собираем детали для алерта
-    details = []
-    for log in failed[:5]:  # Максимум 5 примеров
-        details.append(
-            f"• {log.event_type}: {log.error_message[:100] if log.error_message else 'no message'}"
+    # Get previously alerted IDs from cache
+    last_alerted_ids = cache.get(ALERT_CACHE_KEY, set())
+
+    # Filter only NEW failures (not alerted before)
+    new_failures = failed.exclude(id__in=last_alerted_ids)
+    new_count = new_failures.count()
+
+    if new_count == 0:
+        logger.info(
+            "[WEBHOOK_ALERT] %s failed webhooks in last hour, but all already alerted (anti-spam)", count
         )
+        return
+
+    # Group by event_type to identify patterns
+    event_counts = Counter(new_failures.values_list("event_type", flat=True))
+
+    # Build alert message with top 5 event types
+    details = []
+    for event_type, event_count in event_counts.most_common(5):
+        # Get sample error message
+        sample = new_failures.filter(event_type=event_type).first()
+        error_preview = sample.error_message[:100] if sample and sample.error_message else "N/A"
+        details.append(f"• {event_type}: {event_count}x\n  └─ {error_preview}")
 
     message = (
         f"🚨 <b>BILLING ALERT</b>\n\n"
-        f"⚠️ {count} failed webhooks за последний час!\n\n"
-        f"Примеры:\n" + "\n".join(details) + "\n\n"
+        f"⚠️ {new_count} NEW failed webhooks за последний час (total: {count})\n\n"
+        f"Event types:\n" + "\n\n".join(details) + "\n\n"
         f"Проверьте логи: <code>docker logs eatfit24-celery-worker-1</code>"
     )
 
     _send_telegram_alert(message)
-    logger.warning("[WEBHOOK_ALERT] sent alert for %s failed webhooks", count)
+
+    # Update cache with ALL failed IDs (to prevent re-alerting)
+    # We store ALL failed IDs (not just new ones) to avoid repeated alerts for same failures
+    all_failed_ids = set(failed.values_list("id", flat=True))
+    cache.set(ALERT_CACHE_KEY, all_failed_ids, ALERT_CACHE_TTL)
+
+    logger.warning("[WEBHOOK_ALERT] sent alert for %s new failures (cached %s total)", new_count, len(all_failed_ids))
 
 
 @shared_task(queue="billing")
