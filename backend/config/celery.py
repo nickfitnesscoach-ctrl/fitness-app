@@ -49,6 +49,7 @@ app.conf.task_routes = {
     # Billing tasks -> billing queue
     "apps.billing.webhooks.tasks.*": {"queue": "billing"},
     "apps.billing.tasks_recurring.*": {"queue": "billing"},
+    "apps.billing.tasks_digest.*": {"queue": "billing"},
     # AI tasks -> ai queue
     "apps.ai.tasks.*": {"queue": "ai"},
 }
@@ -77,6 +78,11 @@ app.conf.beat_schedule = {
     "billing-process-due-renewals": {
         "task": "apps.billing.tasks_recurring.process_due_renewals",
         "schedule": crontab(minute=0, hour="*/1"),  # каждый час в :00
+    },
+    # P2-DIG-01: Weekly billing digest
+    "billing-weekly-digest": {
+        "task": "apps.billing.tasks_digest.send_weekly_billing_digest",
+        "schedule": crontab(hour=7, minute=0, day_of_week=1),  # Пн 10:00 MSK = 07:00 UTC
     },
 }
 
