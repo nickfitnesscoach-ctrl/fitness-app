@@ -47,6 +47,32 @@ export interface RecognizeResponse {
 export type TaskState = 'PENDING' | 'STARTED' | 'RETRY' | 'SUCCESS' | 'FAILURE';
 export type TaskStatus = 'processing' | 'success' | 'failed';
 
+// SSOT: Normalized task status for frontend UI
+export type NormalizedTaskStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED';
+
+/**
+ * Normalize task status from backend response to unified frontend enum.
+ * Backend can return:
+ * - state: 'PENDING' | 'STARTED' | 'RETRY' | 'SUCCESS' | 'FAILURE' (Celery states)
+ * - status: 'processing' | 'success' | 'failed' (lowercase)
+ *
+ * This helper ensures consistent status checking across the frontend.
+ */
+export function normalizeTaskStatus(data: { state?: TaskState; status?: TaskStatus }): NormalizedTaskStatus {
+    const state = String(data?.state ?? '').toUpperCase();
+    const status = String(data?.status ?? '').toUpperCase();
+
+    // Terminal states (order matters: check SUCCESS before PROCESSING)
+    if (state === 'SUCCESS' || status === 'SUCCESS') return 'SUCCESS';
+    if (state === 'FAILURE' || state === 'FAILED' || status === 'FAILED') return 'FAILED';
+
+    // Processing states
+    if (state === 'STARTED' || state === 'RETRY' || status === 'PROCESSING') return 'PROCESSING';
+
+    // Default: pending
+    return 'PENDING';
+}
+
 export interface TaskResult {
     meal_id: number | null;
     meal_photo_id?: number; // Photo ID for multi-photo tracking

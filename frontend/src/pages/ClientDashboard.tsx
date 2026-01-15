@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Drumstick, Droplets, Wheat, Plus } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -62,6 +62,46 @@ const ClientDashboard: React.FC = () => {
             }, 300);
         }
     }, [searchParams, isWebAppEnabled, setSearchParams, dailyMeals]);
+
+    // P0: Listen for AI photo events and refresh immediately
+    // P0-3: Anti-duplicate protection (prevents double refresh in StrictMode)
+    const lastProcessedEventRef = useRef<{ taskId: string; timestamp: number } | null>(null);
+
+    useEffect(() => {
+        if (!isWebAppEnabled) return;
+
+        const handleAiPhotoEvent = (eventName: string) => (event: Event) => {
+            const customEvent = event as CustomEvent<{ taskId: string; mealId?: number; error?: string }>;
+            const { taskId, mealId, error } = customEvent.detail || {};
+
+            console.log(`[Dashboard] ${eventName} event:`, { taskId, mealId, error });
+
+            // P0-3: Deduplicate events (ignore same taskId within 2 seconds)
+            const now = Date.now();
+            const lastEvent = lastProcessedEventRef.current;
+
+            if (lastEvent && lastEvent.taskId === taskId && now - lastEvent.timestamp < 2000) {
+                console.log('[Dashboard] Ignoring duplicate event for taskId:', taskId);
+                return;
+            }
+
+            // Update ref and trigger refresh
+            lastProcessedEventRef.current = { taskId, timestamp: now };
+            console.log('[Dashboard] Triggering refresh for taskId:', taskId);
+            dailyMeals.refresh();
+        };
+
+        const handleSuccess = handleAiPhotoEvent('ai:photo-success');
+        const handleFailed = handleAiPhotoEvent('ai:photo-failed');
+
+        window.addEventListener('ai:photo-success', handleSuccess);
+        window.addEventListener('ai:photo-failed', handleFailed);
+
+        return () => {
+            window.removeEventListener('ai:photo-success', handleSuccess);
+            window.removeEventListener('ai:photo-failed', handleFailed);
+        };
+    }, [isWebAppEnabled, dailyMeals]);
 
     // Poll for meals with PROCESSING status
     useEffect(() => {

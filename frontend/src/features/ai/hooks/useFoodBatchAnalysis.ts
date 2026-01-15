@@ -13,7 +13,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { recognizeFood, getTaskStatus, cancelAiTask, mapToAnalysisResult } from '../api';
+import { recognizeFood, getTaskStatus, cancelAiTask, mapToAnalysisResult, normalizeTaskStatus } from '../api';
 import type { AnalysisResult, TaskStatusResponse, RecognizeResponse } from '../api';
 import type { FileWithComment, BatchAnalysisOptions, PhotoQueueItem, PhotoUploadStatus } from '../model';
 import { POLLING_CONFIG, AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES, getAiErrorMessage } from '../model';
@@ -111,11 +111,21 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
     const pollTask = useCallback(async (taskId: string, controller: AbortController): Promise<AnalysisResult> => {
         const start = Date.now();
         let attempt = 0;
+        const maxAttempts = Math.ceil(POLLING_CONFIG.CLIENT_TIMEOUT_MS / POLLING_CONFIG.FAST_PHASE_DELAY_MS);
 
         while (!controller.signal.aborted && !cancelledRef.current) {
             const elapsed = Date.now() - start;
+
+            // P0: Client timeout (120s hard limit)
             if (elapsed >= POLLING_CONFIG.CLIENT_TIMEOUT_MS) {
                 const e = new Error('Превышено время ожидания распознавания');
+                (e as any).errorType = AI_ERROR_CODES.TASK_TIMEOUT;
+                throw e;
+            }
+
+            // P0: Max attempts guard (prevents infinite loop even if server never returns terminal status)
+            if (attempt >= maxAttempts) {
+                const e = new Error('Слишком много попыток проверки статуса');
                 (e as any).errorType = AI_ERROR_CODES.TASK_TIMEOUT;
                 throw e;
             }
@@ -125,32 +135,55 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
             try {
                 const status: TaskStatusResponse = await getTaskStatus(taskId, controller.signal);
 
-                if (status.state === 'SUCCESS' && status.status === 'success') {
+                // P0: Normalize status using SSOT helper
+                const normalized = normalizeTaskStatus(status);
+                console.log(`[AI] Task ${taskId} normalized status: ${normalized} (raw: state=${status.state}, status=${status.status})`);
+
+                if (normalized === 'SUCCESS') {
+                    console.log(`[AI] Task ${taskId} SUCCESS - mapping result`);
                     const mapped = mapToAnalysisResult(status);
                     if (!mapped) {
+                        console.warn(`[AI] Task ${taskId} SUCCESS but mapping failed:`, status.result);
                         const e = new Error(status.result?.error_message || 'На фото не удалось распознать блюда');
                         (e as any).errorType = status.result?.error || AI_ERROR_CODES.EMPTY_RESULT;
                         throw e;
                     }
+                    console.log(`[AI] Task ${taskId} mapped successfully:`, mapped);
+
+                    // P0: Dispatch global event to refresh meals cache
+                    // This ensures diary/meal cards update immediately without waiting for modal close
+                    window.dispatchEvent(new CustomEvent('ai:photo-success', {
+                        detail: { taskId, mealId: mapped.meal_id }
+                    }));
+
                     return mapped;
                 }
 
-                if (status.state === 'FAILURE' || status.status === 'failed') {
+                if (normalized === 'FAILED') {
+                    console.error(`[AI] Task ${taskId} FAILED:`, status.error || status.result?.error_message);
+
+                    // P1.5: Dispatch event on FAILED to refresh meal card state
+                    window.dispatchEvent(new CustomEvent('ai:photo-failed', {
+                        detail: { taskId, error: status.error || status.result?.error_message }
+                    }));
+
                     const e = new Error(status.result?.error_message || status.error || 'Ошибка обработки фото');
                     (e as any).errorType = status.result?.error || status.error || AI_ERROR_CODES.TASK_FAILURE;
                     throw e;
                 }
 
+                // Continue polling (PENDING/PROCESSING)
+                console.log(`[AI] Task ${taskId} still processing (attempt ${attempt + 1}/${maxAttempts}, elapsed ${elapsed}ms)`);
                 await abortableSleep(delay, controller.signal);
                 attempt += 1;
             } catch (err: any) {
                 if (controller.signal.aborted || cancelledRef.current) throw err;
                 if (isAbortError(err)) throw err;
 
-                // typed errors: just throw
+                // typed errors: just throw (terminal states)
                 if (err?.errorType || err?.code === 'DAILY_LIMIT_REACHED') throw err;
 
-                // small network retry
+                // small network retry (only for network errors, not logic errors)
                 if (attempt < 3) {
                     await abortableSleep(delay, controller.signal);
                     attempt += 1;
@@ -299,6 +332,9 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
             });
 
             setQueueSync(() => initial);
+
+            // Small delay to ensure UI updates before processing starts
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             try {
                 await processQueue(controller);
