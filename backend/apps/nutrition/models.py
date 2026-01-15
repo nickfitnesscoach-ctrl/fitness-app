@@ -376,3 +376,70 @@ class DailyGoal(models.Model):
             "fat": round(fat, 2),
             "carbohydrates": round(carbs, 2),
         }
+
+
+class CancelEvent(models.Model):
+    """
+    Audit log for cancel requests from frontend.
+
+    Tracks every cancel button press, even if there are no active tasks to cancel.
+    Ensures idempotency via unique client_cancel_id.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="cancel_events",
+        verbose_name="Пользователь",
+    )
+    client_cancel_id = models.UUIDField(
+        unique=True,
+        db_index=True,
+        verbose_name="Идентификатор отмены (клиент)",
+        help_text="UUID генерируется на фронте для идемпотентности",
+    )
+    run_id = models.IntegerField(
+        blank=True, null=True, verbose_name="Run ID", help_text="Frontend run identifier"
+    )
+    meal = models.ForeignKey(
+        Meal,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="cancel_events",
+        verbose_name="Приём пищи",
+    )
+    payload = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Полный payload запроса",
+        help_text="Сохраняет весь запрос для аудита: task_ids, meal_photo_ids, reason, etc.",
+    )
+    cancelled_tasks = models.IntegerField(
+        default=0, verbose_name="Отменено задач", help_text="Количество отозванных Celery tasks"
+    )
+    updated_photos = models.IntegerField(
+        default=0,
+        verbose_name="Обновлено фото",
+        help_text="Количество MealPhoto обновлённых в CANCELLED",
+    )
+    noop = models.BooleanField(
+        default=False,
+        verbose_name="Noop",
+        help_text="True если отменять было нечего (ранний cancel)",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+
+    class Meta:
+        db_table = "nutrition_cancel_events"
+        verbose_name = "Событие отмены"
+        verbose_name_plural = "События отмены"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["client_cancel_id"]),
+        ]
+
+    def __str__(self):
+        noop_str = " (noop)" if self.noop else ""
+        return f"Cancel by {self.user.username} - run_id={self.run_id}{noop_str} ({self.created_at})"

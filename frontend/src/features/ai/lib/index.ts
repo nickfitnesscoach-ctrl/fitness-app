@@ -22,3 +22,5 @@ export {
     type PreprocessMetrics,
     type PreprocessErrorCode,
 } from './imagePreprocess';
+
+export { generateUUID } from './uuid';

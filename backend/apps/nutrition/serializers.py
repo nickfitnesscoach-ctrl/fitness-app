@@ -111,7 +111,7 @@ class MealSerializer(serializers.ModelSerializer):
     """Serializer for Meal model with nested food items and photos."""
 
     items = FoodItemSerializer(many=True, read_only=True)
-    photos = MealPhotoSerializer(many=True, read_only=True)
+    photos = serializers.SerializerMethodField()
     meal_type_display = serializers.CharField(source="get_meal_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     total = serializers.SerializerMethodField()
@@ -167,7 +167,14 @@ class MealSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         # Try new MealPhoto model first
-        first_photo = obj.photos.filter(status="SUCCESS").first()
+        # Use prefetched data if available to avoid N+1
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            success_photos = [p for p in obj.photos.all() if p.status == "SUCCESS"]
+            success_photos.sort(key=lambda p: p.created_at)
+            first_photo = success_photos[0] if success_photos else None
+        else:
+            first_photo = obj.photos.filter(status="SUCCESS").first()
+
         if first_photo and first_photo.image:
             url = first_photo.image.url
             if request is not None:
@@ -183,8 +190,31 @@ class MealSerializer(serializers.ModelSerializer):
 
         return None
 
+    def get_photos(self, obj):
+        """
+        Return only SUCCESS photos for diary display.
+
+        BR-2: Photos are visible in meal only after SUCCESS.
+        CANCELLED/FAILED photos are hidden from diary.
+
+        NOTE: This method expects photos to be prefetch_related in queryset.
+        Without prefetch, this causes N+1 queries. See views.py and services.py for correct usage.
+        """
+        # Use prefetched data to avoid N+1 (filter in memory)
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            # Use prefetched photos (filter in memory to avoid query)
+            success_photos = [p for p in obj.photos.all() if p.status == "SUCCESS"]
+            success_photos.sort(key=lambda p: p.created_at)
+        else:
+            # Fallback to direct query (N+1 if not prefetched)
+            success_photos = obj.photos.filter(status="SUCCESS").order_by("created_at")
+        return MealPhotoSerializer(success_photos, many=True, context=self.context).data
+
     def get_photo_count(self, obj):
         """Return count of successful photos for this meal."""
+        # Use prefetched data if available to avoid N+1
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            return sum(1 for p in obj.photos.all() if p.status == "SUCCESS")
         return obj.photos.filter(status="SUCCESS").count()
 
     # ============================================================
@@ -193,23 +223,46 @@ class MealSerializer(serializers.ModelSerializer):
 
     def get_has_success(self, obj) -> bool:
         """Any photo with SUCCESS status."""
+        # Use prefetched data if available to avoid N+1
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            return any(p.status == "SUCCESS" for p in obj.photos.all())
         return obj.photos.filter(status="SUCCESS").exists()
 
     def get_is_processing(self, obj) -> bool:
         """Any photo with PENDING or PROCESSING status."""
+        # Use prefetched data if available to avoid N+1
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            return any(p.status in ["PENDING", "PROCESSING"] for p in obj.photos.all())
         return obj.photos.filter(status__in=["PENDING", "PROCESSING"]).exists()
 
     def get_latest_photo_status(self, obj) -> str | None:
         """Status of the most recent photo."""
+        # Use prefetched data if available to avoid N+1
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            photos = list(obj.photos.all())
+            if photos:
+                latest = max(photos, key=lambda p: p.created_at)
+                return latest.status
+            return None
         latest = obj.photos.order_by("-created_at").first()
         return latest.status if latest else None
 
     def get_photos_count(self, obj) -> int:
         """Total number of photos (all statuses)."""
+        # Use prefetched data if available to avoid N+1
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            return len(list(obj.photos.all()))
         return obj.photos.count()
 
     def get_latest_failed_photo_id(self, obj) -> int | None:
         """ID of the most recent FAILED photo (for retry)."""
+        # Use prefetched data if available to avoid N+1
+        if hasattr(obj, "_prefetched_objects_cache") and "photos" in obj._prefetched_objects_cache:
+            failed_photos = [p for p in obj.photos.all() if p.status == "FAILED"]
+            if failed_photos:
+                latest = max(failed_photos, key=lambda p: p.created_at)
+                return latest.id
+            return None
         latest_failed = obj.photos.filter(status="FAILED").order_by("-created_at").first()
         return latest_failed.id if latest_failed else None
 

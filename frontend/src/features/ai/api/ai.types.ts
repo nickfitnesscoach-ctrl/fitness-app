@@ -124,3 +124,33 @@ export interface BatchResult {
     data?: AnalysisResult;
     error?: string;
 }
+
+// =====================
+// Cancel API types
+// =====================
+
+/**
+ * Request for POST /api/v1/ai/cancel/
+ * Send cancel event to backend for batch processing cancellation
+ */
+export interface CancelRequest {
+    client_cancel_id: string;       // UUID generated on frontend
+    run_id?: number | null;          // Frontend run identifier
+    meal_id?: number | null;         // Meal ID to cancel
+    meal_photo_ids?: number[];       // Photo IDs to cancel
+    task_ids?: string[];             // Celery task IDs to revoke
+    reason?: string;                 // Reason: "user_cancel", "timeout", etc.
+}
+
+/**
+ * Response from POST /api/v1/ai/cancel/
+ * Backend always returns 200 OK (fire-and-forget)
+ */
+export interface CancelResponse {
+    status: 'ok' | 'error';
+    cancel_received: boolean;
+    cancelled_tasks: number;
+    updated_photos: number;
+    noop: boolean;
+    message: string;
+}

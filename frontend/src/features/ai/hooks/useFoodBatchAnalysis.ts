@@ -13,11 +13,11 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { recognizeFood, getTaskStatus, cancelAiTask, mapToAnalysisResult, normalizeTaskStatus } from '../api';
-import type { AnalysisResult, TaskStatusResponse, RecognizeResponse } from '../api';
+import { recognizeFood, getTaskStatus, cancelAiTask, cancelAiProcessing, mapToAnalysisResult, normalizeTaskStatus } from '../api';
+import type { AnalysisResult, TaskStatusResponse, RecognizeResponse, CancelRequest } from '../api';
 import type { FileWithComment, BatchAnalysisOptions, PhotoQueueItem, PhotoUploadStatus } from '../model';
 import { POLLING_CONFIG, AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES, getAiErrorMessage } from '../model';
-import { preprocessImage, PreprocessError } from '../lib';
+import { preprocessImage, PreprocessError, generateUUID } from '../lib';
 import { api } from '../../../services/api';
 
 interface UseFoodBatchAnalysisResult {
@@ -542,33 +542,60 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
         abortRef.current?.abort();
         abortRef.current = null;
 
-        // Collect taskIds to cancel on backend
-        const taskIdsToCancel: string[] = [];
+        // ============================================================
+        // NEW: Send cancel event to backend (fire-and-forget)
+        // ============================================================
+
+        // Generate client_cancel_id for idempotency
+        const clientCancelId = generateUUID();
+
+        // Collect all identifiers from queue
+        const taskIds: string[] = [];
+        const mealPhotoIds: number[] = [];
+
         queueRef.current.forEach((p) => {
-            // P1.2: Cancel tasks that are in-flight using unified helper
+            // Collect task IDs that are in-flight
             if (p.taskId && isInFlightStatus(p.status)) {
-                taskIdsToCancel.push(p.taskId);
+                taskIds.push(p.taskId);
+            }
+            // Collect meal photo IDs (even if empty - backend needs to know)
+            if (p.mealPhotoId) {
+                mealPhotoIds.push(p.mealPhotoId);
             }
         });
 
-        // P2: Conditional Meal Deletion
-        // Only delete the meal if there are NO successful items in the batch.
-        // If there's at least one success, we must preserve the meal.
-        const hasAnySuccess = queueRef.current.some(p => p.status === 'success');
-        const mealIdToDelete = batchMealIdRef.current; // Use ref as absolute source of truth for the batch meal
+        // Guard: Only send cancel event if there's something to cancel
+        // User clicked Cancel, but always send event for audit trail (even if noop)
+        const hasAnythingToCancel = taskIds.length > 0 || mealPhotoIds.length > 0 || batchMealIdRef.current !== undefined;
 
-        if (mealIdToDelete) {
-            if (!hasAnySuccess) {
-                console.log('[cancelBatch] No successes found, DELETING orphan meal:', mealIdToDelete);
-                api.deleteMeal(mealIdToDelete).catch((err) => {
-                    console.warn('[cancelBatch] Failed to delete meal', mealIdToDelete, err);
-                });
-                // Also clear the ref since the meal is gone
-                batchMealIdRef.current = undefined;
-            } else {
-                console.log(`[cancelBatch] Partial success detected (${queueRef.current.filter(p => p.status === 'success').length} items). SKIPPING deleteMeal for:`, mealIdToDelete);
-            }
+        if (hasAnythingToCancel) {
+            // Build cancel payload
+            const cancelPayload: CancelRequest = {
+                client_cancel_id: clientCancelId,
+                run_id: runIdRef.current,
+                meal_id: batchMealIdRef.current ?? null,
+                meal_photo_ids: mealPhotoIds.length > 0 ? mealPhotoIds : [],
+                task_ids: taskIds.length > 0 ? taskIds : [],
+                reason: 'user_cancel',
+            };
+
+            // Send cancel event (fire-and-forget, does not block UI)
+            void cancelAiProcessing(cancelPayload);
+            console.log('[cancelBatch] Cancel event sent. Backend will handle meal cleanup if needed.');
+        } else {
+            console.log('[cancelBatch] Nothing to cancel (empty queue), skipping cancel event.');
         }
+
+        // ============================================================
+        // Existing logic: Local cleanup (meal deletion removed - backend handles it)
+        // ============================================================
+
+        // P0: Cancel no longer deletes meal directly.
+        // Backend will:
+        // 1. Finalize meal status (FAILED if all photos failed/cancelled)
+        // 2. Hide FAILED meals in API responses
+        // 3. Delete orphan meals in background cleanup
+        // This prevents race conditions where cancel arrives after meal deletion.
 
         setQueueSync((prev) =>
             prev.map((p) => {
@@ -584,8 +611,9 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
             })
         );
 
-        // Cancel tasks on backend (fire-and-forget) - prevents meal creation
-        taskIdsToCancel.forEach((taskId) => {
+        // Old cancelAiTask calls - kept for backward compatibility
+        // (cancelAiProcessing handles this better, but keeping as fallback)
+        taskIds.forEach((taskId) => {
             void cancelAiTask(taskId);
         });
 
@@ -598,33 +626,62 @@ export const useFoodBatchAnalysis = (options: BatchAnalysisOptions): UseFoodBatc
         abortRef.current?.abort();
         abortRef.current = null;
 
-        // Collect taskIds to cancel on backend (in-flight only)
-        const taskIdsToCancel: string[] = [];
+        // ============================================================
+        // NEW: Send cancel event to backend (fire-and-forget)
+        // ============================================================
+
+        // Generate client_cancel_id for idempotency
+        const clientCancelId = generateUUID();
+
+        // Collect all identifiers from queue
+        const taskIds: string[] = [];
+        const mealPhotoIds: number[] = [];
+
         queueRef.current.forEach((p) => {
-            if (p.taskId && !isTerminalStatus(p.status)) { // Use unified helper
-                taskIdsToCancel.push(p.taskId);
+            // Collect task IDs that are not in terminal state
+            if (p.taskId && !isTerminalStatus(p.status)) {
+                taskIds.push(p.taskId);
+            }
+            // Collect meal photo IDs
+            if (p.mealPhotoId) {
+                mealPhotoIds.push(p.mealPhotoId);
             }
         });
 
-        // Cancel tasks on backend (fire-and-forget)
-        taskIdsToCancel.forEach((taskId) => {
+        // Guard: Only send cancel event if there's something to cancel
+        // Prevents spam CancelEvent on empty cleanup (e.g., modal close on empty queue)
+        const hasAnythingToCancel = taskIds.length > 0 || mealPhotoIds.length > 0 || batchMealIdRef.current !== undefined;
+
+        if (hasAnythingToCancel) {
+            // Build cancel payload
+            const cancelPayload: CancelRequest = {
+                client_cancel_id: clientCancelId,
+                run_id: runIdRef.current,
+                meal_id: batchMealIdRef.current ?? null,
+                meal_photo_ids: mealPhotoIds.length > 0 ? mealPhotoIds : [],
+                task_ids: taskIds.length > 0 ? taskIds : [],
+                reason: 'cleanup',
+            };
+
+            // Send cancel event (fire-and-forget, does not block UI)
+            void cancelAiProcessing(cancelPayload);
+            console.log('[cleanup] Cancel event sent. Backend will handle meal cleanup if needed.');
+        } else {
+            console.log('[cleanup] Nothing to cancel, skipping cancel event.');
+        }
+
+        // ============================================================
+        // Existing logic: Cleanup (meal deletion removed - backend handles it)
+        // ============================================================
+
+        // P0: Cleanup no longer deletes meal directly.
+        // Backend will handle orphan meal cleanup after finalization.
+        // This prevents race conditions and simplifies frontend logic.
+
+        // Old cancelAiTask calls - kept for backward compatibility
+        taskIds.forEach((taskId) => {
             void cancelAiTask(taskId);
         });
-
-        // P2: Conditional Meal Deletion for cleanup
-        // Similar to cancelBatch, only delete if no successes.
-        const hasAnySuccess = queueRef.current.some(p => p.status === 'success');
-        const mealIdToDelete = batchMealIdRef.current;
-
-        if (mealIdToDelete && !hasAnySuccess) {
-            console.log('[cleanup] No successes found, cleaning up orphan meal:', mealIdToDelete);
-            api.deleteMeal(mealIdToDelete).catch((err) => {
-                console.warn('[cleanup] Failed to delete meal', mealIdToDelete, err);
-            });
-            batchMealIdRef.current = undefined;
-        } else if (mealIdToDelete && hasAnySuccess) {
-            console.log('[cleanup] Successes exist, preserving meal:', mealIdToDelete);
-        }
 
         processingRef.current = false;
         if (isMountedRef.current) setIsProcessing(false);

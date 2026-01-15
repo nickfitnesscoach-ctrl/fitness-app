@@ -438,3 +438,100 @@ class CancelTaskView(APIView):
         )
 
         return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class CancelView(APIView):
+    """
+    POST /api/v1/ai/cancel/
+
+    Robust cancel endpoint with explicit event logging and idempotency.
+
+    Features:
+    - Accepts client_cancel_id (UUID) for idempotency
+    - Can cancel multiple task_ids / meal_photo_ids at once
+    - Persists CancelEvent to DB (audit trail)
+    - Always returns 200 OK (even if nothing to cancel)
+    - Structured logging for every cancel request
+
+    Request:
+    {
+        "client_cancel_id": "uuid",       # required
+        "run_id": 3,                      # optional
+        "meal_id": 34,                    # optional
+        "meal_photo_ids": [45,46,47],     # optional
+        "task_ids": ["...","..."],        # optional
+        "reason": "user_cancel"           # optional
+    }
+
+    Response:
+    {
+        "status": "ok",
+        "cancel_received": true,
+        "cancelled_tasks": 1,
+        "updated_photos": 2,
+        "noop": false,
+        "message": "Cancel processed"
+    }
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request: Request) -> Response:
+        from .serializers import CancelRequestSerializer, CancelResponseSerializer
+        from .services import CancelService
+
+        request_id = request.headers.get("X-Request-ID", "unknown")
+
+        # Валидация запроса
+        req_serializer = CancelRequestSerializer(data=request.data)
+        req_serializer.is_valid(raise_exception=True)
+
+        # Извлекаем данные
+        client_cancel_id = req_serializer.validated_data["client_cancel_id"]
+        run_id = req_serializer.validated_data.get("run_id")
+        meal_id = req_serializer.validated_data.get("meal_id")
+        meal_photo_ids = req_serializer.validated_data.get("meal_photo_ids", [])
+        task_ids = req_serializer.validated_data.get("task_ids", [])
+        reason = req_serializer.validated_data.get("reason", "user_cancel")
+
+        # Обработка cancel через service layer
+        try:
+            service = CancelService(user=request.user, request_id=request_id)
+            result = service.process_cancel(
+                client_cancel_id=client_cancel_id,
+                run_id=run_id,
+                meal_id=meal_id,
+                meal_photo_ids=meal_photo_ids,
+                task_ids=task_ids,
+                reason=reason,
+            )
+
+            # Сериализация ответа
+            resp_serializer = CancelResponseSerializer(data=result)
+            resp_serializer.is_valid(raise_exception=True)
+
+            resp = Response(resp_serializer.data, status=status.HTTP_200_OK)
+            resp["X-Request-ID"] = request_id
+            return resp
+
+        except Exception as e:
+            logger.error(
+                "[AI][Cancel] EXCEPTION user=%s client_cancel_id=%s error=%s",
+                request.user.id,
+                client_cancel_id,
+                str(e),
+                exc_info=True,
+            )
+            # Даже при ошибке возвращаем 200 OK (fire-and-forget для фронта)
+            return Response(
+                {
+                    "status": "error",
+                    "cancel_received": True,
+                    "cancelled_tasks": 0,
+                    "updated_photos": 0,
+                    "noop": False,
+                    "message": f"Cancel failed: {str(e)}",
+                },
+                status=status.HTTP_200_OK,
+            )

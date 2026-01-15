@@ -8,6 +8,8 @@ import type {
     ApiRecognizedItem,
     RecognitionTotals,
     MealType,
+    CancelRequest,
+    CancelResponse,
 } from './ai.types';
 
 // ============================================================
@@ -148,6 +150,8 @@ export const getTaskStatus = async (taskId: string, signal?: AbortSignal): Promi
 /**
  * Cancel an AI task on the backend (fire-and-forget)
  * Called when user cancels batch - prevents meal creation
+ *
+ * @deprecated Use cancelAiProcessing for batch cancellation
  */
 export const cancelAiTask = async (taskId: string): Promise<void> => {
     log(`Cancel AI task: ${taskId}`);
@@ -159,6 +163,66 @@ export const cancelAiTask = async (taskId: string): Promise<void> => {
     } catch (err) {
         // Fire-and-forget: don't throw on network errors
         console.warn('[cancelAiTask] Failed to cancel', taskId, err);
+    }
+};
+
+/**
+ * Cancel AI batch processing on the backend (fire-and-forget)
+ *
+ * Sends structured cancel event with all available identifiers:
+ * - client_cancel_id: UUID for idempotency
+ * - run_id: Frontend batch run identifier
+ * - meal_id: Meal to mark as cancelled
+ * - meal_photo_ids: Photos to mark as CANCELLED
+ * - task_ids: Celery tasks to revoke
+ * - reason: Why the cancel happened
+ *
+ * This is fire-and-forget - errors are logged but NOT thrown.
+ * UI should not wait for this call to complete.
+ *
+ * @param payload Cancel request payload
+ * @param signal Optional AbortSignal (for cleanup, not for blocking UI)
+ */
+export const cancelAiProcessing = async (
+    payload: CancelRequest,
+    signal?: AbortSignal
+): Promise<void> => {
+    // Silent logging - only in verbose mode
+    const LOG_VERBOSE = false; // Can be controlled by env var if needed
+
+    if (LOG_VERBOSE) {
+        console.debug('[cancelAiProcessing] Sending cancel event:', {
+            client_cancel_id: payload.client_cancel_id,
+            run_id: payload.run_id,
+            meal_id: payload.meal_id,
+            photo_count: payload.meal_photo_ids?.length ?? 0,
+            task_count: payload.task_ids?.length ?? 0,
+            reason: payload.reason,
+        });
+    }
+
+    try {
+        const response = await fetch(URLS.cancelBatch, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload),
+            signal,
+        });
+
+        if (LOG_VERBOSE && response.ok) {
+            const data: CancelResponse = await response.json();
+            console.debug('[cancelAiProcessing] Cancel acknowledged:', {
+                cancelled_tasks: data.cancelled_tasks,
+                updated_photos: data.updated_photos,
+                noop: data.noop,
+            });
+        }
+    } catch (err: any) {
+        // Fire-and-forget: suppress all errors
+        // Only log if verbose mode is enabled or if it's NOT an abort
+        if (LOG_VERBOSE && err?.name !== 'AbortError') {
+            console.debug('[cancelAiProcessing] Cancel request failed (non-critical):', err.message);
+        }
     }
 };
 

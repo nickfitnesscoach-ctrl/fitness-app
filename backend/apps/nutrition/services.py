@@ -35,7 +35,14 @@ def get_daily_stats(user, target_date: date) -> Dict:
         daily_goal = None
 
     # Get all meals for the date
-    meals = Meal.objects.filter(user=user, date=target_date).prefetch_related("items")
+    # BR-1: Only show meals with at least one SUCCESS photo (exclude FAILED meals with all photos cancelled)
+    # N+1 Prevention: Prefetch items and photos
+    meals = (
+        Meal.objects.filter(user=user, date=target_date)
+        .exclude(status="FAILED")
+        .prefetch_related("items")
+        .prefetch_related("photos")  # Prevent N+1 when serializer accesses photos
+    )
 
     # Calculate total consumed
     total_calories = sum(meal.total_calories for meal in meals)

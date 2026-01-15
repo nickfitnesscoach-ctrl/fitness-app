@@ -216,3 +216,71 @@ class AIRecognizeRequestSerializer(serializers.Serializer):
             attrs["source_type"] = "data_url"
 
         return attrs
+
+
+class CancelRequestSerializer(serializers.Serializer):
+    """
+    Вход для POST /api/v1/ai/cancel/
+
+    Принимает:
+    - client_cancel_id: UUID (обязательно) — генерируется на фронте для идемпотентности
+    - run_id: int (опционально) — frontend run identifier
+    - meal_id: int (опционально)
+    - meal_photo_ids: list[int] (опционально)
+    - task_ids: list[str] (опционально)
+    - reason: str (опционально) — причина отмены ("user_cancel", "timeout", etc.)
+    """
+
+    client_cancel_id = serializers.UUIDField(
+        required=True, help_text="UUID генерируется на фронте для идемпотентности"
+    )
+    run_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text="Frontend run identifier"
+    )
+    meal_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text="ID приёма пищи для отмены"
+    )
+    meal_photo_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True,
+        help_text="Список ID фото для отмены",
+    )
+    task_ids = serializers.ListField(
+        child=serializers.CharField(max_length=255),
+        required=False,
+        allow_empty=True,
+        help_text="Список Celery task IDs для отзыва",
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+        help_text="Причина отмены (user_cancel, timeout, etc.)",
+    )
+
+    def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
+        # Все поля опциональны кроме client_cancel_id
+        # Backend должен работать даже если отменять пока нечего (noop=true)
+        return attrs
+
+
+class CancelResponseSerializer(serializers.Serializer):
+    """
+    Ответ для POST /api/v1/ai/cancel/
+
+    Возвращает:
+    - status: "ok" | "error"
+    - cancel_received: bool — подтверждение, что cancel зафиксирован
+    - cancelled_tasks: int — количество отозванных Celery tasks
+    - updated_photos: int — количество MealPhoto обновлённых в CANCELLED
+    - noop: bool — true если отменять было нечего
+    - message: str — описание результата
+    """
+
+    status = serializers.ChoiceField(choices=["ok", "error"], default="ok")
+    cancel_received = serializers.BooleanField(default=True)
+    cancelled_tasks = serializers.IntegerField(default=0)
+    updated_photos = serializers.IntegerField(default=0)
+    noop = serializers.BooleanField(default=False)
+    message = serializers.CharField(default="Cancel processed")

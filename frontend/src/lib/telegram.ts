@@ -65,6 +65,7 @@ export function shouldUseDebugMode(): boolean {
 let _telegramAuthData: TelegramAuthData | null = null;
 let _initPromise: Promise<TelegramAuthData | null> | null = null;
 let _isBrowserDebug = false;
+let _didLogDebugPaymentsDisabled = false;
 
 export function getTelegramWebApp(): any | null {
     if (typeof window === 'undefined') return null;
@@ -190,7 +191,11 @@ export function buildTelegramHeaders(): HeadersInit {
     // Browser Debug Mode - специальные заголовки
     // SECURITY: Only in DEV environment
     if (_isBrowserDebug) {
-        console.warn('[Auth] Using Debug Mode (DEV only) - payments disabled');
+        // Log once per session to avoid spam
+        if (!_didLogDebugPaymentsDisabled) {
+            console.warn('[Auth] Using Debug Mode (DEV only) - payments disabled');
+            _didLogDebugPaymentsDisabled = true;
+        }
         return {
             'Content-Type': 'application/json',
             'X-Debug-Mode': 'true',

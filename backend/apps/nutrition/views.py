@@ -7,6 +7,7 @@ REST API documentation compliant implementation.
 from datetime import datetime
 import logging
 
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
@@ -15,7 +16,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import DailyGoal, FoodItem, Meal
+from .models import DailyGoal, FoodItem, Meal, MealPhoto
 from .serializers import (
     CalculateGoalsSerializer,
     DailyGoalSerializer,
@@ -47,7 +48,15 @@ class MealListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         """Filter meals by current user and optionally by date."""
-        queryset = Meal.objects.filter(user=self.request.user).prefetch_related("items")
+        # BR-1: Exclude FAILED meals (all photos cancelled/failed, no visible content)
+        # N+1 Prevention: Prefetch photos to avoid per-meal queries
+        # Note: We prefetch ALL photos (not filtered), serializer filters to SUCCESS only
+        queryset = (
+            Meal.objects.filter(user=self.request.user)
+            .exclude(status="FAILED")
+            .prefetch_related("items")
+            .prefetch_related("photos")  # Prefetch all photos to prevent N+1
+        )
 
         # Filter by date if provided
         date_str = self.request.query_params.get("date")
@@ -136,7 +145,12 @@ class MealDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = MealSerializer
 
     def get_queryset(self):
-        return Meal.objects.filter(user=self.request.user).prefetch_related("items")
+        # N+1 Prevention: Prefetch items and photos
+        return (
+            Meal.objects.filter(user=self.request.user)
+            .prefetch_related("items")
+            .prefetch_related("photos")
+        )
 
     @extend_schema(
         summary="Получить детали приёма пищи",

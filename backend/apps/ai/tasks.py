@@ -394,6 +394,24 @@ def recognize_food_async(
         meal = Meal.objects.select_for_update().get(id=meal_id)
         meal_photo = MealPhoto.objects.select_for_update().get(id=meal_photo_id)
 
+        # Guard: Late SUCCESS after Cancel/Fail (BR-3)
+        # If user cancelled while AI was processing, photo may be marked CANCELLED or FAILED
+        # Do not attach results in this case (discard late arrival)
+        if meal_photo.status in {"CANCELLED", "FAILED"}:
+            logger.info(
+                "[AI] Photo %s is in terminal state %s, discarding results (race condition guard)",
+                meal_photo_id,
+                meal_photo.status,
+            )
+            return {
+                "error": meal_photo.status,
+                "error_message": "Отменено" if meal_photo.status == "CANCELLED" else "Обработка не удалась",
+                "items": [],
+                "meal_id": meal_id,
+                "meal_photo_id": meal_photo_id,
+                "owner_id": user_id,
+            }
+
         # Add FoodItems (APPEND, not replace — multi-photo mode)
         for it in safe_items:
             meal.items.create(
