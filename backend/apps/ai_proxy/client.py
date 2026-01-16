@@ -197,6 +197,15 @@ class AIProxyClient:
         payload, preview = safe_json_loads(body_text)
         status = resp.status_code
 
+        # Debug logging для диагностики (2026-01-16)
+        logger.info(
+            "[AI Proxy] Request to %s | status=%d | trace_id=%s | response_preview=%s",
+            url,
+            status,
+            request_id or "none",
+            preview[:200] if preview else "empty"
+        )
+
         # ------------------------------------------------------------
         # НОВАЯ ЛОГИКА (2026-01-16): различаем structured errors vs exceptions
         # ------------------------------------------------------------
