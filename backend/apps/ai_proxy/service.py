@@ -175,7 +175,10 @@ class AIProxyService:
             )
 
         # 4. API Request (uses same normalized bytes for any retries)
-        raw: dict[str, Any] = self._client.recognize_food(
+        # client.recognize_food() теперь возвращает AIProxyResult
+        from .client import AIProxyResult
+
+        result: AIProxyResult = self._client.recognize_food(
             image_bytes=image_bytes,
             content_type=content_type,
             user_comment=user_comment,
@@ -183,8 +186,24 @@ class AIProxyService:
             request_id=request_id,
         )
 
+        # Шаг 5: Обрабатываем AIProxyResult
+        if not result.ok:
+            # AI Proxy вернул structured error (UNSUPPORTED_CONTENT, EMPTY_RESULT, etc.)
+            # result.payload уже содержит Error Contract
+            # Возвращаем RecognizeFoodResult с is_error=True
+            return RecognizeFoodResult(
+                items=[],
+                totals={},
+                meta={
+                    "request_id": request_id,
+                    "is_error": True,
+                    **result.payload,  # Содержит error_code, user_title, user_message, etc.
+                },
+            )
+
+        # Шаг 6: Успех — нормализуем payload
         # normalize_proxy_response теперь включает totals
-        normalized = normalize_proxy_response(raw, request_id=request_id)
+        normalized = normalize_proxy_response(result.payload, request_id=request_id)
         items = normalized.get("items") or []
         totals = normalized.get("totals") or {}
         meta = normalized.get("meta") or {}

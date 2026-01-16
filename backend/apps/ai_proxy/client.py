@@ -67,6 +67,27 @@ class AIProxyConfig:
         return AIProxyConfig(url=url, secret=secret)
 
 
+@dataclass(frozen=True)
+class AIProxyResult:
+    """
+    Результат вызова AI Proxy.
+
+    Простыми словами:
+    - ok=True: распознавание прошло успешно, payload содержит items/totals
+    - ok=False: AI Proxy вернул structured error (UNSUPPORTED_CONTENT, EMPTY_RESULT, etc.)
+      payload содержит Error Contract (error_code, user_title, user_message, etc.)
+
+    ВАЖНО:
+    - ok=False НЕ означает технический сбой (network error, timeout, 5xx)
+    - Это нормальный бизнес-ответ ("не смогли распознать еду")
+    - Технические сбои выбрасываются как exceptions (AIProxyTimeoutError, AIProxyServerError)
+    """
+
+    ok: bool  # True = success payload, False = structured error payload
+    payload: Dict[str, Any]  # raw JSON from proxy
+    status_code: int  # HTTP status code
+
+
 # ---------------------------------------------------------------------------
 # Клиент
 # ---------------------------------------------------------------------------
@@ -113,9 +134,9 @@ class AIProxyClient:
         user_comment: str = "",
         locale: str = "ru",
         request_id: str = "",
-    ) -> Dict[str, Any]:
+    ) -> AIProxyResult:
         """
-        Отправляет фото в AI Proxy и возвращает сырой JSON dict.
+        Отправляет фото в AI Proxy и возвращает AIProxyResult.
 
         Вход:
         - image_bytes: байты изображения
@@ -123,6 +144,15 @@ class AIProxyClient:
         - user_comment: опционально
         - locale: "ru"/"en"
         - request_id: пробрасываем для трассировки (X-Request-ID)
+
+        Возвращает:
+        - AIProxyResult с ok=True (success) или ok=False (structured error)
+
+        Исключения:
+        - AIProxyTimeoutError: таймаут сети (ретраить)
+        - AIProxyServerError: 5xx или network error (ретраить)
+        - AIProxyAuthenticationError: 401/403 (не ретраить)
+        - AIProxyValidationError: некорректный запрос БЕЗ Error Contract (не ретраить)
         """
         if not image_bytes:
             raise AIProxyValidationError("Пустое изображение (image_bytes пустой)")
@@ -160,44 +190,54 @@ class AIProxyClient:
             # Сеть/соединение — временная проблема (ретраим)
             raise AIProxyServerError(f"AI Proxy network error: {e}") from e
 
-        # Пытаемся разобрать JSON (AI Proxy возвращает JSON)
+        # Пытаемся разобрать JSON (AI Proxy всегда возвращает JSON)
         body_text = resp.text or ""
         payload, preview = safe_json_loads(body_text)
-
-        # ------------------------------------------------------------
-        # Карта ошибок (важно для retry policy)
-        # ------------------------------------------------------------
         status = resp.status_code
 
-        # 401/403 — секрет неверный/нет доступа (ретраи бессмысленны)
+        # ------------------------------------------------------------
+        # НОВАЯ ЛОГИКА (2026-01-16): различаем structured errors vs exceptions
+        # ------------------------------------------------------------
+
+        # Шаг 1: Проверяем, есть ли Error Contract в payload
+        # Если есть error_code — это бизнес-ответ (UNSUPPORTED_CONTENT, EMPTY_RESULT, etc.)
+        # Возвращаем AIProxyResult(ok=False), а НЕ exception
+        if isinstance(payload, dict) and "error_code" in payload:
+            # AI Proxy вернул structured error (может быть с любым HTTP status: 400, 429, даже 200)
+            return AIProxyResult(ok=False, payload=payload, status_code=status)
+
+        # Шаг 2: Проверяем HTTP статусы для технических ошибок
+
+        # 401/403 — authentication error (не ретраить)
         if status in (401, 403):
             detail = payload.get("detail") if isinstance(payload, dict) else None
             raise AIProxyAuthenticationError(
                 f"AI Proxy auth error {status}: {detail or preview or 'unauthorized'}"
             )
 
-        # 400/413/422/429 — ошибки запроса (ретраи бессмысленны)
+        # 400/413/422/429 — validation error БЕЗ Error Contract (не ретраить)
+        # Если бы был Error Contract, мы бы вернули его выше
         if status in (400, 413, 422, 429):
             detail = payload.get("detail") if isinstance(payload, dict) else None
             raise AIProxyValidationError(
                 f"AI Proxy validation error {status}: {detail or preview or 'bad request'}"
             )
 
-        # 5xx — проблема сервера AI Proxy (ретраим)
+        # 5xx — server error (ретраить)
         if 500 <= status <= 599:
             detail = payload.get("detail") if isinstance(payload, dict) else None
             raise AIProxyServerError(
                 f"AI Proxy server error {status}: {detail or preview or 'server error'}"
             )
 
-        # Любой другой неожиданный статус — считаем серверной проблемой (лучше ретраить ограниченно)
+        # Любой другой неожиданный статус — считаем server error (ретраить ограниченно)
         if status < 200 or status >= 300:
             raise AIProxyServerError(
                 f"AI Proxy unexpected status {status}: {preview or body_text[:200]}"
             )
 
-        # Успех: payload должен быть dict
+        # Шаг 3: Успех (2xx + нет error_code)
         if not payload:
             raise AIProxyServerError("AI Proxy returned empty or non-object JSON response")
 
-        return payload
+        return AIProxyResult(ok=True, payload=payload, status_code=status)
