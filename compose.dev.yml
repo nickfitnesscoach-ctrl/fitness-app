@@ -1,21 +1,20 @@
 # EatFit24 - Development Docker Compose
 # Extends production configuration with development-specific settings
 #
+# SSOT Rule: Docker Compose always reads `.env` (copied from `.env.local`)
+#
 # Usage:
-#   1. Create .env.local from .env.example
-#   2. Start services: docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d
+#   1. cp .env.local .env
+#   2. docker compose -f compose.yml -f compose.dev.yml up -d
 #
 # This file overrides production settings for local development:
 # - Uses local.py settings (DEBUG=True)
 # - Adds volume mounts for live code reloading
-# - Loads environment variables from .env.local
 # - No hardcoded secrets/tokens
 
 services:
   # Django Backend API - Development Configuration
   backend:
-    env_file:
-      - .env.local
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
@@ -42,8 +41,6 @@ services:
 
   # Celery Worker - Development Configuration
   celery-worker:
-    env_file:
-      - .env.local
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
@@ -57,8 +54,6 @@ services:
 
   # Celery Beat - Development Configuration
   celery-beat:
-    env_file:
-      - .env.local
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.local
       - DEBUG=True
@@ -69,24 +64,12 @@ services:
 
   # Telegram Bot - Development Configuration
   bot:
-    env_file:
-      - .env.local
     environment:
       - DEBUG=True
     volumes:
       - ./bot:/app
       - ./bot/logs:/app/logs
       - bot_venv:/app/.venv # Protect Docker-managed venv from host mount
-
-  # Database - Ensure it uses .env.local
-  db:
-    env_file:
-      - .env.local
-
-  # Redis - Ensure it uses .env.local
-  redis:
-    env_file:
-      - .env.local
 
 # Named volumes for development
 volumes:

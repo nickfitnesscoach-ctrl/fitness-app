@@ -1,9 +1,9 @@
 """
-Celery configuration for FoodMind AI project.
+Celery configuration for EatFit24 project.
 
 Usage:
-    # Start worker
-    celery -A config worker -l info
+    # Start worker (requires DJANGO_SETTINGS_MODULE set via env)
+    celery -A config worker -l info -Q ai,billing,default
 
     # Start beat (for periodic tasks)
     celery -A config beat -l info
@@ -15,10 +15,15 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 
-# Set the default Django settings module
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
+# CRITICAL: DJANGO_SETTINGS_MODULE must be set explicitly via environment
+# DO NOT use setdefault here - it can cause local settings to load in production
+# The entrypoint.sh and compose files are responsible for setting this correctly
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    raise RuntimeError(
+        "[CELERY] DJANGO_SETTINGS_MODULE is not set. Set it via .env file or compose environment."
+    )
 
-app = Celery("foodmind")
+app = Celery("eatfit24")
 
 # Load config from Django settings with CELERY_ prefix
 app.config_from_object("django.conf:settings", namespace="CELERY")
@@ -94,7 +99,9 @@ app.conf.beat_schedule = {
     # P2-DIG-01: Weekly billing digest
     "billing-weekly-digest": {
         "task": "apps.billing.tasks_digest.send_weekly_billing_digest",
-        "schedule": crontab(hour=10, minute=0, day_of_week=1),  # Mon 10:00 MSK (CELERY_TIMEZONE=Europe/Moscow)
+        "schedule": crontab(
+            hour=10, minute=0, day_of_week=1
+        ),  # Mon 10:00 MSK (CELERY_TIMEZONE=Europe/Moscow)
     },
     # P4-DIG-02: Weekly digest health check (silent degradation guard)
     "billing-digest-health-check": {

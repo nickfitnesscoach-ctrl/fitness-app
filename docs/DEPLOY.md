@@ -5,6 +5,16 @@
 
 ---
 
+> [!IMPORTANT]
+> ## SSOT Rule
+> Docker Compose **always reads `.env`** — this is the only active environment file.
+> Other env files (`.env.local`, `.env.example`) are **templates only**.
+>
+> ❌ `--env-file .env.local` — **FORBIDDEN**
+> ❌ `--env-file .env.prod` — **FORBIDDEN**
+
+---
+
 ## 1. Local Development (Quick Start)
 
 ### Requirements
@@ -15,12 +25,12 @@
 ### Commands
 1. **Setup Env**:
    ```bash
-   cp .env.example .env.local
-   # Edit .env.local with your keys
+   cp .env.local .env
+   # Edit .env with your keys if needed (replace REPLACE_ME placeholders)
    ```
 2. **Start Services**:
    ```bash
-   docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d
+   docker compose -f compose.yml -f compose.dev.yml up -d
    ```
 3. **Database Migrations**:
    ```bash
@@ -38,13 +48,16 @@
 
 ### Deployment Steps
 1. **Pull latest code**: `git pull origin main`
-2. **Update Environment**: Ensure `.env` is up to date with production values.
+2. **Verify Environment**: Ensure `.env` has production values.
+   ```bash
+   grep -E "APP_ENV|POSTGRES_DB|YOOKASSA_MODE|DEBUG" .env
+   # Expected: APP_ENV=prod, POSTGRES_DB=eatfit24, YOOKASSA_MODE=prod, DEBUG=false
+   ```
 3. **Deploy**:
    ```bash
    docker compose up -d --build
    ```
-   **Note:** Production uses `compose.yml` + `.env` (single-file strategy). Legacy `compose.prod.yml` is **deprecated** and should not be used.
-4. **Automatic Migrations**: Handled by the `backend` container's entrypoint in production.
+4. **Automatic Migrations**: Handled by the `backend` container's entrypoint.
 
 ---
 
@@ -67,9 +80,16 @@ We use a multi-stage pipeline:
 Automated nightly dumps are stored in `/var/lib/eatfit24/backups/` and rotated weekly.
 
 ### Common Issues
-- **Redis Connection**: If workers fail to pick up tasks, check if `CELERY_BROKER_URL` in `.env` points to correct Redis DB (prod: `redis://redis:6379/1`).
+- **Redis Connection**: If workers fail to pick up tasks, check `CELERY_BROKER_URL` in `.env` (prod: `redis://redis:6379/1`).
 - **Media Permissions**: Ensure `/var/lib/eatfit24/media` is owned by the user running Docker.
+- **Env not applied after change**: Use `docker compose up -d --force-recreate backend` (not `restart`).
 
-### Legacy Files
-- **`compose.prod.yml`**: Deprecated as of 2026-01-12. Do not use. Production uses `compose.yml` + `.env`.
-- **`.env.prod`**: Deprecated. Use single `.env` file with production values.
+---
+
+## 5. Forbidden (Legacy)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `compose.prod.yml` | **DEPRECATED** | Use `compose.yml` |
+| `.env.prod` | **FORBIDDEN** | Use `.env` |
+| `--env-file` flag | **FORBIDDEN** | Docker reads `.env` by default |

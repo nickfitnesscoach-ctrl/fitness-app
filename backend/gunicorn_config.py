@@ -23,7 +23,6 @@ Gunicorn — это HTTP-сервер, который запускает Django 
 Именно для этого pidfile перенесён в /tmp.
 """
 
-import multiprocessing
 import os
 
 # --------------------------------------------------------------------
@@ -42,10 +41,47 @@ backlog = 2048
 # ВОРКЕРЫ
 # --------------------------------------------------------------------
 
-# Классическая формула Gunicorn:
-# количество CPU * 2 + 1
-# Пример: 2 CPU → 5 воркеров
-workers = multiprocessing.cpu_count() * 2 + 1
+# ВАЖНО: НЕ использовать cpu_count() как default!
+# В Docker cpu_count() возвращает CPU хоста, не контейнера.
+# Это может привести к OOM, если контейнеру выделено меньше памяти.
+#
+# Приоритет настройки:
+# 1. WEB_CONCURRENCY (env) — стандарт для Heroku/Docker
+# 2. GUNICORN_WORKERS (env) — альтернатива
+# 3. _DEFAULT_WORKERS (2) — безопасный fallback
+#
+# Hard cap: _MAX_WORKERS (4) — защита от случайных OOM
+
+_DEFAULT_WORKERS = 2
+_MAX_WORKERS = 4
+
+
+def _get_workers() -> int:
+    """Get worker count from env with safe defaults and hard cap."""
+    env_val = os.environ.get("WEB_CONCURRENCY") or os.environ.get("GUNICORN_WORKERS")
+    if env_val:
+        try:
+            requested = int(env_val)
+            if requested < 1:
+                print(
+                    f"[gunicorn] WARNING: Invalid workers={requested}, using default={_DEFAULT_WORKERS}"
+                )
+                return _DEFAULT_WORKERS
+            if requested > _MAX_WORKERS:
+                print(
+                    f"[gunicorn] WARNING: Requested workers={requested} exceeds cap, using max={_MAX_WORKERS}"
+                )
+                return _MAX_WORKERS
+            return requested
+        except ValueError:
+            print(
+                f"[gunicorn] WARNING: Invalid WEB_CONCURRENCY/GUNICORN_WORKERS='{env_val}', using default={_DEFAULT_WORKERS}"
+            )
+            return _DEFAULT_WORKERS
+    return _DEFAULT_WORKERS
+
+
+workers = _get_workers()
 
 # Обычные синхронные воркеры
 # Подходят для Django + Celery (AI обрабатывается асинхронно)
@@ -89,9 +125,7 @@ else:
 
 loglevel = "info"
 
-access_log_format = (
-    '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
-)
+access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 
 
 # --------------------------------------------------------------------
@@ -131,6 +165,7 @@ tmp_upload_dir = None
 # --------------------------------------------------------------------
 # ХУКИ (логирование жизненного цикла)
 # --------------------------------------------------------------------
+
 
 def on_starting(server):
     """Вызывается перед инициализацией master-процесса."""

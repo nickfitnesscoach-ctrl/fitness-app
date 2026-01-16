@@ -17,21 +17,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Startup (DEV)
 
-**IMPORTANT**: `docker compose restart` does NOT reload `.env.local` changes. Always use `--force-recreate` to apply environment variable changes.
+> **SSOT Rule**: Docker Compose **always reads `.env`**. The `--env-file` flag is **FORBIDDEN**.
+>
+> Before starting dev, copy the template: `cp .env.local .env`
+
+**IMPORTANT**: `docker compose restart` does NOT reload `.env` changes. Always use `--force-recreate` to apply environment variable changes.
 
 ### Start / Update backend with fresh env
 ```bash
+cp .env.local .env  # Only needed first time or after template changes
 docker compose -f compose.yml -f compose.dev.yml up -d --force-recreate backend
 ```
 
 ### Full dev stack (first run or after env changes)
 ```bash
+cp .env.local .env
 docker compose -f compose.yml -f compose.dev.yml up -d --build
 ```
 
 ### Verification (mandatory if env was changed)
 ```bash
-docker compose -f compose.yml -f compose.dev.yml exec backend env | grep TELEGRAM_ADMINS
+docker compose exec backend env | grep TELEGRAM_ADMINS
 ```
 
 ### Production Deployment
@@ -113,13 +119,15 @@ cloudflared tunnel --url http://localhost:3000 --protocol http2
 
 # 2. Copy the generated URL (e.g., https://tba-codes.trycloudflare.com)
 
-# 3. Update .env.local with the tunnel URL
+# 3. Update .env with the tunnel URL
+cp .env.local .env
+# Then edit .env:
 WEB_APP_URL=https://your-tunnel-url.trycloudflare.com/app
 TRAINER_PANEL_URL=https://your-tunnel-url.trycloudflare.com/panel
 ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,backend,db,redis,.trycloudflare.com
 
 # 4. Start services
-docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d --build
+docker compose -f compose.yml -f compose.dev.yml up -d --build
 
 # 5. Open with debug mode (bypasses Telegram auth signature check)
 # URL: https://your-tunnel-url.trycloudflare.com/app?debug=1
@@ -147,10 +155,11 @@ docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d --b
 
 **Development**:
 ```bash
-# Use compose.yml + compose.dev.yml with .env.local
-docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d --build --force-recreate
-docker compose -f compose.yml -f compose.dev.yml ps
-docker compose -f compose.yml -f compose.dev.yml logs -f backend
+# Use compose.yml + compose.dev.yml (reads .env automatically)
+cp .env.local .env  # First time only
+docker compose -f compose.yml -f compose.dev.yml up -d --build --force-recreate
+docker compose ps
+docker compose logs -f backend
 ```
 
 **Production** (on server):

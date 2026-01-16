@@ -70,7 +70,6 @@ curl -H "Host: eatfit24.ru" http://localhost:8000/health/
 **Было 3+ файла:**
 - `.env` (непонятно какое окружение)
 - `.env.local` (dev шаблон)
-- `.env.prod` (prod шаблон)
 - `.env.example` (документация)
 
 **Результат:**
@@ -146,6 +145,23 @@ eatfit24/
 !.env.local
 !.env.example
 ```
+
+> [!CAUTION]
+> ## Production Environment (SSOT)
+> 
+> В production используется **ТОЛЬКО** файл `.env`:
+> - Файл `.env` существует только на сервере
+> - `.env` НЕ коммитится
+> - Создаётся вручную из `.env.example`
+> 
+> ❌ **`.env.prod` НЕ используется и не должен существовать**
+> ❌ **Любые `--env-file .env.prod` запрещены**
+> 
+> **Команда запуска production:**
+> ```bash
+> docker compose up -d --build
+> ```
+> Без `--env-file`. Docker Compose по умолчанию читает `.env` — это и есть SSOT.
 
 ---
 
@@ -566,7 +582,6 @@ docker exec eatfit24-backend-1 printenv | grep -E "^(APP_ENV|POSTGRES_DB|YOOKASS
 ```
 .env              ← Непонятно какое окружение
 .env.local        ← DEV шаблон
-.env.prod         ← PROD шаблон
 .env.example      ← Документация
 ```
 

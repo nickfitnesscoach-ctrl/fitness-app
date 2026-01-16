@@ -14,7 +14,7 @@ EatFit24 is a comprehensive ecosystem for nutrition tracking and fitness managem
 | Key SSOT | Description |
 |----------|-------------|
 | **[Architecture](docs/ARCHITECTURE.md)** | System design, service interaction, and data flows. |
-| **[Environment](docs/ENV_SSOT.md)** | Configuration contract, .env.local vs .env.prod. |
+| **[Environment](docs/ENV_SSOT.md)** | Configuration contract: `.env.local` (dev), `.env` (prod). |
 | **[Deployment](docs/DEPLOY.md)** | Quick start, production release, and ops runbook. |
 | **[Billing](docs/BILLING.md)** | Payments, subscriptions, and recurring logic. |
 | **[AI Proxy](docs/AI_PROXY.md)** | AI recognition contracts and normalization. |

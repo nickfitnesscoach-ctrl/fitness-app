@@ -47,11 +47,17 @@ ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,backend,db,redis,.trycloudflare.com
 ```
 
 ### 3. Запуск Проекта (Docker)
-Используйте команду "One-Liner" для запуска всего окружения с вашими локальными настройками:
+Скопируйте шаблон и запустите окружение:
 
 ```powershell
-docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d --build
+# 1. Скопируйте шаблон (первый раз или после изменений .env.local)
+cp .env.local .env
+
+# 2. Запустите контейнеры
+docker compose -f compose.yml -f compose.dev.yml up -d --build
 ```
+
+> ⚠️ **SSOT**: Docker Compose всегда читает `.env`. Флаг `--env-file` **запрещён**.
 
 ---
 
@@ -81,10 +87,10 @@ docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d --b
 ### 2. Ошибка "DisallowedHost" (в логах бэкенда)
 * **Причина**: Django отклонил запрос, так как домен туннеля не в списке `ALLOWED_HOSTS`.
 * **Решение**: 
-    1. Проверьте `.env.local`, чтобы там был `.trycloudflare.com`.
+    1. Проверьте `.env`, чтобы там был `.trycloudflare.com`.
     2. Пересоздайте контейнер бэкенда: 
        ```powershell
-       docker compose -f compose.yml -f compose.dev.yml --env-file .env.local up -d backend
+       docker compose -f compose.yml -f compose.dev.yml up -d --force-recreate backend
        ```
 
 ### 3. Белый экран или вечная загрузка
