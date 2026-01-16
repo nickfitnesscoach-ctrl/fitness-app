@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Check, AlertCircle, X, RefreshCcw, Camera, CheckCircle2 } from 'lucide-react';
 import type { PhotoQueueItem } from '../../model';
 import { AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES } from '../../model';
+import { useBodyScrollLock } from '../../../../hooks/useBodyScrollLock';
 
 interface BatchResultsModalProps {
     photoQueue: PhotoQueueItem[];
@@ -10,6 +11,8 @@ interface BatchResultsModalProps {
     onClose: () => void;
     /** Called when user wants to go back to camera (for cancelled batches) */
     onBackToCamera?: () => void;
+    /** Controls scroll lock (required for proper iOS scroll lock lifecycle). */
+    isOpen: boolean;
 }
 
 export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
@@ -17,7 +20,10 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
     onRetrySelected,
     onClose,
     onBackToCamera,
+    isOpen,
 }) => {
+    useBodyScrollLock(isOpen);
+
     // Multi-select state for retry
     const [selectedForRetry, setSelectedForRetry] = useState<Set<string>>(new Set());
 

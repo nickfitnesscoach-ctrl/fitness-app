@@ -9,10 +9,13 @@ import { useState, useEffect } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { onAuthError, AuthErrorEvent } from '../services/api';
 import { closeTelegramWebApp, getTelegramWebApp } from '../lib/telegram';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export const AuthErrorModal: React.FC = () => {
     const [error, setError] = useState<AuthErrorEvent | null>(null);
     const [isVisible, setIsVisible] = useState(false);
+
+    useBodyScrollLock(isVisible);
 
     useEffect(() => {
         // Подписываемся на auth errors

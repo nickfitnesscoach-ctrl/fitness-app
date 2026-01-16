@@ -1,5 +1,6 @@
 import React from 'react';
 import { Edit2 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface EditFoodItemModalProps {
     isOpen: boolean;
@@ -22,6 +23,8 @@ export const EditFoodItemModal: React.FC<EditFoodItemModalProps> = ({
     onNameChange,
     onGramsChange,
 }) => {
+    useBodyScrollLock(isOpen);
+
     if (!isOpen) return null;
 
     return (

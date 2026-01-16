@@ -442,6 +442,7 @@ const FoodLogPage: React.FC = () => {
 
                 {!IS_DEBUG && showLimitModal && (
                     <LimitReachedModal
+                        isOpen={showLimitModal}
                         dailyLimit={billing.data?.daily_photo_limit || 3}
                         onClose={() => {
                             setShowLimitModal(false);
@@ -453,6 +454,7 @@ const FoodLogPage: React.FC = () => {
 
                 {showResults && (
                     <BatchResultsModal
+                        isOpen={showResults}
                         photoQueue={photoQueue}
                         onRetrySelected={(ids) => {
                             closeResults();

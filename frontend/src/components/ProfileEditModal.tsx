@@ -3,6 +3,7 @@ import { X, Save, Activity, Calendar, Ruler, Weight, Target, User } from 'lucide
 import { api } from '../services/api';
 import { Profile } from '../types/profile';
 import { useAppData } from '../contexts/AppDataContext';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export type { Profile };
 
@@ -18,6 +19,8 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, pr
     const [formData, setFormData] = useState<Partial<Profile>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    useBodyScrollLock(isOpen);
 
     useEffect(() => {
         if (isOpen && profile) {

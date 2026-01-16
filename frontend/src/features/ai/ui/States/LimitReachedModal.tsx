@@ -1,10 +1,13 @@
 import React from 'react';
 import { AlertCircle, CreditCard } from 'lucide-react';
+import { useBodyScrollLock } from '../../../../hooks/useBodyScrollLock';
 
 interface LimitReachedModalProps {
     dailyLimit: number;
     onClose: () => void;
     onUpgrade: () => void;
+    /** Controls scroll lock (required for proper iOS scroll lock lifecycle). */
+    isOpen: boolean;
 }
 
 /**
@@ -14,7 +17,10 @@ export const LimitReachedModal: React.FC<LimitReachedModalProps> = ({
     dailyLimit,
     onClose,
     onUpgrade,
+    isOpen,
 }) => {
+    useBodyScrollLock(isOpen);
+
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">

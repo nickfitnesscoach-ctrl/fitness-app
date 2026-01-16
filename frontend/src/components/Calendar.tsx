@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 interface CalendarProps {
     selectedDate: Date;
@@ -13,6 +14,8 @@ const Calendar: React.FC<CalendarProps> = ({ selectedDate, onDateSelect }) => {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [pickerYear, setPickerYear] = useState(selectedDate.getFullYear());
     const [pickerMonth, setPickerMonth] = useState(selectedDate.getMonth());
+
+    useBodyScrollLock(showDatePicker);
 
     // Generate week days array based on selected date and week offset
     const getWeekDays = () => {

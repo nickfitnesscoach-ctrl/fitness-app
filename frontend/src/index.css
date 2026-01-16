@@ -114,3 +114,13 @@ input[type="number"] {
   color: #111827;
   -webkit-text-fill-color: #111827;
 }
+
+/* ============================================================
+   Modal Scroll Lock (iOS WebView Fix)
+   Prevents background scroll when modal is open
+   ============================================================ */
+html.modal-open,
+body.modal-open {
+  overflow: hidden;
+  overscroll-behavior: none;
+}

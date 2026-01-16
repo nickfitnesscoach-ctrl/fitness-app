@@ -1,5 +1,6 @@
 import React from 'react';
 import { Trash2 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface DeleteFoodItemModalProps {
     isOpen: boolean;
@@ -14,6 +15,8 @@ export const DeleteFoodItemModal: React.FC<DeleteFoodItemModalProps> = ({
     onConfirm,
     loading,
 }) => {
+    useBodyScrollLock(isOpen);
+
     if (!isOpen) return null;
 
     return (
