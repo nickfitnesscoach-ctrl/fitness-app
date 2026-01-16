@@ -108,6 +108,9 @@ def _handle_throttled_exception(exc: Throttled, context):
 
 def _convert_drf_error(response, exc):
     """Convert DRF error response to unified format."""
+    import uuid
+    from apps.ai.error_contract import AIErrorRegistry
+
     data = response.data
 
     # Already in our format
@@ -121,22 +124,48 @@ def _convert_drf_error(response, exc):
             isinstance(v, list) for v in data.values()
             if not isinstance(v, str)
         )
-        
+
         if has_field_errors:
-            # Build human-readable message from first error
-            first_error = None
+            # Detect image-specific validation errors
+            image_fields = {"image", "file", "photo", "upload", "normalized_image"}
+            error_field = None
+            error_message = None
+
             for field, errors in data.items():
                 if isinstance(errors, list) and errors:
-                    first_error = f"{field}: {errors[0]}"
+                    error_field = field
+                    error_message = errors[0]
                     break
                 elif isinstance(errors, str):
-                    first_error = f"{field}: {errors}"
+                    error_field = field
+                    error_message = errors
                     break
-            
+
+            # If error is image-related, return AI Error Contract format
+            if error_field and error_field.lower() in image_fields:
+                trace_id = uuid.uuid4().hex
+                error_def = AIErrorRegistry.INVALID_IMAGE
+
+                # Use AIErrorResponse format instead of generic VALIDATION_ERROR
+                response.data = error_def.to_dict(trace_id=trace_id)
+                response['X-Request-ID'] = trace_id
+
+                logger.warning(
+                    "[ValidationError->AIError] Image validation failed: field=%s error=%s trace_id=%s",
+                    error_field,
+                    error_message,
+                    trace_id,
+                )
+
+                return response
+
+            # Non-image validation errors: use legacy format
+            first_error = f"{error_field}: {error_message}" if error_field else "Ошибка валидации данных"
+
             response.data = {
                 "error": {
                     "code": "VALIDATION_ERROR",
-                    "message": first_error or "Ошибка валидации данных",
+                    "message": first_error,
                     "details": data
                 }
             }

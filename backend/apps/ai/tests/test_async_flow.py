@@ -201,6 +201,13 @@ class TestAIAsyncFlow:
         body = resp.json()
         assert body["error_code"] == "DAILY_PHOTO_LIMIT_EXCEEDED"
 
+        # Verify Error Contract compliance
+        assert "trace_id" in body, "trace_id missing in DAILY_PHOTO_LIMIT_EXCEEDED response"
+        assert body["allow_retry"] is False, "allow_retry should be False for DAILY_PHOTO_LIMIT_EXCEEDED"
+        assert "upgrade" in body["user_actions"], "user_actions should include 'upgrade'"
+        assert "user_title" in body, "user_title missing"
+        assert "user_message" in body, "user_message missing"
+
         # No new Meal should be created
         meal_count_after = Meal.objects.filter(user=user).count()
         assert meal_count_after == meal_count_before
