@@ -86,6 +86,9 @@ id_rsa*
 Thumbs.db
 .claude/
 
+# Claude/Cursor temp cwd markers
+tmpclaude-*
+
 # =========================
 # Testing
 # =========================
