@@ -13,13 +13,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Package managers**: Backend and Bot use `uv` for Python dependencies. Frontend uses `npm`.
 
-## Quick Reference
+**Claude Code agents**: Specialized agent configurations in `.claude/agents/` (backend-python, frontend, devops) with domain-specific rules and invariants.
 
 ## Development Startup (DEV)
 
-⚠️ IMPORTANT:  
-`docker compose restart` **НЕ перечитывает** изменения в `.env.local`.  
-Для применения изменений environment variables **ОБЯЗАТЕЛЬНО** использовать `--force-recreate`.
+**IMPORTANT**: `docker compose restart` does NOT reload `.env.local` changes. Always use `--force-recreate` to apply environment variable changes.
 
 ### Start / Update backend with fresh env
 ```bash
@@ -35,9 +33,6 @@ docker compose -f compose.yml -f compose.dev.yml up -d --build
 ```bash
 docker compose -f compose.yml -f compose.dev.yml exec backend env | grep TELEGRAM_ADMINS
 ```
-
-### Telegram Mini App Tunnel
-
 
 ### Production Deployment
 ```bash
@@ -709,3 +704,21 @@ fi
 **Priority**: Low (current manual monitoring is adequate for current scale).
 
 **Note**: This is deliberately kept simple (not a full monitoring stack like Prometheus). Just detection + alerting for critical issues.
+
+---
+
+## Document Status
+
+This document is the **Single Source of Truth (SSOT)** for:
+- Architecture and service communication
+- Development and deployment workflows
+- Environment contracts and configuration
+- CI/CD gates and invariants
+- Operational rules and procedures
+
+**If something contradicts this document — this document wins.**
+
+Related SSOTs (see [docs/INDEX.md](docs/INDEX.md)):
+- Billing details: [docs/BILLING.md](docs/BILLING.md)
+- Environment: [docs/ENV.md](docs/ENV.md)
+- Operations: [docs/OPS_RUNBOOK.md](docs/OPS_RUNBOOK.md)

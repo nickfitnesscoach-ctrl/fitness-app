@@ -12,7 +12,18 @@ Nginx — это веб-сервер, который стоит "на входе
 | Файл | Что делает |
 |------|------------|
 | `eatfit24.ru` | Основной конфиг сайта |
-| `snippets/websocket_map.conf` | Дополнительный конфиг (необязательный) |
+| `snippets/websocket_map.conf` | Опциональный snippet для WebSocket (подключается ТОЛЬКО в `http{}` nginx.conf) |
+
+## ВАЖНО: Telegram авторизация
+
+Бэкенд ожидает заголовок:
+```
+X-Telegram-Init-Data
+```
+
+Если nginx прокидывает другой заголовок (например `X-TG-INIT-DATA`) — **авторизация НЕ БУДЕТ работать**.
+
+Это критично для Telegram Mini App.
 
 ## Как установить
 
@@ -44,6 +55,8 @@ sudo systemctl reload nginx
 
 ## Как проверить что работает
 
+### Быстрая проверка
+
 ```bash
 curl -i https://eatfit24.ru/api/v1/billing/me/ \
   -H 'X-Telegram-Init-Data: test'
@@ -51,6 +64,14 @@ curl -i https://eatfit24.ru/api/v1/billing/me/ \
 
 Должен вернуться ответ 401 или 403 — это нормально (мы послали неправильный токен).
 Главное что сервер ответил, а не выдал ошибку 502 или таймаут.
+
+### Полный smoke test
+
+```bash
+./ops/health/check-prod-smoke.sh
+```
+
+Автоматически проверяет: доступность сайта, health бэкенда, CORS, защиту API.
 
 ## Что настроено в конфиге
 
@@ -78,7 +99,8 @@ docker logs eatfit24-backend-1 --tail 50
 ```
 
 ### Ошибка "504 Gateway Timeout"
-Запрос слишком долгий. Если это AI-запрос — подожди, он может занять до 2 минут.
+Запрос слишком долгий. AI-запросы могут обрабатываться до 2 минут.
+Если 504 возникает раньше — проверь таймауты в nginx и на бэкенде.
 
 ### Сайт не открывается после изменений
 1. Проверь синтаксис: `sudo nginx -t`
@@ -89,3 +111,7 @@ docker logs eatfit24-backend-1 --tail 50
 ```bash
 docker logs eatfit24-backend-1 | grep -i telegram
 ```
+
+### Ошибка "directive map is not allowed here"
+Файл `websocket_map.conf` подключён в неправильном месте.
+Его нельзя подключать внутри `server{}` — только внутри `http{}` в `/etc/nginx/nginx.conf`.
