@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 :root {
+  /* iOS WebKit forced dark mode prevention */
+  color-scheme: light;
+
   /* Layout Tokens */
   --page-px: 16px;
   --section-gap: 20px;
@@ -32,6 +35,7 @@
 
 html, body {
   @apply bg-gray-50 text-gray-900;
+  color-scheme: light; /* iOS WebKit: duplicate on html for full coverage */
   overflow-x: hidden;
   width: 100%;
   font-variant-numeric: tabular-nums;
@@ -56,15 +60,13 @@ html, body {
 input,
 select,
 textarea {
-  color: var(--tg-theme-text-color, #1f2937);
-  -webkit-text-fill-color: var(--tg-theme-text-color, #1f2937);
-  opacity: 1; /* Prevent iOS reduced opacity on disabled inputs */
+  color: #111827; /* slate-900 - explicit color for iOS WebKit */
+  -webkit-text-fill-color: #111827; /* Critical: forces readable text on iOS */
 }
 
 input::placeholder,
 textarea::placeholder {
   color: var(--tg-theme-hint-color, #9ca3af);
-  -webkit-text-fill-color: var(--tg-theme-hint-color, #9ca3af);
 }
 
 /* iOS date/time input fix */
@@ -73,18 +75,42 @@ input[type="time"],
 input[type="datetime-local"] {
   appearance: none;
   -webkit-appearance: none;
-  color: var(--tg-theme-text-color, #1f2937);
-  -webkit-text-fill-color: var(--tg-theme-text-color, #1f2937);
+  color: #111827;
+  -webkit-text-fill-color: #111827;
 }
 
-/* iOS date picker pseudo-elements */
-input[type="date"]::-webkit-date-and-time-value {
+/* iOS date/time picker: value display */
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value {
   text-align: left;
-  color: var(--tg-theme-text-color, #1f2937);
+  color: #111827;
+  -webkit-text-fill-color: #111827;
+}
+
+/* iOS date/time picker: edit fields (focus/editing state) */
+input[type="date"]::-webkit-datetime-edit,
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field,
+input[type="time"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit-text,
+input[type="time"]::-webkit-datetime-edit-hour-field,
+input[type="time"]::-webkit-datetime-edit-minute-field,
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit-text,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
+  color: #111827;
+  -webkit-text-fill-color: #111827;
 }
 
 /* Ensure number inputs are also readable */
 input[type="number"] {
-  color: var(--tg-theme-text-color, #1f2937);
-  -webkit-text-fill-color: var(--tg-theme-text-color, #1f2937);
+  color: #111827;
+  -webkit-text-fill-color: #111827;
 }
