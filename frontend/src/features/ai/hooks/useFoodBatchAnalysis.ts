@@ -18,7 +18,6 @@ import type { AnalysisResult, TaskStatusResponse, RecognizeResponse, CancelReque
 import type { FileWithComment, BatchAnalysisOptions, PhotoQueueItem, PhotoUploadStatus } from '../model';
 import { POLLING_CONFIG, AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES, getAiErrorMessage } from '../model';
 import { preprocessImage, PreprocessError, generateUUID } from '../lib';
-import { api } from '../../../services/api';
 
 interface UseFoodBatchAnalysisResult {
     isProcessing: boolean;

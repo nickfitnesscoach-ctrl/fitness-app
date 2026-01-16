@@ -109,6 +109,8 @@ export const getMealAnalysis = async (
         // Backend uses: id, name, grams, calories, protein, fat, carbohydrates
         return {
             id: data.id,
+            meal_type: data.meal_type,
+            date: data.date,
             photo_url: resolveImageUrl(mainPhoto),
             label: data.meal_type_display,
             recognized_items: (data.items || []).map((item: FoodItem) => ({
