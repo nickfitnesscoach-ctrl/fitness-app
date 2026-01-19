@@ -195,10 +195,17 @@ def normalize_proxy_response(raw: Any, *, request_id: str = "") -> Dict[str, Any
     if totals == {"calories": 0.0, "protein": 0.0, "fat": 0.0, "carbohydrates": 0.0} and items:
         totals = compute_totals_from_items(items)
 
+    # Meta: extract all relevant fields for LOW_CONFIDENCE vs EMPTY_RESULT decision
     meta: Dict[str, Any] = {
         "request_id": request_id,
         "model_notes": raw.get("model_notes"),
+        # AI Proxy gate/confidence metadata (P1: for LOW_CONFIDENCE detection)
+        "confidence": raw.get("confidence") or raw.get("gate_confidence"),
+        "zone": raw.get("zone") or raw.get("final_zone"),
+        "final_status": raw.get("final_status") or raw.get("status"),
+        "reason_code": raw.get("reason_code"),
     }
+    # Remove None values
     meta = {k: v for k, v in meta.items() if v is not None}
 
     return {"items": items, "totals": totals, "meta": meta}

@@ -24,5 +24,6 @@ export {
     getAiErrorMessage,
     isRetryableError,
     getErrorActionHint,
+    getErrorTitle,
 } from './constants';
 export type { AiErrorCode } from './constants';

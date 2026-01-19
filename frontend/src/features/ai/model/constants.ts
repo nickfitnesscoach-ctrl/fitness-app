@@ -94,6 +94,9 @@ export const AI_ERROR_CODES = {
     RATE_LIMIT: 'RATE_LIMIT',
     INTERNAL_ERROR: 'INTERNAL_ERROR',
     INVALID_IMAGE: 'INVALID_IMAGE',
+    // Recognition classification errors
+    LOW_CONFIDENCE: 'LOW_CONFIDENCE',
+    UNSUPPORTED_CONTENT: 'UNSUPPORTED_CONTENT',
 } as const;
 
 export type AiErrorCode = typeof AI_ERROR_CODES[keyof typeof AI_ERROR_CODES];
@@ -137,6 +140,9 @@ export const AI_ERROR_MESSAGES: Record<string, string> = {
     [AI_ERROR_CODES.RATE_LIMIT]: 'Слишком много запросов. Подождите немного.',
     [AI_ERROR_CODES.INTERNAL_ERROR]: 'Внутренняя ошибка сервера. Попробуйте позже.',
     [AI_ERROR_CODES.INVALID_IMAGE]: 'Не удалось обработать изображение. Попробуйте другое фото.',
+    // Recognition classification errors
+    [AI_ERROR_CODES.LOW_CONFIDENCE]: 'Не уверены в результате. Выберите блюдо вручную или сделайте фото ближе.',
+    [AI_ERROR_CODES.UNSUPPORTED_CONTENT]: 'На фото нет еды. Попробуйте другое фото.',
     // Backend throttling message pattern
     'Request was throttled': 'Дневной лимит исчерпан. Оформите PRO для безлимита.',
 };
@@ -208,6 +214,10 @@ export function getErrorActionHint(errorCode: string | undefined): string | null
     if (!errorCode) return null;
 
     switch (errorCode) {
+        case AI_ERROR_CODES.LOW_CONFIDENCE:
+            return 'Выберите блюдо из списка или сделайте фото ближе при хорошем освещении';
+        case AI_ERROR_CODES.UNSUPPORTED_CONTENT:
+            return 'Сфотографируйте еду — изображение должно содержать пищу';
         case AI_ERROR_CODES.IMAGE_TOO_LARGE:
             return 'Сделайте фото ближе или выберите другое изображение';
         case AI_ERROR_CODES.INVALID_IMAGE:
@@ -222,5 +232,40 @@ export function getErrorActionHint(errorCode: string | undefined): string | null
             return 'Сфотографируйте еду крупнее и ближе';
         default:
             return null;
+    }
+}
+
+/**
+ * Get error title for UI display (BatchResultsModal header)
+ * SSOT for error titles - use this instead of hardcoded strings in components
+ */
+export function getErrorTitle(errorCode: string | undefined): string {
+    switch (errorCode) {
+        case AI_ERROR_CODES.LOW_CONFIDENCE:
+            return 'Не уверены в результате';
+        case AI_ERROR_CODES.UNSUPPORTED_CONTENT:
+            return 'Не еда';
+        case AI_ERROR_CODES.EMPTY_RESULT:
+            return 'Не распознано';
+        case AI_ERROR_CODES.IMAGE_TOO_LARGE:
+        case AI_ERROR_CODES.INVALID_IMAGE:
+        case AI_ERROR_CODES.UNSUPPORTED_FORMAT:
+        case AI_ERROR_CODES.PREPROCESS_DECODE_FAILED:
+        case AI_ERROR_CODES.PREPROCESS_INVALID_IMAGE:
+            return 'Проблема с фото';
+        case AI_ERROR_CODES.DAILY_LIMIT_REACHED:
+        case AI_ERROR_CODES.THROTTLED:
+            return 'Лимит исчерпан';
+        case AI_ERROR_CODES.AI_TIMEOUT:
+        case AI_ERROR_CODES.UPSTREAM_TIMEOUT:
+        case AI_ERROR_CODES.TASK_TIMEOUT:
+            return 'Превышено время ожидания';
+        case AI_ERROR_CODES.AI_SERVER_ERROR:
+        case AI_ERROR_CODES.UPSTREAM_ERROR:
+        case AI_ERROR_CODES.INTERNAL_ERROR:
+            return 'Сервис недоступен';
+        default:
+            // Fallback only when errorCode is missing or truly unknown
+            return errorCode ? 'Ошибка обработки' : 'Ошибка';
     }
 }

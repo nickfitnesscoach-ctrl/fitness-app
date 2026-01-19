@@ -235,6 +235,15 @@ class AIErrorRegistry:
         category="validation",
     )
 
+    LOW_CONFIDENCE = AIErrorDefinition(
+        code="LOW_CONFIDENCE",
+        user_title="Не уверены в результате",
+        user_message="Выберите блюдо вручную или сделайте фото ближе при хорошем освещении.",
+        user_actions=["manual_select", "retake"],
+        allow_retry=False,
+        category="validation",
+    )
+
     UNSUPPORTED_CONTENT = AIErrorDefinition(
         code="UNSUPPORTED_CONTENT",
         user_title="Не удалось распознать еду",

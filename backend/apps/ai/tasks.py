@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from celery import shared_task
 from django.db import transaction
@@ -33,6 +33,7 @@ from apps.ai_proxy import (
     AIProxyService,
     AIProxyTimeoutError,
 )
+from apps.ai_proxy.constants import LOW_CONFIDENCE_ZONES, NOT_FOOD_ZONES
 from apps.common.nutrition_utils import clamp_grams
 
 from .error_contract import AIErrorDefinition, AIErrorRegistry
@@ -375,9 +376,71 @@ def recognize_food_async(
     # 2) Гарантируем валидные данные
     safe_items = _json_safe_items(items)
 
-    # P0 Data Integrity: Handle empty results
+    # P0 Debug: Log raw vs safe items count (diagnose filtering issues)
+    if len(items) != len(safe_items) or not safe_items:
+        logger.info(
+            "[AI:ITEMS_DEBUG] rid=%s raw_items=%d safe_items=%d meta=%s",
+            rid,
+            len(items),
+            len(safe_items),
+            {
+                k: v
+                for k, v in meta.items()
+                if k in ("zone", "confidence", "final_status", "reason_code")
+            },
+        )
+
+    # P1: Handle empty results - distinguish LOW_CONFIDENCE vs EMPTY_RESULT
+    # Priority: zone > confidence > fallback
     if not safe_items:
-        error_def = AIErrorRegistry.EMPTY_RESULT
+        # Normalize zone string (case-insensitive, handle variants)
+        raw_zone = meta.get("zone", "") or ""
+        zone = str(raw_zone).strip().lower()
+        confidence = meta.get("confidence")
+        final_status = meta.get("final_status")
+        reason_code = meta.get("reason_code")
+
+        # Decision logic: zone takes priority
+        # SSOT: apps.ai_proxy.constants (also see docs/AI_PROXY.md)
+
+        if zone in LOW_CONFIDENCE_ZONES:
+            # AI detected food but confidence too low → manual selection
+            error_def = AIErrorRegistry.LOW_CONFIDENCE
+        elif zone in NOT_FOOD_ZONES:
+            # AI determined this is not food
+            error_def = AIErrorRegistry.UNSUPPORTED_CONTENT
+        elif not zone and confidence is not None:
+            # No zone but have confidence → use threshold from settings
+            from django.conf import settings
+
+            # Safe threshold with clamping [0.0, 1.0] and fallback
+            try:
+                raw_threshold = getattr(settings, "AI_PROXY_LOW_CONFIDENCE_THRESHOLD", 0.5)
+                threshold = max(0.0, min(1.0, float(raw_threshold)))
+            except (TypeError, ValueError):
+                threshold = 0.5  # Fallback if not a valid number
+
+            if confidence < threshold:
+                error_def = AIErrorRegistry.LOW_CONFIDENCE
+            else:
+                error_def = AIErrorRegistry.EMPTY_RESULT
+        else:
+            # No zone, no confidence → truly empty result
+            error_def = AIErrorRegistry.EMPTY_RESULT
+
+        # INVARIANT: Always log metadata + chosen error_code for empty items (P1 observability)
+        logger.info(
+            "[AI:EMPTY_ITEMS] trace_id=%s meal_photo_id=%s zone=%s confidence=%s "
+            "final_status=%s reason_code=%s error_code=%s",
+            rid,
+            meal_photo_id,
+            zone,
+            confidence,
+            final_status,
+            reason_code,
+            error_def.code,
+        )
+
         _update_meal_photo_failed(meal_photo_id, error_def, trace_id=rid)
         return _error_response(error_def, meal_id, meal_photo_id, user_id, trace_id=rid)
 
@@ -398,7 +461,9 @@ def recognize_food_async(
             )
             return {
                 "error": meal_photo.status,
-                "error_message": "Отменено" if meal_photo.status == "CANCELLED" else "Обработка не удалась",
+                "error_message": "Отменено"
+                if meal_photo.status == "CANCELLED"
+                else "Обработка не удалась",
                 "items": [],
                 "meal_id": meal_id,
                 "meal_photo_id": meal_photo_id,

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Camera, Check, CheckCircle2, Copy, RefreshCcw, X } from 'lucide-react';
 
 import type { PhotoQueueItem } from '../../model';
-import { AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES, getErrorActionHint } from '../../model';
+import { AI_ERROR_CODES, NON_RETRYABLE_ERROR_CODES, getErrorActionHint, getErrorTitle } from '../../model';
 import { useBodyScrollLock } from '../../../../hooks/useBodyScrollLock';
 
 interface BatchResultsModalProps {
@@ -163,7 +163,7 @@ export const BatchResultsModal: React.FC<BatchResultsModalProps> = ({
                                     ) : (
                                         <>
                                             <h3 className={`font-bold ${isCancelled ? 'text-gray-500' : 'text-red-600'}`}>
-                                                {isCancelled ? 'Отменено' : 'Ошибка загрузки'}
+                                                {isCancelled ? 'Отменено' : getErrorTitle(item.errorCode)}
                                             </h3>
 
                                             <p

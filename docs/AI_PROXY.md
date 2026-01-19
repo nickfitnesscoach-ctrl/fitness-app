@@ -73,7 +73,19 @@ See [backend/apps/ai_proxy/client.py:102](../backend/apps/ai_proxy/client.py#L10
 ## 4. API & Data Contract
 
 ### Endpoint
-`POST /v1/recognize` (or as configured in `client.py`)
+
+**SSOT:** `backend/apps/ai_proxy/client.py:_RECOGNIZE_PATH`
+
+`POST /api/v1/ai/recognize-food`
+
+```bash
+# Example curl (replace with real values)
+curl -X POST http://185.171.80.128:8001/api/v1/ai/recognize-food \
+  -H "X-API-Key: $AI_PROXY_SECRET" \
+  -H "X-Request-ID: test-trace-id" \
+  -F "image=@food.jpg" \
+  -F "locale=ru"
+```
 
 ### Standard Response Format
 The `ai_proxy` module normalizes all AI responses into a unified structure:
@@ -109,6 +121,25 @@ The `ai_proxy` module normalizes all AI responses into a unified structure:
 - **Units**: Grams are always ≥ 1.
 - **Aliases**: `kcal` is mapped to `calories`, `carbs` to `carbohydrates`.
 - **Value types**: All macronutrients are float or int, never `null`.
+
+### Zone Mapping (SSOT)
+
+**Code SSOT:** [`backend/apps/ai_proxy/constants.py`](../backend/apps/ai_proxy/constants.py)
+
+AI Proxy may return a `zone` field indicating recognition confidence tier. Backend maps zones to error codes:
+
+| AI Proxy Zone | Backend Error Code | User Action |
+|---------------|-------------------|-------------|
+| `not_food`, `no_food`, `unsupported` | `UNSUPPORTED_CONTENT` | "Попробуйте другое фото" |
+| `low_confidence`, `low`, `food_possible` | `LOW_CONFIDENCE` | "Выберите блюдо вручную" |
+| `food_likely` (empty items) | `EMPTY_RESULT` | "Сделать фото крупнее" |
+| (no zone, confidence < threshold) | `LOW_CONFIDENCE` | "Выберите блюдо вручную" |
+| (no zone, no confidence) | `EMPTY_RESULT` | Fallback |
+
+**Config:** `settings.AI_PROXY_LOW_CONFIDENCE_THRESHOLD` (default: 0.5, clamped to [0.0, 1.0])
+
+> [!IMPORTANT]
+> When adding new zones to AI Proxy, update this table and `backend/apps/ai/tasks.py`.
 
 ---
 
