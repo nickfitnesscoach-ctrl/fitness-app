@@ -198,12 +198,14 @@ class AIProxyClient:
         status = resp.status_code
 
         # Debug logging для диагностики (2026-01-16)
+        # Note: 'preview' only contains data on JSON parse errors
+        # For successful JSON parses, we need to log body_text or payload
         logger.info(
-            "[AI Proxy] Request to %s | status=%d | trace_id=%s | response_preview=%s",
+            "[AI Proxy] Request to %s | status=%d | trace_id=%s | response=%s",
             url,
             status,
             request_id or "none",
-            preview[:200] if preview else "empty"
+            body_text[:300] if body_text else "empty"  # Log actual response body
         )
 
         # ------------------------------------------------------------
