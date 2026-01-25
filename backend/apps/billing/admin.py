@@ -117,6 +117,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
     list_display = (
         "user",
+        "user_full_name",
         "plan",
         "start_date",
         "end_date",
@@ -126,9 +127,16 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "days_left_badge",
     )
     list_filter = ("is_active", "auto_renew", "plan", "created_at")
-    search_fields = ("user__email", "user__username")
+    search_fields = ("user__email", "user__username", "user__profile__full_name")
     ordering = ("-created_at",)
     raw_id_fields = ("user",)
+
+    @admin.display(description="Имя")
+    def user_full_name(self, obj: Subscription) -> str:
+        """Имя пользователя из профиля."""
+        if hasattr(obj.user, "profile") and obj.user.profile.full_name:
+            return obj.user.profile.full_name
+        return "-"
 
     readonly_fields = ("created_at", "updated_at")
 
