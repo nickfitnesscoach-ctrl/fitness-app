@@ -139,13 +139,16 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
     @admin.display(description="Имя")
     def user_full_name(self, obj: Subscription) -> str:
-        """Имя пользователя из TelegramUser или Profile."""
-        # Сначала ищем в TelegramUser (основной источник для Telegram юзеров)
+        """Имя пользователя с ссылкой на Telegram профиль."""
         if hasattr(obj.user, "telegram_profile"):
             tg = obj.user.telegram_profile
-            full = f"{tg.first_name} {tg.last_name}".strip()
-            if full:
-                return full
+            full = f"{tg.first_name} {tg.last_name}".strip() or "-"
+            # Ссылка на Telegram: по username или по ID
+            if tg.username:
+                url = f"https://t.me/{tg.username}"
+            else:
+                url = f"tg://user?id={tg.telegram_id}"
+            return format_html('<a href="{}" target="_blank">{}</a>', url, full)
         # Fallback на Profile.full_name
         if hasattr(obj.user, "profile") and obj.user.profile.full_name:
             return obj.user.profile.full_name
