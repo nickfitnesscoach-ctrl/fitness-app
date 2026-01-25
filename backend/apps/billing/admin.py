@@ -22,6 +22,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from .models import Payment, Refund, Subscription, SubscriptionPlan, WebhookLog
+from .notifications import send_gift_subscription_notification
 from .usage import DailyUsage
 
 # ---------------------------------------------------------------------
@@ -195,6 +196,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
         now = timezone.now()
         count = 0
+        notified = 0
         for sub in queryset:
             # Если текущая подписка ещё активна и это PRO — продлеваем
             if sub.plan.code.startswith("PRO") and sub.end_date > now:
@@ -209,11 +211,35 @@ class SubscriptionAdmin(admin.ModelAdmin):
             sub.save()
             count += 1
 
+            # Отправляем уведомление пользователю в Telegram
+            tg_id = self._get_telegram_id(sub)
+            if tg_id:
+                end_date_str = sub.end_date.strftime("%d.%m.%Y")
+                try:
+                    if send_gift_subscription_notification(tg_id, pro_plan.display_name, end_date_str):
+                        notified += 1
+                except Exception:
+                    pass  # Не ломаем процесс если уведомление не отправилось
+
         self.message_user(
             request,
-            f"✅ {count} подписок обновлено до {pro_plan.display_name}",
+            f"✅ {count} подписок обновлено до {pro_plan.display_name} (уведомлено: {notified})",
             messages.SUCCESS,
         )
+
+    def _get_telegram_id(self, sub: Subscription) -> int | None:
+        """Получает Telegram ID пользователя."""
+        # Приоритет: telegram_profile
+        if hasattr(sub.user, "telegram_profile"):
+            return sub.user.telegram_profile.telegram_id
+        # Fallback: из username (формат tg_XXXXXXXX)
+        username = sub.user.username or ""
+        if username.startswith("tg_"):
+            try:
+                return int(username[3:])
+            except ValueError:
+                pass
+        return None
 
     @admin.display(description="Имя")
     def user_full_name(self, obj: Subscription) -> str:
