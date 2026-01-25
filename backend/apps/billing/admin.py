@@ -127,13 +127,26 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "days_left_badge",
     )
     list_filter = ("is_active", "auto_renew", "plan", "created_at")
-    search_fields = ("user__email", "user__username", "user__profile__full_name")
+    search_fields = (
+        "user__email",
+        "user__username",
+        "user__telegram_profile__first_name",
+        "user__telegram_profile__last_name",
+        "user__telegram_profile__username",
+    )
     ordering = ("-created_at",)
     raw_id_fields = ("user",)
 
     @admin.display(description="Имя")
     def user_full_name(self, obj: Subscription) -> str:
-        """Имя пользователя из профиля."""
+        """Имя пользователя из TelegramUser или Profile."""
+        # Сначала ищем в TelegramUser (основной источник для Telegram юзеров)
+        if hasattr(obj.user, "telegram_profile"):
+            tg = obj.user.telegram_profile
+            full = f"{tg.first_name} {tg.last_name}".strip()
+            if full:
+                return full
+        # Fallback на Profile.full_name
         if hasattr(obj.user, "profile") and obj.user.profile.full_name:
             return obj.user.profile.full_name
         return "-"
