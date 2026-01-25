@@ -260,6 +260,65 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
     readonly_fields = ("created_at", "updated_at")
 
+    def save_model(self, request, obj, form, change):
+        """
+        При сохранении подписки через форму редактирования:
+        1. Если план изменился на PRO — автоматически пересчитываем даты
+        2. Отправляем уведомление пользователю в Telegram
+        """
+        if change and "plan" in form.changed_data:
+            old_plan_id = form.initial.get("plan")
+            new_plan = obj.plan
+
+            # Если новый план — PRO, пересчитываем даты
+            if new_plan.code.startswith("PRO"):
+                now = timezone.now()
+                days = new_plan.duration_days or 30  # fallback на 30 дней
+
+                # Если был PRO и ещё активен — продлеваем
+                old_was_pro = False
+                if old_plan_id:
+                    try:
+                        old_plan = SubscriptionPlan.objects.get(pk=old_plan_id)
+                        old_was_pro = old_plan.code.startswith("PRO")
+                    except SubscriptionPlan.DoesNotExist:
+                        pass
+
+                if old_was_pro and obj.end_date and obj.end_date > now:
+                    obj.end_date = obj.end_date + timedelta(days=days)
+                else:
+                    obj.start_date = now
+                    obj.end_date = now + timedelta(days=days)
+
+                obj.is_active = True
+
+        super().save_model(request, obj, form, change)
+
+        # Отправляем уведомление если план изменился на PRO
+        if change and "plan" in form.changed_data and obj.plan.code.startswith("PRO"):
+            tg_id = self._get_telegram_id(obj)
+            if tg_id:
+                end_date_str = obj.end_date.strftime("%d.%m.%Y")
+                try:
+                    if send_gift_subscription_notification(tg_id, obj.plan.display_name, end_date_str):
+                        self.message_user(
+                            request,
+                            f"✅ Уведомление отправлено пользователю в Telegram",
+                            messages.SUCCESS,
+                        )
+                    else:
+                        self.message_user(
+                            request,
+                            "⚠️ Не удалось отправить уведомление в Telegram",
+                            messages.WARNING,
+                        )
+                except Exception as e:
+                    self.message_user(
+                        request,
+                        f"⚠️ Ошибка отправки уведомления: {e}",
+                        messages.WARNING,
+                    )
+
     fieldsets = (
         ("Пользователь и тариф", {"fields": ("user", "plan")}),
         ("Период", {"fields": ("start_date", "end_date")}),
