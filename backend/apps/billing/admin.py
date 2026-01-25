@@ -15,7 +15,10 @@ Django Admin для billing app.
 
 from __future__ import annotations
 
-from django.contrib import admin
+from datetime import timedelta
+
+from django.contrib import admin, messages
+from django.utils import timezone
 from django.utils.html import format_html
 
 from .models import Payment, Refund, Subscription, SubscriptionPlan, WebhookLog
@@ -136,6 +139,81 @@ class SubscriptionAdmin(admin.ModelAdmin):
     )
     ordering = ("-created_at",)
     raw_id_fields = ("user",)
+    actions = ["grant_pro_monthly", "grant_pro_yearly", "downgrade_to_free"]
+
+    @admin.action(description="🎁 Выдать PRO месяц (30 дней)")
+    def grant_pro_monthly(self, request, queryset):
+        """Выдаёт PRO месячную подписку выбранным пользователям."""
+        self._grant_pro(request, queryset, "PRO_MONTHLY", 30)
+
+    @admin.action(description="🎁 Выдать PRO год (365 дней)")
+    def grant_pro_yearly(self, request, queryset):
+        """Выдаёт PRO годовую подписку выбранным пользователям."""
+        self._grant_pro(request, queryset, "PRO_YEARLY", 365)
+
+    @admin.action(description="⬇️ Понизить до FREE")
+    def downgrade_to_free(self, request, queryset):
+        """Понижает выбранных пользователей до FREE плана."""
+        try:
+            free_plan = SubscriptionPlan.objects.get(code="FREE", is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            self.message_user(
+                request,
+                "❌ FREE план не найден в базе данных",
+                messages.ERROR,
+            )
+            return
+
+        now = timezone.now()
+        count = 0
+        for sub in queryset:
+            sub.plan = free_plan
+            sub.start_date = now
+            sub.end_date = now + timedelta(days=365 * 10)
+            sub.is_active = True
+            sub.auto_renew = False
+            sub.save()
+            count += 1
+
+        self.message_user(
+            request,
+            f"✅ {count} подписок понижено до FREE",
+            messages.SUCCESS,
+        )
+
+    def _grant_pro(self, request, queryset, plan_code: str, days: int):
+        """Общая логика выдачи PRO подписки."""
+        try:
+            pro_plan = SubscriptionPlan.objects.get(code=plan_code, is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            self.message_user(
+                request,
+                f"❌ План {plan_code} не найден в базе данных",
+                messages.ERROR,
+            )
+            return
+
+        now = timezone.now()
+        count = 0
+        for sub in queryset:
+            # Если текущая подписка ещё активна и это PRO — продлеваем
+            if sub.plan.code.startswith("PRO") and sub.end_date > now:
+                sub.end_date = sub.end_date + timedelta(days=days)
+            else:
+                # Иначе — начинаем новую подписку с сегодня
+                sub.start_date = now
+                sub.end_date = now + timedelta(days=days)
+
+            sub.plan = pro_plan
+            sub.is_active = True
+            sub.save()
+            count += 1
+
+        self.message_user(
+            request,
+            f"✅ {count} подписок обновлено до {pro_plan.display_name}",
+            messages.SUCCESS,
+        )
 
     @admin.display(description="Имя")
     def user_full_name(self, obj: Subscription) -> str:
